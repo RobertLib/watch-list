@@ -1,0 +1,70 @@
+# The four checks that have to pass before anything reaches main.
+#
+# No secrets: `next build` here is a static export whose pages fetch TMDB from
+# the browser, so the build never calls the API and needs no token. A fork's pull
+# request therefore gets the same checks as a branch, which is the point.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A second push to the same branch makes the first run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 26 rather than the `>=20.9.0` next itself asks for: vitest 5 declares
+          # `^22.12.0 || ^24.0.0 || >=26.0.0`, so 20 cannot run the suite at all.
+          # 26 is also what `@types/node` is pinned to and what the lockfile was
+          # resolved under, which keeps CI honest about what a checkout gets.
+          node-version: 26
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      # Twice, in two timezones. Every TMDB date is a bare `YYYY-MM-DD` naming a
+      # calendar day, and reading one as an instant lands on the previous day
+      # west of Greenwich – so a suite that only ever runs at UTC cannot see the
+      # bug. `src/lib/dates.ts` exists because of it.
+      - name: Test (UTC)
+        run: npm test
+        env:
+          TZ: UTC
+
+      - name: Test (America/New_York)
+        run: npm test
+        env:
+          TZ: America/New_York
+
+      # `.next/cache` is what makes a rebuild cheap; see
+      # https://nextjs.org/docs/app/guides/ci-build-caching
+      #
+      # Only `.next/cache`. `~/.npm` used to be listed here too and bought
+      # nothing twice over: `setup-node` above already caches it via `cache: npm`,
+      # and this step restores *after* `npm ci` has run, so the copy it put back
+      # was one no install would ever read.
+      - uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('src/**/*.ts', 'src/**/*.tsx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
+
+      - run: npm run build
