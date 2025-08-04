@@ -1,0 +1,10 @@
+{
+  "name": "fast-glob",
+  "version": "3.3.1",
+  "private": true,
+  "main": "index.cjs",
+  "description": "Private directory-glob adapter for the Next ESLint plugin",
+  "dependencies": {
+    "tinyglobby": "0.2.17"
+  }
+}
