@@ -1,0 +1,68 @@
+function CarouselSkeleton({ title }: { title: string }) {
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-white">{title}</h2>
+      <div className="flex gap-4 overflow-hidden">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div
+            key={i}
+            className="w-48 h-72 bg-gray-700 rounded-lg animate-pulse flex-shrink-0"
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HeroSkeleton() {
+  return (
+    <div className="relative h-[50vh] sm:h-[60vh] lg:h-[70vh] bg-gray-800 animate-pulse">
+      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent" />
+      <div className="absolute inset-0 flex items-center py-4 sm:py-6">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 w-full">
+          <div className="space-y-3 sm:space-y-4 lg:space-y-6 max-w-2xl">
+            <div className="h-8 sm:h-10 lg:h-12 bg-gray-700 rounded w-3/4"></div>
+            <div className="h-4 sm:h-5 lg:h-6 bg-gray-700 rounded w-full"></div>
+            <div className="h-4 sm:h-5 lg:h-6 bg-gray-700 rounded w-2/3"></div>
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mt-4">
+              <div className="h-10 sm:h-12 bg-gray-700 rounded w-full sm:w-32"></div>
+              <div className="h-10 sm:h-12 bg-gray-700 rounded w-full sm:w-32"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function Loading() {
+  return (
+    <>
+      <HeroSkeleton />
+
+      <div className="container mx-auto px-6 lg:px-8 py-8 space-y-12">
+        {/* Welcome Panel Skeleton */}
+        <div className="bg-gradient-to-r from-blue-900/20 to-purple-900/20 border border-blue-800/30 rounded-lg p-6 animate-pulse">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="h-12 w-12 bg-gray-700 rounded-full"></div>
+            <div>
+              <div className="h-6 bg-gray-700 rounded w-32 mb-2"></div>
+              <div className="h-4 bg-gray-700 rounded w-48"></div>
+            </div>
+          </div>
+          <div className="space-y-2 mb-6">
+            <div className="h-4 bg-gray-700 rounded w-full"></div>
+            <div className="h-4 bg-gray-700 rounded w-3/4"></div>
+          </div>
+        </div>
+
+        {/* Carousels Skeletons */}
+        <CarouselSkeleton title="Trending This Week" />
+        <CarouselSkeleton title="Now Playing in Theaters" />
+        <CarouselSkeleton title="Popular Movies" />
+        <CarouselSkeleton title="Popular TV Shows" />
+        <CarouselSkeleton title="Top Rated Movies" />
+      </div>
+    </>
+  );
+}

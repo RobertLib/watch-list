@@ -1,0 +1,108 @@
+import { MetadataRoute } from "next";
+import { tmdbApi } from "@/lib/tmdb";
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const baseUrl = "https://www.watch-list.me";
+
+  // Static pages
+  const staticPages = [
+    {
+      url: baseUrl,
+      lastModified: new Date(),
+      changeFrequency: "daily" as const,
+      priority: 1,
+    },
+    {
+      url: `${baseUrl}/movies`,
+      lastModified: new Date(),
+      changeFrequency: "daily" as const,
+      priority: 0.9,
+    },
+    {
+      url: `${baseUrl}/tv-shows`,
+      lastModified: new Date(),
+      changeFrequency: "daily" as const,
+      priority: 0.9,
+    },
+    {
+      url: `${baseUrl}/genres`,
+      lastModified: new Date(),
+      changeFrequency: "weekly" as const,
+      priority: 0.8,
+    },
+    {
+      url: `${baseUrl}/watchlist`,
+      lastModified: new Date(),
+      changeFrequency: "daily" as const,
+      priority: 0.7,
+    },
+    {
+      url: `${baseUrl}/profile`,
+      lastModified: new Date(),
+      changeFrequency: "monthly" as const,
+      priority: 0.5,
+    },
+  ];
+
+  try {
+    // Get genres for dynamic pages
+    const [movieGenres, tvGenres] = await Promise.all([
+      tmdbApi.getMovieGenres(),
+      tmdbApi.getTVGenres(),
+    ]);
+
+    // Movie genre pages
+    const movieGenrePages = movieGenres.genres.map((genre) => ({
+      url: `${baseUrl}/genres/movie/${genre.id}`,
+      lastModified: new Date(),
+      changeFrequency: "daily" as const,
+      priority: 0.7,
+    }));
+
+    // TV show genre pages
+    const tvGenrePages = tvGenres.genres.map((genre) => ({
+      url: `${baseUrl}/genres/tv/${genre.id}`,
+      lastModified: new Date(),
+      changeFrequency: "daily" as const,
+      priority: 0.7,
+    }));
+
+    // Get popular movies and TV shows for sitemap
+    const [popularMovies, popularTVShows] = await Promise.all([
+      tmdbApi.getPopularMovies(1),
+      tmdbApi.getPopularTVShows(1),
+    ]);
+
+    // Popular movie pages
+    const moviePages = popularMovies.results.slice(0, 50).map((movie) => ({
+      url: `${baseUrl}/movie/${movie.id}-${movie.title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")}`,
+      lastModified: new Date(),
+      changeFrequency: "weekly" as const,
+      priority: 0.6,
+    }));
+
+    // Popular TV show pages
+    const tvPages = popularTVShows.results.slice(0, 50).map((show) => ({
+      url: `${baseUrl}/tv/${show.id}-${show.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")}`,
+      lastModified: new Date(),
+      changeFrequency: "weekly" as const,
+      priority: 0.6,
+    }));
+
+    return [
+      ...staticPages,
+      ...movieGenrePages,
+      ...tvGenrePages,
+      ...moviePages,
+      ...tvPages,
+    ];
+  } catch (error) {
+    console.error("Error generating sitemap:", error);
+    // Return at least static pages on error
+    return staticPages;
+  }
+}
