@@ -1,0 +1,491 @@
+import {
+  Movie,
+  TVShow,
+  TMDBResponse,
+  Genre,
+  MediaItem,
+  MovieDetails,
+  TVShowDetails,
+  Credits,
+  VideosResponse,
+  TranslationsResponse,
+  TVTranslationsResponse,
+  PersonDetails,
+  PersonMovieCredits,
+  PersonTVCredits,
+  Person,
+  CollectionDetails,
+  SeasonDetails,
+} from "@/types/tmdb";
+import { getRegion } from "@/lib/region-server";
+import { getRegionCode } from "./region";
+import { TMDB_CONFIG } from "./tmdb-cache";
+
+async function buildUrl(
+  endpoint: string,
+  params: Record<string, string | number> = {},
+): Promise<string> {
+  const region = await getRegion();
+  const regionCode = getRegionCode(region);
+
+  const finalParams: Record<string, string> = {
+    ...Object.fromEntries(
+      Object.entries(params).map(([key, value]) => [key, String(value)]),
+    ),
+    region: regionCode,
+  };
+
+  const queryString = new URLSearchParams(finalParams).toString();
+  return `${TMDB_CONFIG.BASE_URL}${endpoint}?${queryString}`;
+}
+
+// Retries on transient socket/network errors (UND_ERR_*) up to `retries` times.
+async function fetchWithRetry(
+  fn: () => Promise<Response>,
+  retries: number = 3,
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      const causeCode = (error as { cause?: { code?: string } }).cause?.code;
+      const isNetworkError =
+        (error instanceof TypeError &&
+          (causeCode?.startsWith("UND_ERR") ||
+            causeCode === "ETIMEDOUT" ||
+            causeCode === "ECONNRESET" ||
+            causeCode === "ECONNREFUSED")) ||
+        (error instanceof Error && error.name === "TimeoutError");
+      if (!isNetworkError || attempt === retries) throw error;
+      await new Promise((resolve) =>
+        setTimeout(resolve, 300 * Math.pow(2, attempt)),
+      );
+    }
+  }
+  throw lastError;
+}
+
+// URL builder for detail pages – no region/cookies so the route stays static.
+function buildDetailUrl(
+  endpoint: string,
+  params: Record<string, string | number> = {},
+): string {
+  const finalParams: Record<string, string> = Object.fromEntries(
+    Object.entries(params).map(([key, value]) => [key, String(value)]),
+  );
+  const queryString = new URLSearchParams(finalParams).toString();
+  return `${TMDB_CONFIG.BASE_URL}${endpoint}${queryString ? `?${queryString}` : ""}`;
+}
+
+// Cached API request helper for basic TMDB calls
+async function cachedFetch(
+  url: string,
+  cacheKey: string,
+  revalidateTime: number = 21600,
+): Promise<unknown> {
+  const response = await fetchWithRetry(() =>
+    fetch(url, {
+      headers: TMDB_CONFIG.headers,
+      next: {
+        revalidate: revalidateTime,
+        tags: ["tmdb", cacheKey],
+      },
+    }),
+  );
+  return response.json();
+}
+
+// Fetch for detail pages – no HTTP cache (detail queries rarely repeat).
+async function detailFetch(url: string): Promise<unknown> {
+  const response = await fetchWithRetry(() =>
+    fetch(url, {
+      headers: TMDB_CONFIG.headers,
+      cache: "no-store",
+      signal: AbortSignal.timeout(10000),
+    }),
+  );
+  if (!response.ok) {
+    throw new Error(
+      `TMDB API error: ${response.status} ${response.statusText}`,
+    );
+  }
+  return response.json();
+}
+
+export const tmdbApi = {
+  // Get trending movies and TV shows
+  getTrending: async (
+    mediaType: "all" | "movie" | "tv" = "all",
+    timeWindow: "day" | "week" = "week",
+  ): Promise<TMDBResponse<MediaItem>> => {
+    const url = await buildUrl(`/trending/${mediaType}/${timeWindow}`);
+    const cacheKey = `trending-${mediaType}-${timeWindow}`;
+    const data = (await cachedFetch(url, cacheKey, 3600)) as TMDBResponse<
+      (Movie | TVShow) & { media_type: string }
+    >;
+
+    return {
+      ...data,
+      results: data.results.map(
+        (item: (Movie | TVShow) & { media_type: string }) => ({
+          ...item,
+          title: "title" in item ? item.title : item.name,
+          release_date:
+            "release_date" in item ? item.release_date : item.first_air_date,
+          media_type: item.media_type === "movie" ? "movie" : "tv",
+        }),
+      ),
+    };
+  },
+
+  // Get popular movies
+  getPopularMovies: async (page: number = 1): Promise<TMDBResponse<Movie>> => {
+    const url = await buildUrl("/movie/popular", { page });
+    const response = await fetchWithRetry(() =>
+      fetch(url, {
+        headers: TMDB_CONFIG.headers,
+        next: { revalidate: 3600 }, // 1 hour
+        signal: AbortSignal.timeout(10000),
+      }),
+    );
+    return response.json();
+  },
+
+  // Get popular TV shows
+  getPopularTVShows: async (
+    page: number = 1,
+  ): Promise<TMDBResponse<TVShow>> => {
+    const url = await buildUrl("/tv/popular", { page });
+    const response = await fetchWithRetry(() =>
+      fetch(url, {
+        headers: TMDB_CONFIG.headers,
+        next: { revalidate: 3600 }, // 1 hour
+        signal: AbortSignal.timeout(10000),
+      }),
+    );
+    return response.json();
+  },
+
+  // Get top rated movies
+  getTopRatedMovies: async (page: number = 1): Promise<TMDBResponse<Movie>> => {
+    const url = await buildUrl("/movie/top_rated", { page });
+    const response = await fetchWithRetry(() =>
+      fetch(url, {
+        headers: TMDB_CONFIG.headers,
+        next: { revalidate: 86400 }, // 24 hours – top-rated list changes slowly
+        signal: AbortSignal.timeout(10000),
+      }),
+    );
+    return response.json();
+  },
+
+  // Get top rated TV shows
+  getTopRatedTVShows: async (
+    page: number = 1,
+  ): Promise<TMDBResponse<TVShow>> => {
+    const url = await buildUrl("/tv/top_rated", { page });
+    const response = await fetchWithRetry(() =>
+      fetch(url, {
+        headers: TMDB_CONFIG.headers,
+        next: { revalidate: 86400 }, // 24 hours – top-rated list changes slowly
+        signal: AbortSignal.timeout(10000),
+      }),
+    );
+    return response.json();
+  },
+
+  // Get now playing movies
+  getNowPlayingMovies: async (
+    page: number = 1,
+  ): Promise<TMDBResponse<Movie>> => {
+    const url = await buildUrl("/movie/now_playing", { page });
+    const response = await fetchWithRetry(() =>
+      fetch(url, {
+        headers: TMDB_CONFIG.headers,
+        next: { revalidate: 3600 }, // 1 hour – now-playing changes more often
+        signal: AbortSignal.timeout(10000),
+      }),
+    );
+    return response.json();
+  },
+
+  // Get airing today TV shows
+  getAiringTodayTVShows: async (
+    page: number = 1,
+  ): Promise<TMDBResponse<TVShow>> => {
+    const url = await buildUrl("/tv/airing_today", { page });
+    const response = await fetchWithRetry(() =>
+      fetch(url, {
+        headers: TMDB_CONFIG.headers,
+        next: { revalidate: 3600 }, // 1 hour – airing today changes frequently
+        signal: AbortSignal.timeout(10000),
+      }),
+    );
+    return response.json();
+  },
+
+  // Get upcoming movies
+  getUpcomingMovies: async (page: number = 1): Promise<TMDBResponse<Movie>> => {
+    const url = await buildUrl("/movie/upcoming", { page });
+    const response = await fetchWithRetry(() =>
+      fetch(url, {
+        headers: TMDB_CONFIG.headers,
+        next: { revalidate: 3600 },
+        signal: AbortSignal.timeout(10000),
+      }),
+    );
+    return response.json();
+  },
+
+  // Get trending movies this week (paginated, returns raw Movie objects)
+  getTrendingMovies: async (page: number = 1): Promise<TMDBResponse<Movie>> => {
+    const url = await buildUrl("/trending/movie/week", { page });
+    return (await cachedFetch(
+      url,
+      `trending-movies-week-${page}`,
+      3600,
+    )) as TMDBResponse<Movie>;
+  },
+
+  // Get trending TV shows this week (paginated, returns raw TVShow objects)
+  getTrendingTVShows: async (
+    page: number = 1,
+  ): Promise<TMDBResponse<TVShow>> => {
+    const url = await buildUrl("/trending/tv/week", { page });
+    return (await cachedFetch(
+      url,
+      `trending-tv-week-${page}`,
+      3600,
+    )) as TMDBResponse<TVShow>;
+  },
+
+  // Get movie genres
+  getMovieGenres: async (): Promise<{ genres: Genre[] }> => {
+    const url = await buildUrl("/genre/movie/list");
+    const cacheKey = "movie-genres";
+    return cachedFetch(url, cacheKey, 86400) as Promise<{ genres: Genre[] }>; // 24 hours cache
+  },
+
+  // Get TV genres
+  getTVGenres: async (): Promise<{ genres: Genre[] }> => {
+    const url = await buildUrl("/genre/tv/list");
+    const cacheKey = "tv-genres";
+    return cachedFetch(url, cacheKey, 86400) as Promise<{ genres: Genre[] }>; // 24 hours cache
+  },
+
+  // Search for movies and TV shows
+  searchMulti: async (
+    query: string,
+    page: number = 1,
+  ): Promise<TMDBResponse<MediaItem>> => {
+    const url = await buildUrl("/search/multi", {
+      query: encodeURIComponent(query),
+      page,
+    });
+    const cacheKey = `search-multi-${query}-${page}`;
+    const data = (await cachedFetch(url, cacheKey, 3600)) as TMDBResponse<
+      (Movie | TVShow) & { media_type: string }
+    >;
+
+    return {
+      ...data,
+      results: data.results
+        .filter(
+          (item: { media_type: string }) =>
+            item.media_type === "movie" || item.media_type === "tv",
+        )
+        .map((item: (Movie | TVShow) & { media_type: string }) => ({
+          ...item,
+          title: "title" in item ? item.title : item.name,
+          release_date:
+            "release_date" in item ? item.release_date : item.first_air_date,
+          media_type: item.media_type === "movie" ? "movie" : "tv",
+        })),
+    };
+  },
+
+  // Get image URL
+  getImageUrl: (
+    path: string | null,
+    size: "w500" | "w780" | "w1280" | "original" = "w500",
+  ): string => {
+    if (!path)
+      return "data:image/svg+xml,%3Csvg width='300' height='450' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='100%25' height='100%25' fill='%231f2937'/%3E%3Ctext x='50%25' y='50%25' font-family='Arial,sans-serif' font-size='24' fill='%236b7280' text-anchor='middle' dominant-baseline='middle'%3ENo Image%3C/text%3E%3C/svg%3E";
+    return `https://image.tmdb.org/t/p/${size}${path}`;
+  },
+
+  // Get movie details with optional append_to_response
+  getMovieDetails: async (
+    movieId: number,
+    appendToResponse?: string,
+  ): Promise<MovieDetails> => {
+    const params: Record<string, string | number> = {};
+    if (appendToResponse) {
+      params.append_to_response = appendToResponse;
+    }
+    const url = buildDetailUrl(`/movie/${movieId}`, params);
+    return detailFetch(url) as Promise<MovieDetails>;
+  },
+
+  // Get TV show details with optional append_to_response
+  getTVShowDetails: async (
+    tvId: number,
+    appendToResponse?: string,
+  ): Promise<TVShowDetails> => {
+    const params: Record<string, string | number> = {};
+    if (appendToResponse) {
+      params.append_to_response = appendToResponse;
+    }
+    const url = buildDetailUrl(`/tv/${tvId}`, params);
+    return detailFetch(url) as Promise<TVShowDetails>;
+  },
+
+  // Get movie credits
+  getMovieCredits: async (movieId: number): Promise<Credits> => {
+    const url = await buildUrl(`/movie/${movieId}/credits`);
+    const cacheKey = `movie-credits-${movieId}`;
+    return cachedFetch(url, cacheKey, 7200) as Promise<Credits>; // 2 hours cache
+  },
+
+  // Get TV show credits
+  getTVShowCredits: async (tvId: number): Promise<Credits> => {
+    const url = await buildUrl(`/tv/${tvId}/credits`);
+    const cacheKey = `tv-credits-${tvId}`;
+    return cachedFetch(url, cacheKey, 7200) as Promise<Credits>; // 2 hours cache
+  },
+
+  // Get movie videos
+  getMovieVideos: async (movieId: number): Promise<VideosResponse> => {
+    const url = await buildUrl(`/movie/${movieId}/videos`);
+    const cacheKey = `movie-videos-${movieId}`;
+    return cachedFetch(url, cacheKey, 7200) as Promise<VideosResponse>; // 2 hours cache
+  },
+
+  // Get TV show videos
+  getTVShowVideos: async (tvId: number): Promise<VideosResponse> => {
+    const url = await buildUrl(`/tv/${tvId}/videos`);
+    const cacheKey = `tv-videos-${tvId}`;
+    return cachedFetch(url, cacheKey, 7200) as Promise<VideosResponse>; // 2 hours cache
+  },
+
+  // Get similar movies
+  getSimilarMovies: async (movieId: number): Promise<TMDBResponse<Movie>> => {
+    const url = await buildUrl(`/movie/${movieId}/similar`);
+    const cacheKey = `similar-movies-${movieId}`;
+    return cachedFetch(url, cacheKey, 3600) as Promise<TMDBResponse<Movie>>; // 1 hour cache
+  },
+
+  // Get similar TV shows
+  getSimilarTVShows: async (tvId: number): Promise<TMDBResponse<TVShow>> => {
+    const url = await buildUrl(`/tv/${tvId}/similar`);
+    const cacheKey = `similar-tv-${tvId}`;
+    return cachedFetch(url, cacheKey, 3600) as Promise<TMDBResponse<TVShow>>; // 1 hour cache
+  },
+
+  // Discover movies by genre
+  discoverMoviesByGenre: async (
+    genreId: number,
+    page: number = 1,
+  ): Promise<TMDBResponse<Movie>> => {
+    const url = await buildUrl("/discover/movie", {
+      with_genres: genreId,
+      page,
+      sort_by: "popularity.desc",
+    });
+    const cacheKey = `discover-movies-genre-${genreId}-${page}`;
+    return cachedFetch(url, cacheKey, 3600) as Promise<TMDBResponse<Movie>>; // 1 hour cache
+  },
+
+  // Discover TV shows by genre
+  discoverTVShowsByGenre: async (
+    genreId: number,
+    page: number = 1,
+  ): Promise<TMDBResponse<TVShow>> => {
+    const url = await buildUrl("/discover/tv", {
+      with_genres: genreId,
+      page,
+      sort_by: "popularity.desc",
+    });
+    const cacheKey = `discover-tv-genre-${genreId}-${page}`;
+    return cachedFetch(url, cacheKey, 3600) as Promise<TMDBResponse<TVShow>>; // 1 hour cache
+  },
+
+  // Get movie translations
+  getMovieTranslations: async (
+    movieId: number,
+  ): Promise<TranslationsResponse> => {
+    const url = await buildUrl(`/movie/${movieId}/translations`);
+    const cacheKey = `movie-translations-${movieId}`;
+    return cachedFetch(url, cacheKey, 86400) as Promise<TranslationsResponse>; // 24 hours cache
+  },
+
+  // Get TV show translations
+  getTVShowTranslations: async (
+    tvId: number,
+  ): Promise<TVTranslationsResponse> => {
+    const url = await buildUrl(`/tv/${tvId}/translations`);
+    const cacheKey = `tv-translations-${tvId}`;
+    return cachedFetch(url, cacheKey, 86400) as Promise<TVTranslationsResponse>; // 24 hours cache
+  },
+
+  // Get person details
+  getPersonDetails: async (personId: number): Promise<PersonDetails> => {
+    const url = buildDetailUrl(`/person/${personId}`);
+    return detailFetch(url) as Promise<PersonDetails>;
+  },
+
+  // Get person movie credits
+  getPersonMovieCredits: async (
+    personId: number,
+  ): Promise<PersonMovieCredits> => {
+    const url = buildDetailUrl(`/person/${personId}/movie_credits`);
+    return detailFetch(url) as Promise<PersonMovieCredits>;
+  },
+
+  // Get person TV credits
+  getPersonTVCredits: async (personId: number): Promise<PersonTVCredits> => {
+    const url = buildDetailUrl(`/person/${personId}/tv_credits`);
+    return detailFetch(url) as Promise<PersonTVCredits>;
+  },
+
+  // Get popular people
+  getPopularPeople: async (page: number = 1): Promise<TMDBResponse<Person>> => {
+    const url = await buildUrl("/person/popular", { page });
+    const cacheKey = `popular-people-${page}`;
+    return cachedFetch(url, cacheKey, 3600) as Promise<TMDBResponse<Person>>; // 1 hour cache
+  },
+
+  // Search people by name
+  searchPerson: async (
+    query: string,
+    page: number = 1,
+  ): Promise<TMDBResponse<Person>> => {
+    const url = await buildUrl("/search/person", {
+      query: encodeURIComponent(query),
+      page,
+    });
+    const cacheKey = `search-person-${query}-${page}`;
+    return cachedFetch(url, cacheKey, 3600) as Promise<TMDBResponse<Person>>; // 1 hour cache
+  },
+
+  // Get collection details (movies in a collection)
+  getCollectionDetails: async (
+    collectionId: number,
+  ): Promise<CollectionDetails> => {
+    const url = await buildUrl(`/collection/${collectionId}`);
+    return detailFetch(url) as Promise<CollectionDetails>;
+  },
+
+  // Get TV season details with episode list
+  getSeasonDetails: async (
+    tvId: number,
+    seasonNumber: number,
+  ): Promise<SeasonDetails> => {
+    const url = await buildUrl(`/tv/${tvId}/season/${seasonNumber}`);
+    return detailFetch(url) as Promise<SeasonDetails>;
+  },
+};
+
+export default tmdbApi;
