@@ -55,7 +55,7 @@ export async function generateMetadata({
   const { genre } = data;
 
   return {
-    title: `${genre.name} Movies - WatchList`,
+    title: `${genre.name} Movies`,
     description: `Explore the best ${genre.name.toLowerCase()} movies on WatchList. Discover popular ${genre.name.toLowerCase()} films, new releases, and trending titles. Create your personalized watchlist.`,
     openGraph: {
       title: `${genre.name} Movies - WatchList`,

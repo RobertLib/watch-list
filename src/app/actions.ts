@@ -10,6 +10,7 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { tmdbServerApi } from "@/lib/tmdb-server";
 import type { FilterOptions } from "@/types/filters";
+import { submitToIndexNow, getFullUrl } from "@/lib/indexnow";
 
 export async function changeRegion(formData: FormData) {
   const region = formData.get("region") as Region;
@@ -139,4 +140,37 @@ export async function hasUserCustomSettings(): Promise<boolean> {
     watchProviderCookie && watchProviderCookie.value === "streaming-only";
 
   return Boolean(hasCustomRegion || hasCustomWatchProvider);
+}
+
+// IndexNow server actions
+export async function submitUrlsToIndexNow(
+  urls: string | string[]
+): Promise<boolean> {
+  try {
+    return await submitToIndexNow(urls);
+  } catch (error) {
+    console.error("Failed to submit URLs to IndexNow:", error);
+    return false;
+  }
+}
+
+export async function submitPathToIndexNow(path: string): Promise<boolean> {
+  try {
+    const fullUrl = getFullUrl(path);
+    return await submitToIndexNow([fullUrl]);
+  } catch (error) {
+    console.error("Failed to submit path to IndexNow:", error);
+    return false;
+  }
+}
+
+export async function notifyIndexNowOfUpdate(path?: string): Promise<boolean> {
+  try {
+    // If no path provided, submit the homepage
+    const pathToSubmit = path || "/";
+    return await submitPathToIndexNow(pathToSubmit);
+  } catch (error) {
+    console.error("Failed to notify IndexNow of update:", error);
+    return false;
+  }
 }

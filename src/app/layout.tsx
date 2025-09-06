@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import { GenresProvider } from "@/contexts/GenresContext";
 import { WatchlistProvider } from "@/contexts/WatchlistContext";
+import { IndexNowProvider } from "@/contexts/IndexNowContext";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { ToastContainer } from "@/components/Toast";
+import { IndexNowTracker } from "@/components/IndexNowTracker";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
 
@@ -85,14 +87,17 @@ export default function RootLayout({
 
         <GenresProvider>
           <WatchlistProvider>
-            <div className="font-sans min-h-screen bg-black text-white">
-              <Navigation />
-              <div className="pt-16">
-                <main id="main-content">{children}</main>
+            <IndexNowProvider>
+              <div className="font-sans min-h-screen bg-black text-white">
+                <Navigation />
+                <div className="pt-16">
+                  <main id="main-content">{children}</main>
+                </div>
+                <Footer />
+                <ToastContainer />
+                <IndexNowTracker />
               </div>
-              <Footer />
-              <ToastContainer />
-            </div>
+            </IndexNowProvider>
           </WatchlistProvider>
         </GenresProvider>
         <Analytics />
