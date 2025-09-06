@@ -11,6 +11,7 @@ import { TVTrailerButton } from "@/components/tv/TVTrailerButton";
 import { DetailPageWatchlistButton } from "@/components/DetailPageWatchlistButton";
 import { LanguageSupport } from "@/components/LanguageSupport";
 import { StructuredData } from "@/components/StructuredData";
+import { TVPageTracker } from "@/components/TVPageTracker";
 import { extractIdFromSlug } from "@/lib/utils";
 
 function formatDescription(
@@ -96,7 +97,7 @@ export async function generateMetadata({
   return {
     title: `${details.name} (${
       new Date(details.first_air_date).getFullYear() || "N/A"
-    }) - WatchList`,
+    })`,
     description: formattedDescription,
     openGraph: {
       title: `${details.name} (${
@@ -307,6 +308,8 @@ export default async function TVPage({ params }: TVPageProps) {
           </div>
         </div>
       </div>
+
+      <TVPageTracker tvId={id} slug={slug} />
     </div>
   );
 }

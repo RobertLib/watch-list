@@ -7,7 +7,6 @@ import {
   useState,
   ReactNode,
 } from "react";
-import { tmdbApi } from "@/lib/tmdb";
 import { Genre } from "@/types/tmdb";
 
 interface GenresContextType {
@@ -42,15 +41,19 @@ export function GenresProvider({ children }: GenresProviderProps) {
   useEffect(() => {
     const fetchGenres = async () => {
       try {
-        const [movieResponse, tvResponse] = await Promise.all([
-          tmdbApi.getMovieGenres(),
-          tmdbApi.getTVGenres(),
-        ]);
+        const response = await fetch("/api/genres");
+        if (!response.ok) {
+          throw new Error("Failed to fetch genres");
+        }
 
-        setMovieGenres(movieResponse.genres);
-        setTvGenres(tvResponse.genres);
+        const data = await response.json();
+        setMovieGenres(data.movieGenres);
+        setTvGenres(data.tvGenres);
       } catch (error) {
         console.error("Error fetching genres:", error);
+        // Set empty arrays on error
+        setMovieGenres([]);
+        setTvGenres([]);
       } finally {
         setLoading(false);
       }

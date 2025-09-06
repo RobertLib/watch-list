@@ -42,6 +42,10 @@ A modern Netflix-inspired web application for discovering movies and TV shows ac
   - Request deduplication to prevent duplicate API calls
   - Throttled API requests for better rate limiting
 - 📱 **PWA Support**: Progressive Web App with app manifest for mobile installation
+- 🔍 **SEO Optimization**:
+  - IndexNow integration for instant search engine notifications
+  - Structured data with JSON-LD
+  - Optimized meta tags and OpenGraph support
 
 ## Tech Stack
 
@@ -81,7 +85,7 @@ npm install
 3. Create a `.env.local` file in the root directory and add your TMDb API bearer token:
 
 ```env
-NEXT_PUBLIC_TMDB_API_TOKEN=your_tmdb_bearer_token_here
+TMDB_API_TOKEN=your_tmdb_bearer_token_here
 ```
 
 > **Note**: The `.env*` files are already included in `.gitignore` to keep your API token secure.

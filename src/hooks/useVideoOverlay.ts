@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { tmdbApi } from "@/lib/tmdb";
 import { Video } from "@/types/tmdb";
 
 export function useVideoOverlay() {
@@ -15,23 +14,26 @@ export function useVideoOverlay() {
       setIsOpen(true);
 
       try {
-        let videos;
-        if (mediaType === "movie") {
-          videos = await tmdbApi.getMovieVideos(mediaId);
-        } else {
-          videos = await tmdbApi.getTVShowVideos(mediaId);
+        // Call our API route instead of direct TMDB API
+        const response = await fetch(`/api/videos/${mediaType}/${mediaId}`);
+
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`);
         }
+
+        const videos = await response.json();
 
         // Find the first official trailer
         const trailer =
           videos.results.find(
-            (video) =>
+            (video: Video) =>
               video.site === "YouTube" &&
               video.type === "Trailer" &&
               video.official
           ) ||
           videos.results.find(
-            (video) => video.site === "YouTube" && video.type === "Trailer"
+            (video: Video) =>
+              video.site === "YouTube" && video.type === "Trailer"
           ) ||
           videos.results[0];
 

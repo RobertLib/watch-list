@@ -11,6 +11,7 @@ import { MovieTrailerButton } from "@/components/movie/MovieTrailerButton";
 import { DetailPageWatchlistButton } from "@/components/DetailPageWatchlistButton";
 import { LanguageSupport } from "@/components/LanguageSupport";
 import { StructuredData } from "@/components/StructuredData";
+import { MoviePageTracker } from "@/components/MoviePageTracker";
 import { extractIdFromSlug } from "@/lib/utils";
 
 function formatRuntime(minutes: number | null): string {
@@ -102,7 +103,7 @@ export async function generateMetadata({
   return {
     title: `${details.title} (${
       new Date(details.release_date).getFullYear() || "N/A"
-    }) - WatchList`,
+    })`,
     description: formattedDescription,
     openGraph: {
       title: `${details.title} (${
@@ -301,6 +302,8 @@ export default async function MoviePage({ params }: MoviePageProps) {
           </div>
         </div>
       </div>
+
+      <MoviePageTracker movieId={id} slug={slug} />
     </div>
   );
 }

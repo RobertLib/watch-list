@@ -2,10 +2,10 @@ import type { WatchProvidersResponse } from "@/types/tmdb";
 
 // Shared TMDB API configuration
 export const TMDB_CONFIG = {
-  API_KEY: process.env.NEXT_PUBLIC_TMDB_API_TOKEN || "",
+  API_KEY: process.env.TMDB_API_TOKEN || "",
   BASE_URL: "https://api.themoviedb.org/3",
   headers: {
-    Authorization: `Bearer ${process.env.NEXT_PUBLIC_TMDB_API_TOKEN || ""}`,
+    Authorization: `Bearer ${process.env.TMDB_API_TOKEN || ""}`,
     "Content-Type": "application/json",
   },
 } as const;
