@@ -13,6 +13,12 @@ interface MediaCarouselProps {
   loading?: boolean;
   className?: string;
   onCardClick?: () => void;
+  id?: string; // Unique identifier for scroll position persistence
+}
+
+// Generate a storage key for scroll position
+function getScrollStorageKey(id: string): string {
+  return `carousel-scroll-${id}`;
 }
 
 export function MediaCarousel({
@@ -21,11 +27,13 @@ export function MediaCarousel({
   loading = false,
   className,
   onCardClick,
+  id,
 }: MediaCarouselProps) {
   const [showLeftButton, setShowLeftButton] = useState(false);
   const [showRightButton, setShowRightButton] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const throttledUpdateRef = useRef<((event: Event) => void) | null>(null);
+  const carouselId = id || title.toLowerCase().replace(/\s+/g, "-");
 
   const updateButtonVisibility = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -36,9 +44,52 @@ export function MediaCarousel({
     setShowRightButton(scrollLeft < scrollWidth - clientWidth - 1);
   }, []);
 
+  // Save scroll position to sessionStorage
+  const saveScrollPosition = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container || !carouselId) return;
+
+    try {
+      sessionStorage.setItem(
+        getScrollStorageKey(carouselId),
+        String(container.scrollLeft)
+      );
+    } catch {
+      // sessionStorage might not be available
+    }
+  }, [carouselId]);
+
+  // Restore scroll position from sessionStorage
   useEffect(() => {
-    throttledUpdateRef.current = throttle(updateButtonVisibility, 100);
-  }, [updateButtonVisibility]);
+    const container = scrollContainerRef.current;
+    if (!container || !carouselId) return;
+
+    try {
+      const savedPosition = sessionStorage.getItem(
+        getScrollStorageKey(carouselId)
+      );
+      if (savedPosition) {
+        const scrollLeft = parseInt(savedPosition, 10);
+        if (!isNaN(scrollLeft)) {
+          // Use requestAnimationFrame to ensure the container is fully rendered
+          requestAnimationFrame(() => {
+            container.scrollLeft = scrollLeft;
+            updateButtonVisibility();
+          });
+        }
+      }
+    } catch {
+      // sessionStorage might not be available
+    }
+  }, [carouselId, updateButtonVisibility]);
+
+  useEffect(() => {
+    const updateAndSave = (event: Event) => {
+      updateButtonVisibility();
+      saveScrollPosition();
+    };
+    throttledUpdateRef.current = throttle(updateAndSave, 100);
+  }, [updateButtonVisibility, saveScrollPosition]);
 
   const scrollLeft = useCallback(() => {
     const container = scrollContainerRef.current;
