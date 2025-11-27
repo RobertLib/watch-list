@@ -4,6 +4,8 @@ import { setRegion, type Region } from "@/lib/region-server";
 import { isValidRegion } from "@/lib/region";
 import {
   getWatchProviderFilterCookieName,
+  getSelectedProvidersCookieName,
+  parseProviderIdsFromCookie,
   type WatchProviderFilter,
 } from "@/lib/watch-provider-settings";
 import { revalidatePath } from "next/cache";
@@ -64,6 +66,38 @@ export async function changeWatchProviderFilter(formData: FormData) {
   });
 
   // Revalidate all pages to reflect the new filter
+  revalidatePath("/", "layout");
+
+  // Also revalidate the profile page specifically
+  revalidatePath("/profile");
+}
+
+export async function changeSelectedProviders(formData: FormData) {
+  const providersString = formData.get("providers") as string;
+
+  // Validate the provider IDs
+  const providerIds = parseProviderIdsFromCookie(providersString || "");
+  const validatedString = providerIds.join(",");
+
+  const cookieStore = await cookies();
+  cookieStore.set(getSelectedProvidersCookieName(), validatedString, {
+    maxAge: 60 * 60 * 24 * 365, // 1 year
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/",
+  });
+
+  // Mark that user has made settings (will hide welcome panel)
+  cookieStore.set("user-has-settings", "true", {
+    maxAge: 60 * 60 * 24 * 365, // 1 year
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/",
+  });
+
+  // Revalidate all pages to reflect the new providers
   revalidatePath("/", "layout");
 
   // Also revalidate the profile page specifically

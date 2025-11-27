@@ -1,7 +1,10 @@
 import { cache } from "react";
 import { tmdbApi } from "./tmdb";
 import { getCachedDiscoveryRequest, TMDB_CONFIG } from "./tmdb-cache";
-import { getWatchProviderFilter } from "./watch-provider-server";
+import {
+  getWatchProviderFilter,
+  getSelectedProviderIdsString,
+} from "./watch-provider-server";
 import { getRegion } from "./region-server";
 import { getRegionCode } from "./region";
 import type { TMDBResponse, Movie, TVShow, MediaItem } from "@/types/tmdb";
@@ -40,12 +43,16 @@ async function buildFilteredUrl(
     region: regionCode,
   };
 
-  // Add watch provider filter if enabled
+  // Add watch provider filter if enabled and user has selected providers
   if (watchProviderFilter === "streaming-only") {
-    // Major streaming platforms (Netflix, Amazon Prime, Disney+, HBO Max, Apple TV+, Hulu, Paramount+)
-    finalParams.with_watch_providers = "8|9|337|384|350|15|531";
-    finalParams.watch_region = regionCode;
-    finalParams.with_watch_monetization_types = "flatrate";
+    // Use user-selected streaming platforms
+    const selectedProviders = await getSelectedProviderIdsString();
+    // Only apply filter if user has selected at least one provider
+    if (selectedProviders) {
+      finalParams.with_watch_providers = selectedProviders;
+      finalParams.watch_region = regionCode;
+      finalParams.with_watch_monetization_types = "flatrate";
+    }
   }
 
   // Apply additional filters

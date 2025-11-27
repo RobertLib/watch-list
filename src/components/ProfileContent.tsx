@@ -1,19 +1,25 @@
 import { Suspense } from "react";
 import { getRegion } from "@/lib/region-server";
-import { getWatchProviderFilter } from "@/lib/watch-provider-server";
-import { Globe, Filter } from "lucide-react";
+import {
+  getWatchProviderFilter,
+  getSelectedProviderIds,
+} from "@/lib/watch-provider-server";
+import { Globe, Filter, Tv } from "lucide-react";
 import { ProfileSettingsForm } from "@/components/ProfileSettingsForm";
 
 async function ProfileSettingsWrapper() {
-  const [currentRegion, currentWatchProviderFilter] = await Promise.all([
-    getRegion(),
-    getWatchProviderFilter(),
-  ]);
+  const [currentRegion, currentWatchProviderFilter, selectedProviderIds] =
+    await Promise.all([
+      getRegion(),
+      getWatchProviderFilter(),
+      getSelectedProviderIds(),
+    ]);
 
   return (
     <ProfileSettingsForm
       currentRegion={currentRegion}
       currentWatchProviderFilter={currentWatchProviderFilter}
+      selectedProviderIds={selectedProviderIds}
     />
   );
 }
@@ -58,6 +64,19 @@ function ProfileSettingsLoadingFallback() {
         <div className="space-y-4">
           <div className="h-10 bg-gray-700 rounded w-full"></div>
           <div className="h-10 bg-gray-700 rounded w-32"></div>
+        </div>
+      </div>
+
+      <div className="border-t border-gray-800 pt-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Tv className="h-6 w-6 text-purple-500" />
+          <h2 className="text-xl font-semibold">Streaming Platforms</h2>
+        </div>
+        <div className="h-4 bg-gray-700 rounded w-3/4 mb-6"></div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          {[...Array(10)].map((_, i) => (
+            <div key={i} className="h-24 bg-gray-700 rounded-lg"></div>
+          ))}
         </div>
       </div>
     </div>
