@@ -20,8 +20,19 @@ const makeDiscoveryRequest = cache(
     params: Record<string, string | number>,
     cacheKey: string
   ): Promise<TMDBResponse<Movie> | TMDBResponse<TVShow>> => {
+    // Include provider filter info in cache key for proper cache invalidation
+    const watchProviderFilter = await getWatchProviderFilter();
+    const selectedProviders = await getSelectedProviderIdsString();
+    const region = await getRegion();
+    const regionCode = getRegionCode(region);
+
+    const fullCacheKey =
+      watchProviderFilter === "streaming-only" && selectedProviders
+        ? `${cacheKey}-${regionCode}-providers-${selectedProviders}`
+        : `${cacheKey}-${regionCode}-all`;
+
     const url = await buildFilteredUrl(endpoint, params);
-    return (await getCachedDiscoveryRequest(url, cacheKey)) as
+    return (await getCachedDiscoveryRequest(url, fullCacheKey)) as
       | TMDBResponse<Movie>
       | TMDBResponse<TVShow>;
   }
