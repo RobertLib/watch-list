@@ -208,6 +208,50 @@ export const tmdbServerApi = {
     return data;
   },
 
+  // Get upcoming movies with optional streaming filter
+  getUpcomingMovies: async (page: number = 1): Promise<TMDBResponse<Movie>> => {
+    const today = new Date().toISOString().split("T")[0];
+    const ninetyDaysLater = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split("T")[0];
+
+    const data = (await makeDiscoveryRequest(
+      "/discover/movie",
+      {
+        page,
+        sort_by: "popularity.desc",
+        "primary_release_date.gte": today,
+        "primary_release_date.lte": ninetyDaysLater,
+      },
+      `upcoming-movies-${page}`,
+    )) as TMDBResponse<Movie>;
+
+    return data;
+  },
+
+  // Get TV shows currently on the air with optional streaming filter
+  getOnTheAirTVShows: async (
+    page: number = 1,
+  ): Promise<TMDBResponse<TVShow>> => {
+    const today = new Date().toISOString().split("T")[0];
+    const nextTwoWeeks = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split("T")[0];
+
+    const data = (await makeDiscoveryRequest(
+      "/discover/tv",
+      {
+        page,
+        sort_by: "popularity.desc",
+        "air_date.gte": today,
+        "air_date.lte": nextTwoWeeks,
+      },
+      `on-the-air-tv-${page}`,
+    )) as TMDBResponse<TVShow>;
+
+    return data;
+  },
+
   // Discover movies by genre with optional streaming filter
   discoverMoviesByGenre: async (
     genreId: number,

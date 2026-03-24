@@ -55,24 +55,29 @@ async function getTVGenres() {
 // Fetch movies that are actually linked in the app (from homepage and /movies page)
 async function getLinkedMovies() {
   try {
-    const [trending, nowPlaying, popular, topRated] = await Promise.all([
-      fetch(`${TMDB_CONFIG.BASE_URL}/trending/all/week`, {
-        headers: TMDB_CONFIG.headers,
-        next: { revalidate: 86400 },
-      }).then((res) => res.json()),
-      fetch(`${TMDB_CONFIG.BASE_URL}/movie/now_playing`, {
-        headers: TMDB_CONFIG.headers,
-        next: { revalidate: 86400 },
-      }).then((res) => res.json()),
-      fetch(`${TMDB_CONFIG.BASE_URL}/movie/popular`, {
-        headers: TMDB_CONFIG.headers,
-        next: { revalidate: 86400 },
-      }).then((res) => res.json()),
-      fetch(`${TMDB_CONFIG.BASE_URL}/movie/top_rated`, {
-        headers: TMDB_CONFIG.headers,
-        next: { revalidate: 86400 },
-      }).then((res) => res.json()),
-    ]);
+    const [trending, nowPlaying, popular, topRated, upcoming] =
+      await Promise.all([
+        fetch(`${TMDB_CONFIG.BASE_URL}/trending/all/week`, {
+          headers: TMDB_CONFIG.headers,
+          next: { revalidate: 86400 },
+        }).then((res) => res.json()),
+        fetch(`${TMDB_CONFIG.BASE_URL}/movie/now_playing`, {
+          headers: TMDB_CONFIG.headers,
+          next: { revalidate: 86400 },
+        }).then((res) => res.json()),
+        fetch(`${TMDB_CONFIG.BASE_URL}/movie/popular`, {
+          headers: TMDB_CONFIG.headers,
+          next: { revalidate: 86400 },
+        }).then((res) => res.json()),
+        fetch(`${TMDB_CONFIG.BASE_URL}/movie/top_rated`, {
+          headers: TMDB_CONFIG.headers,
+          next: { revalidate: 86400 },
+        }).then((res) => res.json()),
+        fetch(`${TMDB_CONFIG.BASE_URL}/movie/upcoming`, {
+          headers: TMDB_CONFIG.headers,
+          next: { revalidate: 86400 },
+        }).then((res) => res.json()),
+      ]);
 
     // Combine all movies and filter out duplicates
     const trendingMovies = (trending.results || []).filter(
@@ -83,6 +88,7 @@ async function getLinkedMovies() {
       ...(nowPlaying.results || []),
       ...(popular.results || []),
       ...(topRated.results || []),
+      ...(upcoming.results || []),
     ];
 
     // Remove duplicates based on ID
@@ -100,24 +106,29 @@ async function getLinkedMovies() {
 // Fetch TV shows that are actually linked in the app (from homepage and /tv-shows page)
 async function getLinkedTVShows() {
   try {
-    const [trending, popular, topRated, airingToday] = await Promise.all([
-      fetch(`${TMDB_CONFIG.BASE_URL}/trending/all/week`, {
-        headers: TMDB_CONFIG.headers,
-        next: { revalidate: 86400 },
-      }).then((res) => res.json()),
-      fetch(`${TMDB_CONFIG.BASE_URL}/tv/popular`, {
-        headers: TMDB_CONFIG.headers,
-        next: { revalidate: 86400 },
-      }).then((res) => res.json()),
-      fetch(`${TMDB_CONFIG.BASE_URL}/tv/top_rated`, {
-        headers: TMDB_CONFIG.headers,
-        next: { revalidate: 86400 },
-      }).then((res) => res.json()),
-      fetch(`${TMDB_CONFIG.BASE_URL}/tv/airing_today`, {
-        headers: TMDB_CONFIG.headers,
-        next: { revalidate: 86400 },
-      }).then((res) => res.json()),
-    ]);
+    const [trending, popular, topRated, airingToday, onTheAir] =
+      await Promise.all([
+        fetch(`${TMDB_CONFIG.BASE_URL}/trending/all/week`, {
+          headers: TMDB_CONFIG.headers,
+          next: { revalidate: 86400 },
+        }).then((res) => res.json()),
+        fetch(`${TMDB_CONFIG.BASE_URL}/tv/popular`, {
+          headers: TMDB_CONFIG.headers,
+          next: { revalidate: 86400 },
+        }).then((res) => res.json()),
+        fetch(`${TMDB_CONFIG.BASE_URL}/tv/top_rated`, {
+          headers: TMDB_CONFIG.headers,
+          next: { revalidate: 86400 },
+        }).then((res) => res.json()),
+        fetch(`${TMDB_CONFIG.BASE_URL}/tv/airing_today`, {
+          headers: TMDB_CONFIG.headers,
+          next: { revalidate: 86400 },
+        }).then((res) => res.json()),
+        fetch(`${TMDB_CONFIG.BASE_URL}/tv/on_the_air`, {
+          headers: TMDB_CONFIG.headers,
+          next: { revalidate: 86400 },
+        }).then((res) => res.json()),
+      ]);
 
     // Combine all TV shows and filter out duplicates
     const trendingTV = (trending.results || []).filter(
@@ -128,6 +139,7 @@ async function getLinkedTVShows() {
       ...(popular.results || []),
       ...(topRated.results || []),
       ...(airingToday.results || []),
+      ...(onTheAir.results || []),
     ];
 
     // Remove duplicates based on ID
@@ -166,6 +178,36 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       url: `${baseUrl}/genres`,
       changeFrequency: "weekly" as const,
       priority: 0.8,
+    },
+    {
+      url: `${baseUrl}/trending`,
+      changeFrequency: "daily" as const,
+      priority: 0.9,
+    },
+    {
+      url: `${baseUrl}/movies/top-rated`,
+      changeFrequency: "weekly" as const,
+      priority: 0.85,
+    },
+    {
+      url: `${baseUrl}/movies/now-playing`,
+      changeFrequency: "daily" as const,
+      priority: 0.85,
+    },
+    {
+      url: `${baseUrl}/movies/upcoming`,
+      changeFrequency: "daily" as const,
+      priority: 0.85,
+    },
+    {
+      url: `${baseUrl}/tv-shows/top-rated`,
+      changeFrequency: "weekly" as const,
+      priority: 0.85,
+    },
+    {
+      url: `${baseUrl}/tv-shows/on-the-air`,
+      changeFrequency: "daily" as const,
+      priority: 0.85,
     },
     {
       url: `${baseUrl}/about`,

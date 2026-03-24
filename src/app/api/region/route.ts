@@ -8,8 +8,8 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const verification = await checkBotId();
-    if (verification.isBot) {
+    const verification = await checkBotId().catch(() => null);
+    if (verification?.isBot) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 

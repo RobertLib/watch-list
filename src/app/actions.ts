@@ -110,6 +110,14 @@ export async function getAiringTodayTVShows(page: number) {
   return await tmdbServerApi.getAiringTodayTVShows(page);
 }
 
+export async function getUpcomingMovies(page: number) {
+  return await tmdbServerApi.getUpcomingMovies(page);
+}
+
+export async function getOnTheAirTVShows(page: number) {
+  return await tmdbServerApi.getOnTheAirTVShows(page);
+}
+
 export async function discoverMoviesByGenre(genreId: number, page: number) {
   return await tmdbServerApi.discoverMoviesByGenre(genreId, page);
 }

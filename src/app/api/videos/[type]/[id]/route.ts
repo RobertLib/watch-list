@@ -17,8 +17,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string; type: string }> },
 ) {
   try {
-    const verification = await checkBotId();
-    if (verification.isBot) {
+    const verification = await checkBotId().catch(() => null);
+    if (verification?.isBot) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 

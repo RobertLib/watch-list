@@ -35,8 +35,8 @@ const POPULAR_PROVIDER_SET = new Set(POPULAR_PROVIDER_IDS);
 
 export async function GET(request: NextRequest) {
   try {
-    const verification = await checkBotId();
-    if (verification.isBot) {
+    const verification = await checkBotId().catch(() => null);
+    if (verification?.isBot) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
