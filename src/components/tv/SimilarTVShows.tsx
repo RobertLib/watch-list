@@ -26,6 +26,7 @@ function SimilarTVShowsContent({ similar }: SimilarTVShowsProps) {
               key={show.id}
               href={`/tv/${slug}`}
               prefetch={false}
+              rel="nofollow"
               className="block"
             >
               <div className="relative aspect-2/3 mb-3">

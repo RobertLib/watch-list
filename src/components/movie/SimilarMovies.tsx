@@ -26,6 +26,7 @@ function SimilarMoviesContent({ similar }: SimilarMoviesProps) {
               key={movie.id}
               href={`/movie/${slug}`}
               prefetch={false}
+              rel="nofollow"
               className="block"
             >
               <div className="relative aspect-2/3 mb-3">
