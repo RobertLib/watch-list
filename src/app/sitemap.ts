@@ -52,10 +52,22 @@ async function getTVGenres() {
   return response.json();
 }
 
+// Fetch multiple pages from a TMDB paginated endpoint
+async function fetchPages(endpoint: string, pages: number) {
+  const requests = Array.from({ length: pages }, (_, i) =>
+    fetch(`${TMDB_CONFIG.BASE_URL}${endpoint}?page=${i + 1}`, {
+      headers: TMDB_CONFIG.headers,
+      next: { revalidate: 86400 },
+    }).then((res) => res.json()),
+  );
+  const results = await Promise.all(requests);
+  return results.flatMap((r) => r.results || []);
+}
+
 // Fetch movies that are actually linked in the app (from homepage and /movies page)
 async function getLinkedMovies() {
   try {
-    const [trending, nowPlaying, popular, topRated, upcoming] =
+    const [trending, nowPlaying, upcoming, popularPages, topRatedPages] =
       await Promise.all([
         fetch(`${TMDB_CONFIG.BASE_URL}/trending/all/week`, {
           headers: TMDB_CONFIG.headers,
@@ -65,33 +77,25 @@ async function getLinkedMovies() {
           headers: TMDB_CONFIG.headers,
           next: { revalidate: 86400 },
         }).then((res) => res.json()),
-        fetch(`${TMDB_CONFIG.BASE_URL}/movie/popular`, {
-          headers: TMDB_CONFIG.headers,
-          next: { revalidate: 86400 },
-        }).then((res) => res.json()),
-        fetch(`${TMDB_CONFIG.BASE_URL}/movie/top_rated`, {
-          headers: TMDB_CONFIG.headers,
-          next: { revalidate: 86400 },
-        }).then((res) => res.json()),
         fetch(`${TMDB_CONFIG.BASE_URL}/movie/upcoming`, {
           headers: TMDB_CONFIG.headers,
           next: { revalidate: 86400 },
         }).then((res) => res.json()),
+        fetchPages("/movie/popular", 10),
+        fetchPages("/movie/top_rated", 10),
       ]);
 
-    // Combine all movies and filter out duplicates
     const trendingMovies = (trending.results || []).filter(
       (item: TrendingItem) => item.media_type === "movie",
     );
     const allMovies = [
       ...trendingMovies,
       ...(nowPlaying.results || []),
-      ...(popular.results || []),
-      ...(topRated.results || []),
       ...(upcoming.results || []),
+      ...popularPages,
+      ...topRatedPages,
     ];
 
-    // Remove duplicates based on ID
     const uniqueMovies = Array.from(
       new Map(allMovies.map((movie) => [movie.id, movie])).values(),
     );
@@ -106,17 +110,9 @@ async function getLinkedMovies() {
 // Fetch TV shows that are actually linked in the app (from homepage and /tv-shows page)
 async function getLinkedTVShows() {
   try {
-    const [trending, popular, topRated, airingToday, onTheAir] =
+    const [trending, airingToday, onTheAir, popularPages, topRatedPages] =
       await Promise.all([
         fetch(`${TMDB_CONFIG.BASE_URL}/trending/all/week`, {
-          headers: TMDB_CONFIG.headers,
-          next: { revalidate: 86400 },
-        }).then((res) => res.json()),
-        fetch(`${TMDB_CONFIG.BASE_URL}/tv/popular`, {
-          headers: TMDB_CONFIG.headers,
-          next: { revalidate: 86400 },
-        }).then((res) => res.json()),
-        fetch(`${TMDB_CONFIG.BASE_URL}/tv/top_rated`, {
           headers: TMDB_CONFIG.headers,
           next: { revalidate: 86400 },
         }).then((res) => res.json()),
@@ -128,21 +124,21 @@ async function getLinkedTVShows() {
           headers: TMDB_CONFIG.headers,
           next: { revalidate: 86400 },
         }).then((res) => res.json()),
+        fetchPages("/tv/popular", 10),
+        fetchPages("/tv/top_rated", 10),
       ]);
 
-    // Combine all TV shows and filter out duplicates
     const trendingTV = (trending.results || []).filter(
       (item: TrendingItem) => item.media_type === "tv",
     );
     const allShows = [
       ...trendingTV,
-      ...(popular.results || []),
-      ...(topRated.results || []),
       ...(airingToday.results || []),
       ...(onTheAir.results || []),
+      ...popularPages,
+      ...topRatedPages,
     ];
 
-    // Remove duplicates based on ID
     const uniqueShows = Array.from(
       new Map(allShows.map((show) => [show.id, show])).values(),
     );
@@ -243,18 +239,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       getLinkedTVShows(),
     ]);
 
-    // Movie pages (only those linked from homepage carousels and /movies page)
+    // Movie pages — popular/top-rated titles get higher priority for SEO
     const moviePages = linkedMovies.results.map((movie: Movie) => ({
       url: `${baseUrl}/movie/${createSlug(movie.title, movie.id)}`,
       changeFrequency: "weekly" as const,
-      priority: 0.6,
+      priority: 0.7,
     }));
 
-    // TV show pages (only those linked from homepage carousels and /tv-shows page)
+    // TV show pages — popular/top-rated titles get higher priority for SEO
     const tvPages = linkedTVShows.results.map((show: TVShow) => ({
       url: `${baseUrl}/tv/${createSlug(show.name, show.id)}`,
       changeFrequency: "weekly" as const,
-      priority: 0.6,
+      priority: 0.7,
     }));
 
     return [
