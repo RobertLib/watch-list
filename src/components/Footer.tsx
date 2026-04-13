@@ -1,4 +1,4 @@
-import { Github, Heart } from "lucide-react";
+import { Heart } from "lucide-react";
 import Link from "next/link";
 
 export function Footer() {
@@ -118,7 +118,6 @@ export function Footer() {
               className="inline-flex items-center gap-2 text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50 rounded"
               aria-label="View source code on GitHub (opens in new tab)"
             >
-              <Github className="w-4 h-4" aria-hidden="true" />
               View on GitHub
             </a>
           </div>

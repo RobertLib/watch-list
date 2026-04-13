@@ -49,6 +49,16 @@ async function cachedFetch(
   return response.json();
 }
 
+// Uncached fetch for detail pages – avoids Vercel Fluid CPU usage
+// for requests that rarely repeat (individual movie/TV detail pages).
+async function noStoreFetch(url: string): Promise<unknown> {
+  const response = await fetch(url, {
+    headers: TMDB_CONFIG.headers,
+    cache: "no-store",
+  });
+  return response.json();
+}
+
 export const tmdbApi = {
   // Get trending movies and TV shows
   getTrending: async (
@@ -189,8 +199,7 @@ export const tmdbApi = {
       params.append_to_response = appendToResponse;
     }
     const url = await buildUrl(`/movie/${movieId}`, params);
-    const cacheKey = `movie-details-${movieId}-${appendToResponse || "basic"}`;
-    return cachedFetch(url, cacheKey, 7200) as Promise<MovieDetails>; // 2 hours cache
+    return noStoreFetch(url) as Promise<MovieDetails>;
   },
 
   // Get TV show details with optional append_to_response
@@ -203,8 +212,7 @@ export const tmdbApi = {
       params.append_to_response = appendToResponse;
     }
     const url = await buildUrl(`/tv/${tvId}`, params);
-    const cacheKey = `tv-details-${tvId}-${appendToResponse || "basic"}`;
-    return cachedFetch(url, cacheKey, 7200) as Promise<TVShowDetails>; // 2 hours cache
+    return noStoreFetch(url) as Promise<TVShowDetails>;
   },
 
   // Get movie credits
