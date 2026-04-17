@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { checkBotId } from "botid/server";
 import { getRegion } from "@/lib/region-server";
 import { getRegionCode } from "@/lib/region";
 
@@ -8,11 +7,6 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const verification = await checkBotId().catch(() => null);
-    if (verification?.isBot) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
-
     const currentRegion = await getRegion();
     const regionCode = getRegionCode(currentRegion);
 

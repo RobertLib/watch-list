@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { checkBotId } from "botid/server";
 import { getRegion } from "@/lib/region-server";
 import { getRegionCode, isValidRegion } from "@/lib/region";
 import { TMDB_CONFIG } from "@/lib/tmdb-cache";
@@ -35,11 +34,6 @@ const POPULAR_PROVIDER_SET = new Set(POPULAR_PROVIDER_IDS);
 
 export async function GET(request: NextRequest) {
   try {
-    const verification = await checkBotId().catch(() => null);
-    if (verification?.isBot) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
-
     // Check if region is provided in query params (for real-time updates)
     const searchParams = request.nextUrl.searchParams;
     const regionParam = searchParams.get("region");

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { checkBotId } from "botid/server";
 import {
   getCachedMovieWatchProviders,
   getCachedTVWatchProviders,
@@ -9,11 +8,6 @@ import { getRegionCode } from "@/lib/region";
 
 export async function GET(request: NextRequest) {
   try {
-    const verification = await checkBotId().catch(() => null);
-    if (verification?.isBot) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
-
     const searchParams = request.nextUrl.searchParams;
     const id = searchParams.get("id");
     const mediaType = searchParams.get("mediaType");

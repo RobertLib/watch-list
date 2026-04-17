@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { checkBotId } from "botid/server";
 
 export const revalidate = 86400; // 24 h — genre lists rarely change
 
@@ -14,11 +13,6 @@ const TMDB_CONFIG = {
 
 export async function GET() {
   try {
-    const verification = await checkBotId().catch(() => null);
-    if (verification?.isBot) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
-
     const [movieGenresResponse, tvGenresResponse] = await Promise.all([
       fetch(`${TMDB_CONFIG.BASE_URL}/genre/movie/list`, {
         headers: TMDB_CONFIG.headers,
