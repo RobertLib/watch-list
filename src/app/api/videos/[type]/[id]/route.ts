@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { checkBotId } from "botid/server";
 
 export const revalidate = 86400; // 24 h — video metadata rarely changes
 
@@ -17,11 +16,6 @@ export async function GET(
   { params }: { params: Promise<{ id: string; type: string }> },
 ) {
   try {
-    const verification = await checkBotId().catch(() => null);
-    if (verification?.isBot) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
-
     const { id, type } = await params;
 
     // Validate parameters
