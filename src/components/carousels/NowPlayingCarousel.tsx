@@ -5,7 +5,12 @@ import { convertMovieToMediaItem } from "@/lib/media-converters";
 import { CarouselSkeleton } from "@/components/skeletons";
 
 async function NowPlayingContent() {
-  const nowPlayingData = await tmdbServerApi.getNowPlayingMovies();
+  let nowPlayingData;
+  try {
+    nowPlayingData = await tmdbServerApi.getNowPlayingMovies();
+  } catch {
+    return null;
+  }
 
   const items = nowPlayingData.results.map(convertMovieToMediaItem);
 

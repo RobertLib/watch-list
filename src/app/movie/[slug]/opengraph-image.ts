@@ -15,13 +15,16 @@ export default async function Image({
     return new Response(null, { status: 404 });
   }
 
-  const res = await fetch(
-    `${TMDB_CONFIG.BASE_URL}/movie/${id}?language=en-US`,
-    {
+  let res: Response;
+  try {
+    res = await fetch(`${TMDB_CONFIG.BASE_URL}/movie/${id}?language=en-US`, {
       headers: TMDB_CONFIG.headers,
       next: { revalidate: 86400 },
-    },
-  );
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch {
+    return new Response(null, { status: 404 });
+  }
 
   if (!res.ok) {
     return new Response(null, { status: 404 });
@@ -39,9 +42,14 @@ export default async function Image({
   }
 
   const size = movie.backdrop_path ? "w1280" : "w780";
-  const imageRes = await fetch(
-    `https://image.tmdb.org/t/p/${size}${imagePath}`,
-  );
+  let imageRes: Response;
+  try {
+    imageRes = await fetch(`https://image.tmdb.org/t/p/${size}${imagePath}`, {
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch {
+    return new Response(null, { status: 404 });
+  }
 
   if (!imageRes.ok) {
     return new Response(null, { status: 404 });

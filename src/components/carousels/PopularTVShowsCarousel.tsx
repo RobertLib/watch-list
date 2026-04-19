@@ -5,7 +5,12 @@ import { convertTVShowToMediaItem } from "@/lib/media-converters";
 import { CarouselSkeleton } from "@/components/skeletons";
 
 async function PopularTVShowsContent() {
-  const popularTVData = await tmdbServerApi.getPopularTVShows();
+  let popularTVData;
+  try {
+    popularTVData = await tmdbServerApi.getPopularTVShows();
+  } catch {
+    return null;
+  }
 
   const items = popularTVData.results.map(convertTVShowToMediaItem);
 

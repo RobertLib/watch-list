@@ -5,7 +5,12 @@ import { convertMovieToMediaItem } from "@/lib/media-converters";
 import { CarouselSkeleton } from "@/components/skeletons";
 
 async function PopularMoviesContent() {
-  const popularMoviesData = await tmdbServerApi.getPopularMovies();
+  let popularMoviesData;
+  try {
+    popularMoviesData = await tmdbServerApi.getPopularMovies();
+  } catch {
+    return null;
+  }
 
   const items = popularMoviesData.results.map(convertMovieToMediaItem);
 

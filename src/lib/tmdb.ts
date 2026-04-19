@@ -33,29 +33,62 @@ async function buildUrl(
   return `${TMDB_CONFIG.BASE_URL}${endpoint}?${queryString}`;
 }
 
+// Retries on transient socket/network errors (UND_ERR_*) up to `retries` times.
+async function fetchWithRetry(
+  fn: () => Promise<Response>,
+  retries: number = 3,
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      const causeCode = (error as { cause?: { code?: string } }).cause?.code;
+      const isNetworkError =
+        (error instanceof TypeError &&
+          (causeCode?.startsWith("UND_ERR") ||
+            causeCode === "ETIMEDOUT" ||
+            causeCode === "ECONNRESET" ||
+            causeCode === "ECONNREFUSED")) ||
+        (error instanceof Error && error.name === "TimeoutError");
+      if (!isNetworkError || attempt === retries) throw error;
+      await new Promise((resolve) =>
+        setTimeout(resolve, 300 * Math.pow(2, attempt)),
+      );
+    }
+  }
+  throw lastError;
+}
+
 // Cached API request helper for basic TMDB calls
 async function cachedFetch(
   url: string,
   cacheKey: string,
   revalidateTime: number = 21600,
 ): Promise<unknown> {
-  const response = await fetch(url, {
-    headers: TMDB_CONFIG.headers,
-    next: {
-      revalidate: revalidateTime,
-      tags: ["tmdb", cacheKey],
-    },
-  });
+  const response = await fetchWithRetry(() =>
+    fetch(url, {
+      headers: TMDB_CONFIG.headers,
+      next: {
+        revalidate: revalidateTime,
+        tags: ["tmdb", cacheKey],
+      },
+    }),
+  );
   return response.json();
 }
 
 // Uncached fetch for detail pages – avoids Vercel Fluid CPU usage
 // for requests that rarely repeat (individual movie/TV detail pages).
 async function noStoreFetch(url: string): Promise<unknown> {
-  const response = await fetch(url, {
-    headers: TMDB_CONFIG.headers,
-    cache: "no-store",
-  });
+  const response = await fetchWithRetry(() =>
+    fetch(url, {
+      headers: TMDB_CONFIG.headers,
+      cache: "no-store",
+      signal: AbortSignal.timeout(10000),
+    }),
+  );
   return response.json();
 }
 
@@ -88,7 +121,12 @@ export const tmdbApi = {
   // Get popular movies
   getPopularMovies: async (page: number = 1): Promise<TMDBResponse<Movie>> => {
     const url = await buildUrl("/movie/popular", { page });
-    const response = await fetch(url, { headers: TMDB_CONFIG.headers });
+    const response = await fetchWithRetry(() =>
+      fetch(url, {
+        headers: TMDB_CONFIG.headers,
+        signal: AbortSignal.timeout(10000),
+      }),
+    );
     return response.json();
   },
 
@@ -97,14 +135,24 @@ export const tmdbApi = {
     page: number = 1,
   ): Promise<TMDBResponse<TVShow>> => {
     const url = await buildUrl("/tv/popular", { page });
-    const response = await fetch(url, { headers: TMDB_CONFIG.headers });
+    const response = await fetchWithRetry(() =>
+      fetch(url, {
+        headers: TMDB_CONFIG.headers,
+        signal: AbortSignal.timeout(10000),
+      }),
+    );
     return response.json();
   },
 
   // Get top rated movies
   getTopRatedMovies: async (page: number = 1): Promise<TMDBResponse<Movie>> => {
     const url = await buildUrl("/movie/top_rated", { page });
-    const response = await fetch(url, { headers: TMDB_CONFIG.headers });
+    const response = await fetchWithRetry(() =>
+      fetch(url, {
+        headers: TMDB_CONFIG.headers,
+        signal: AbortSignal.timeout(10000),
+      }),
+    );
     return response.json();
   },
 
@@ -113,7 +161,12 @@ export const tmdbApi = {
     page: number = 1,
   ): Promise<TMDBResponse<TVShow>> => {
     const url = await buildUrl("/tv/top_rated", { page });
-    const response = await fetch(url, { headers: TMDB_CONFIG.headers });
+    const response = await fetchWithRetry(() =>
+      fetch(url, {
+        headers: TMDB_CONFIG.headers,
+        signal: AbortSignal.timeout(10000),
+      }),
+    );
     return response.json();
   },
 
@@ -122,7 +175,12 @@ export const tmdbApi = {
     page: number = 1,
   ): Promise<TMDBResponse<Movie>> => {
     const url = await buildUrl("/movie/now_playing", { page });
-    const response = await fetch(url, { headers: TMDB_CONFIG.headers });
+    const response = await fetchWithRetry(() =>
+      fetch(url, {
+        headers: TMDB_CONFIG.headers,
+        signal: AbortSignal.timeout(10000),
+      }),
+    );
     return response.json();
   },
 
@@ -131,7 +189,12 @@ export const tmdbApi = {
     page: number = 1,
   ): Promise<TMDBResponse<TVShow>> => {
     const url = await buildUrl("/tv/airing_today", { page });
-    const response = await fetch(url, { headers: TMDB_CONFIG.headers });
+    const response = await fetchWithRetry(() =>
+      fetch(url, {
+        headers: TMDB_CONFIG.headers,
+        signal: AbortSignal.timeout(10000),
+      }),
+    );
     return response.json();
   },
 

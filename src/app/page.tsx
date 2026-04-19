@@ -13,9 +13,23 @@ import { tmdbServerApi } from "@/lib/tmdb-server";
 // Revalidate page every 24 hours - trending content doesn't change fast enough to justify more frequent ISR writes
 export const revalidate = 86400;
 
+import type { TMDBResponse, MediaItem } from "@/types/tmdb";
+
+const EMPTY_TRENDING: TMDBResponse<MediaItem> = {
+  page: 1,
+  results: [],
+  total_pages: 0,
+  total_results: 0,
+};
+
 export default async function Home() {
   // Fetch trending data once and share it between HeroSection and TrendingCarousel
-  const trendingData = await tmdbServerApi.getTrending("all", "week");
+  let trendingData;
+  try {
+    trendingData = await tmdbServerApi.getTrending("all", "week");
+  } catch {
+    trendingData = EMPTY_TRENDING;
+  }
 
   return (
     <>

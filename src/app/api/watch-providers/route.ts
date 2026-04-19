@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const regionProviders = watchProviders.results[regionCode];
+    const regionProviders = watchProviders.results?.[regionCode];
 
     return NextResponse.json({
       providers: regionProviders?.flatrate || [],

@@ -11,7 +11,7 @@ import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
 import { BotIdClient } from "botid/client";
 
-const protectedRoutes = [{ path: "/api/*", method: "POST" as const }];
+const protectedRoutes = [{ path: "/api/indexnow", method: "POST" as const }];
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
