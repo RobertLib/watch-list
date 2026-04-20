@@ -89,6 +89,11 @@ async function noStoreFetch(url: string): Promise<unknown> {
       signal: AbortSignal.timeout(10000),
     }),
   );
+  if (!response.ok) {
+    throw new Error(
+      `TMDB API error: ${response.status} ${response.statusText}`,
+    );
+  }
   return response.json();
 }
 
