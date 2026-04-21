@@ -34,6 +34,12 @@ export function TVPageTracker({ tvId, slug }: TVPageTrackerProps) {
     const storageKey = `indexnow_tv_${slug}`;
     const lastSubmitted = localStorage.getItem(storageKey);
     const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+
+    // Claim the session key immediately to prevent IndexNowTracker (in layout)
+    // from also submitting this page and causing a double submission
+    const sessionKey = `indexnow_submitted_${window.location.pathname}`;
+    sessionStorage.setItem(sessionKey, "true");
+
     if (lastSubmitted && Date.now() - parseInt(lastSubmitted) < thirtyDays) {
       return;
     }

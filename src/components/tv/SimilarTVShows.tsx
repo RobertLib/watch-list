@@ -19,7 +19,7 @@ function SimilarTVShowsContent({ similar }: SimilarTVShowsProps) {
     <section>
       <h2 className="text-2xl font-bold mb-6">Similar TV Shows</h2>
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        {similar.results.slice(0, 12).map((show) => {
+        {similar.results.slice(0, 12).map((show, index) => {
           const slug = createSlug(show.name, show.id);
           return (
             <Link
@@ -35,6 +35,7 @@ function SimilarTVShowsContent({ similar }: SimilarTVShowsProps) {
                   alt={show.name}
                   fill
                   className="object-cover rounded-lg hover:scale-105 transition-transform"
+                  loading={index < 2 ? "eager" : "lazy"}
                 />
               </div>
               <h3 className="font-semibold text-sm line-clamp-2 text-white">

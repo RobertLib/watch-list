@@ -19,7 +19,7 @@ function SimilarMoviesContent({ similar }: SimilarMoviesProps) {
     <section>
       <h2 className="text-2xl font-bold mb-6">Similar Movies</h2>
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        {similar.results.slice(0, 12).map((movie) => {
+        {similar.results.slice(0, 12).map((movie, index) => {
           const slug = createSlug(movie.title, movie.id);
           return (
             <Link
@@ -35,6 +35,7 @@ function SimilarMoviesContent({ similar }: SimilarMoviesProps) {
                   alt={movie.title}
                   fill
                   className="object-cover rounded-lg hover:scale-105 transition-transform"
+                  loading={index < 2 ? "eager" : "lazy"}
                 />
               </div>
               <h3 className="font-semibold text-sm line-clamp-2 text-white">

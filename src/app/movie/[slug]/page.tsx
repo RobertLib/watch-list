@@ -248,7 +248,8 @@ export default async function MoviePage({ params }: MoviePageProps) {
                 alt={details.title}
                 fill
                 className="object-cover"
-                priority
+                loading="eager"
+                fetchPriority="high"
               />
               <div className="absolute inset-0 bg-black/60" />
             </div>
@@ -268,7 +269,7 @@ export default async function MoviePage({ params }: MoviePageProps) {
                       alt={details.title}
                       fill
                       className="object-cover rounded-lg shadow-2xl"
-                      priority
+                      loading="eager"
                     />
                   </div>
                 </div>

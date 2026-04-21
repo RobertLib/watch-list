@@ -73,13 +73,14 @@ function TVDetailsContent({ details }: TVDetailsProps) {
                 {details.production_companies.map((company) => (
                   <div key={company.id} className="flex items-center gap-2">
                     {company.logo_path && (
-                      <Image
-                        src={tmdbApi.getImageUrl(company.logo_path, "w500")}
-                        alt={company.name}
-                        width={40}
-                        height={20}
-                        className="object-contain"
-                      />
+                      <div className="relative w-10 h-5 shrink-0">
+                        <Image
+                          src={tmdbApi.getImageUrl(company.logo_path, "w500")}
+                          alt={company.name}
+                          fill
+                          className="object-contain"
+                        />
+                      </div>
                     )}
                     <span className="text-sm text-white">{company.name}</span>
                   </div>

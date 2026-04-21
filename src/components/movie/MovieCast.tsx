@@ -19,7 +19,7 @@ function MovieCastContent({ credits }: MovieCastProps) {
     <section className="mb-12">
       <h2 className="text-2xl font-bold mb-6">Main Cast</h2>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {mainCast.map((actor) => (
+        {mainCast.map((actor, index) => (
           <div key={actor.id} className="text-center">
             <div className="relative aspect-2/3 mb-3">
               <Image
@@ -27,6 +27,7 @@ function MovieCastContent({ credits }: MovieCastProps) {
                 alt={actor.name}
                 fill
                 className="object-cover rounded-lg"
+                loading={index < 4 ? "eager" : "lazy"}
               />
             </div>
             <h3 className="font-semibold text-sm text-white">{actor.name}</h3>
