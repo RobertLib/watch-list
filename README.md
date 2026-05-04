@@ -49,15 +49,15 @@ A modern Netflix-inspired web application for discovering movies and TV shows ac
 
 ## Tech Stack
 
-- **Framework**: Next.js 15.4.5 with TypeScript and Turbopack
-- **React**: React 19.1.0
+- **Framework**: Next.js 16.2.3 with TypeScript and Turbopack
+- **React**: React 19.2.5
 - **Styling**: Tailwind CSS 4 with PostCSS
-- **Icons**: Lucide React 0.536.0
-- **Analytics**: Vercel Analytics 1.5.0
+- **Icons**: Lucide React 1.8.0
+- **Analytics**: Vercel Analytics 2.0
 - **API**: The Movie Database (TMDb) API
 - **Images**: Next.js Image optimization with remote pattern support
 - **Linting**: ESLint 9 with Next.js configuration
-- **TypeScript**: TypeScript 5
+- **TypeScript**: TypeScript 6
 
 ## Getting Started
 
@@ -175,6 +175,14 @@ src/
 │   ├── WatchProviders.tsx # Streaming platforms display
 │   ├── WatchlistButton.tsx # Watchlist add/remove button
 │   ├── WatchlistCounter.tsx # Real-time watchlist counter
+│   ├── Breadcrumbs.tsx # Breadcrumb navigation
+│   ├── IndexNowTracker.tsx # Automatic IndexNow page tracking
+│   ├── LanguageSupport.tsx # Language selection
+│   ├── MediaDetailTracker.tsx # Detail page analytics tracker
+│   ├── MediaKeywords.tsx # SEO keyword meta component
+│   ├── MoviePageTracker.tsx # Movie page analytics tracker
+│   ├── StreamingProviderSelector.tsx # Streaming provider picker
+│   ├── TVPageTracker.tsx # TV page analytics tracker
 │   ├── WelcomePanel.tsx # Welcome/onboarding panel
 │   ├── WelcomePanelContent.tsx # Welcome panel content
 │   ├── carousels/    # Specialized carousel components
@@ -190,6 +198,10 @@ src/
 │   │   ├── MovieTrailerButton.tsx # Movie trailer button
 │   │   ├── MovieWatchProviders.tsx # Movie streaming info
 │   │   └── SimilarMovies.tsx # Similar movies section
+│   ├── skeletons/    # Loading skeleton components
+│   │   ├── CarouselSkeleton.tsx
+│   │   ├── HeroSkeleton.tsx
+│   │   └── index.ts
 │   └── tv/          # TV show-specific components
 │       ├── SimilarTVShows.tsx # Similar TV shows section
 │       ├── TVCast.tsx # TV show cast display
@@ -198,14 +210,21 @@ src/
 │       └── TVWatchProviders.tsx # TV show streaming info
 ├── contexts/         # React contexts
 │   ├── GenresContext.tsx # Genre data context
+│   ├── IndexNowContext.tsx # IndexNow submission context
 │   └── WatchlistContext.tsx # Watchlist state management
 ├── hooks/           # Custom React hooks
+│   ├── useIndexNow.ts # IndexNow submission hook
 │   └── useVideoOverlay.ts # Video overlay state
 ├── lib/             # Utility functions
+│   ├── analytics.ts # Vercel Analytics event helpers
+│   ├── indexnow.ts  # IndexNow submission logic
+│   ├── media-converters.ts # TMDB response converters
+│   ├── provider-urls.ts # Streaming provider URL helpers
 │   ├── region-server.ts # Server-side region handling
 │   ├── region.ts    # Client-side region utilities
 │   ├── regions-data.ts # Region configuration data
 │   ├── throttle.ts  # Throttling utilities
+│   ├── tmdb-cache.ts # TMDB fetch cache utilities
 │   ├── tmdb-server.ts # Server-side TMDb API client
 │   ├── tmdb.ts      # Client-side TMDb API client
 │   ├── utils.ts     # Helper utilities

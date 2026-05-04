@@ -1,4 +1,3 @@
-import { Suspense } from "react";
 import Image from "next/image";
 import { tmdbApi } from "@/lib/tmdb";
 import type { TVShowDetails } from "@/types/tmdb";
@@ -109,26 +108,6 @@ function TVDetailsContent({ details }: TVDetailsProps) {
   );
 }
 
-function LoadingTVDetails() {
-  return (
-    <div className="bg-gray-900 rounded-lg p-6 shadow border border-gray-800 animate-pulse">
-      <div className="h-6 bg-gray-700 rounded mb-4 w-1/2"></div>
-      <div className="space-y-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i}>
-            <div className="h-4 bg-gray-700 rounded mb-1 w-1/3"></div>
-            <div className="h-4 bg-gray-700 rounded w-2/3"></div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export function TVDetails({ details }: TVDetailsProps) {
-  return (
-    <Suspense fallback={<LoadingTVDetails />}>
-      <TVDetailsContent details={details} />
-    </Suspense>
-  );
+  return <TVDetailsContent details={details} />;
 }

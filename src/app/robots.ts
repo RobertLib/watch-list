@@ -6,12 +6,7 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: "*",
         allow: "/",
-        disallow: [
-          "/api/",
-          "/profile/",
-          "/watchlist/",
-          "/type/", // Block old redirect route
-        ],
+        disallow: ["/api/", "/profile/", "/watchlist/"],
       },
     ],
     sitemap: "https://www.watch-list.me/sitemap.xml",

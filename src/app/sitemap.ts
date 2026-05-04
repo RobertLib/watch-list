@@ -261,8 +261,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       ...tvPages,
     ];
   } catch (error) {
-    console.error("Error generating sitemap:", error);
-    // Return at least static pages on error
+    console.error("Error generating sitemap — detail pages omitted:", error);
+    // Return at least static pages on error; detail pages will be missing
+    // but the sitemap won't break entirely.
     return staticPages;
   }
 }

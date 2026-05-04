@@ -21,10 +21,8 @@ import { extractIdFromSlug, createSlug } from "@/lib/utils";
 // Using Node.js runtime due to Edge Function size limitations
 // export const runtime = "edge";
 
-// SSR – renders on every request; TMDB data is still cached at the fetch level
-// (explicit next.revalidate options in tmdb.ts / tmdb-cache.ts are preserved).
-// This avoids ISR writes entirely while allowing any valid slug to work.
-export const dynamic = "force-dynamic";
+// ISR – revalidate every 24 hours so Googlebot gets pre-rendered HTML
+export const revalidate = 86400;
 
 function formatRuntime(minutes: number | null): string {
   if (!minutes) return "Unknown runtime";

@@ -1,7 +1,5 @@
-import { Suspense } from "react";
 import Image from "next/image";
 import { tmdbApi } from "@/lib/tmdb";
-import { LoadingCard } from "@/components/LoadingSpinner";
 import type { Credits } from "@/types/tmdb";
 
 interface MovieCastProps {
@@ -39,23 +37,6 @@ function MovieCastContent({ credits }: MovieCastProps) {
   );
 }
 
-function LoadingCast() {
-  return (
-    <section className="mb-12">
-      <h2 className="text-2xl font-bold mb-6">Main Cast</h2>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {Array.from({ length: 12 }).map((_, i) => (
-          <LoadingCard key={i} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
 export function MovieCast({ credits }: MovieCastProps) {
-  return (
-    <Suspense fallback={<LoadingCast />}>
-      <MovieCastContent credits={credits} />
-    </Suspense>
-  );
+  return <MovieCastContent credits={credits} />;
 }

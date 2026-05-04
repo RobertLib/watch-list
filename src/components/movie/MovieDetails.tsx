@@ -1,4 +1,3 @@
-import { Suspense } from "react";
 import Image from "next/image";
 import { tmdbApi } from "@/lib/tmdb";
 import type { MovieDetails as MovieDetailsType } from "@/types/tmdb";
@@ -111,26 +110,6 @@ function MovieDetailsContent({ details }: MovieDetailsProps) {
   );
 }
 
-function LoadingMovieDetails() {
-  return (
-    <div className="bg-gray-800 rounded-lg p-6 shadow animate-pulse">
-      <div className="h-6 bg-gray-700 rounded mb-4 w-1/2"></div>
-      <div className="space-y-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i}>
-            <div className="h-4 bg-gray-700 rounded mb-1 w-1/3"></div>
-            <div className="h-4 bg-gray-700 rounded w-2/3"></div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export function MovieDetails({ details }: MovieDetailsProps) {
-  return (
-    <Suspense fallback={<LoadingMovieDetails />}>
-      <MovieDetailsContent details={details} />
-    </Suspense>
-  );
+  return <MovieDetailsContent details={details} />;
 }

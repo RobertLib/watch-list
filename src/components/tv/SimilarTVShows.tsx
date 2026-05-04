@@ -1,8 +1,6 @@
-import { Suspense } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { tmdbApi } from "@/lib/tmdb";
-import { LoadingCard } from "@/components/LoadingSpinner";
 import { createSlug } from "@/lib/utils";
 import type { TMDBResponse, TVShow } from "@/types/tmdb";
 
@@ -52,23 +50,6 @@ function SimilarTVShowsContent({ similar }: SimilarTVShowsProps) {
   );
 }
 
-function LoadingSimilarTVShows() {
-  return (
-    <section>
-      <h2 className="text-2xl font-bold mb-6">Similar TV Shows</h2>
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        {Array.from({ length: 12 }).map((_, i) => (
-          <LoadingCard key={i} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
 export function SimilarTVShows({ similar }: SimilarTVShowsProps) {
-  return (
-    <Suspense fallback={<LoadingSimilarTVShows />}>
-      <SimilarTVShowsContent similar={similar} />
-    </Suspense>
-  );
+  return <SimilarTVShowsContent similar={similar} />;
 }

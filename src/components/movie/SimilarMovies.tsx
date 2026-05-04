@@ -1,8 +1,6 @@
-import { Suspense } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { tmdbApi } from "@/lib/tmdb";
-import { LoadingCard } from "@/components/LoadingSpinner";
 import { createSlug } from "@/lib/utils";
 import type { TMDBResponse, Movie } from "@/types/tmdb";
 
@@ -52,23 +50,6 @@ function SimilarMoviesContent({ similar }: SimilarMoviesProps) {
   );
 }
 
-function LoadingSimilarMovies() {
-  return (
-    <section>
-      <h2 className="text-2xl font-bold mb-6">Similar Movies</h2>
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        {Array.from({ length: 12 }).map((_, i) => (
-          <LoadingCard key={i} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
 export function SimilarMovies({ similar }: SimilarMoviesProps) {
-  return (
-    <Suspense fallback={<LoadingSimilarMovies />}>
-      <SimilarMoviesContent similar={similar} />
-    </Suspense>
-  );
+  return <SimilarMoviesContent similar={similar} />;
 }
