@@ -16,6 +16,8 @@ import { MoviePageTracker } from "@/components/MoviePageTracker";
 import { MediaDetailTracker } from "@/components/MediaDetailTracker";
 import { MediaBreadcrumbs } from "@/components/Breadcrumbs";
 import { MediaKeywords } from "@/components/MediaKeywords";
+import { MediaFullCrew } from "@/components/MediaFullCrew";
+import { MediaReviews } from "@/components/MediaReviews";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
 
 // Using Node.js runtime due to Edge Function size limitations
@@ -80,7 +82,7 @@ const getMovieBasicData = cache(async (id: number) => {
     // Use append_to_response to get all data in a single API call
     const details = await tmdbApi.getMovieDetails(
       id,
-      "watch/providers,credits,videos,similar,translations,keywords",
+      "watch/providers,credits,videos,similar,translations,keywords,reviews",
     );
 
     return {
@@ -363,7 +365,9 @@ export default async function MoviePage({ params }: MoviePageProps) {
         <div className="grid lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2">
             <MovieCast credits={credits} />
+            <MediaFullCrew credits={credits} />
             <MediaKeywords keywords={details.keywords?.keywords ?? []} />
+            <MediaReviews reviews={details.reviews} />
             <SimilarMovies similar={similar} />
           </div>
 

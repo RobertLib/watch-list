@@ -205,6 +205,27 @@ export interface DubbingLanguage {
   english_name: string;
 }
 
+export interface Review {
+  id: string;
+  author: string;
+  author_details: {
+    name: string;
+    username: string;
+    rating: number | null;
+  };
+  content: string;
+  created_at: string;
+  url: string;
+}
+
+export interface ReviewsResponse {
+  id: number;
+  page: number;
+  results: Review[];
+  total_pages: number;
+  total_results: number;
+}
+
 export interface MovieDetails extends Omit<Movie, "genre_ids"> {
   genres: Genre[];
   runtime: number | null;
@@ -225,6 +246,7 @@ export interface MovieDetails extends Omit<Movie, "genre_ids"> {
   recommendations?: TMDBResponse<Movie>;
   translations?: TranslationsResponse;
   keywords?: MovieKeywordsResponse;
+  reviews?: ReviewsResponse;
 }
 
 export interface TVShowDetails extends Omit<TVShow, "genre_ids"> {
@@ -248,4 +270,5 @@ export interface TVShowDetails extends Omit<TVShow, "genre_ids"> {
   recommendations?: TMDBResponse<TVShow>;
   translations?: TVTranslationsResponse;
   keywords?: TVKeywordsResponse;
+  reviews?: ReviewsResponse;
 }
