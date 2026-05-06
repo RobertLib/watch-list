@@ -1,5 +1,5 @@
 import { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import Image from "next/image";
 import { cache } from "react";
 import { tmdbApi } from "@/lib/tmdb";
@@ -137,11 +137,11 @@ export async function generateMetadata({
       })`,
       description: formattedDescription,
       type: "video.tv_show",
-      url: `https://www.watch-list.me/tv/${slug}`,
+      url: `https://www.watch-list.me/tv/${createSlug(details.name, details.id)}`,
       siteName: "WatchList",
       images: [
         {
-          url: `https://www.watch-list.me/tv/${slug}/opengraph-image`,
+          url: `https://www.watch-list.me/tv/${createSlug(details.name, details.id)}/opengraph-image`,
           width: 1200,
           height: 630,
           alt: `${details.name} - TV Show Details`,
@@ -150,7 +150,7 @@ export async function generateMetadata({
       ],
     },
     alternates: {
-      canonical: `https://www.watch-list.me/tv/${slug}`,
+      canonical: `https://www.watch-list.me/tv/${createSlug(details.name, details.id)}`,
     },
   };
 }
@@ -167,6 +167,12 @@ export default async function TVPage({ params }: TVPageProps) {
 
   if (!data) {
     notFound();
+  }
+
+  // Redirect to canonical slug if URL doesn't match
+  const canonicalSlug = createSlug(data.details.name, id);
+  if (slug !== canonicalSlug) {
+    permanentRedirect(`/tv/${canonicalSlug}`);
   }
 
   const { details, credits, videos, similar, translations } = data;

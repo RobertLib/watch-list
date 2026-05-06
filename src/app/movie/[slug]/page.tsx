@@ -1,5 +1,5 @@
 import { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import Image from "next/image";
 import { cache } from "react";
 import { tmdbApi } from "@/lib/tmdb";
@@ -143,11 +143,11 @@ export async function generateMetadata({
       })`,
       description: formattedDescription,
       type: "video.movie",
-      url: `https://www.watch-list.me/movie/${slug}`,
+      url: `https://www.watch-list.me/movie/${createSlug(details.title, details.id)}`,
       siteName: "WatchList",
       images: [
         {
-          url: `https://www.watch-list.me/movie/${slug}/opengraph-image`,
+          url: `https://www.watch-list.me/movie/${createSlug(details.title, details.id)}/opengraph-image`,
           width: 1200,
           height: 630,
           alt: `${details.title} - Movie Details`,
@@ -156,7 +156,7 @@ export async function generateMetadata({
       ],
     },
     alternates: {
-      canonical: `https://www.watch-list.me/movie/${slug}`,
+      canonical: `https://www.watch-list.me/movie/${createSlug(details.title, details.id)}`,
     },
   };
 }
@@ -173,6 +173,12 @@ export default async function MoviePage({ params }: MoviePageProps) {
 
   if (!data) {
     notFound();
+  }
+
+  // Redirect to canonical slug if URL doesn't match
+  const canonicalSlug = createSlug(data.details.title, id);
+  if (slug !== canonicalSlug) {
+    permanentRedirect(`/movie/${canonicalSlug}`);
   }
 
   const { details, credits, videos, similar, translations } = data;
