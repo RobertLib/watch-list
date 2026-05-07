@@ -245,126 +245,121 @@ export default async function TVPage({ params }: TVPageProps) {
       {/* Hero Section with Backdrop */}
       <div className="relative">
         {details.backdrop_path && (
-          <>
-            <div className="absolute inset-0 z-0">
-              <Image
-                src={tmdbApi.getImageUrl(details.backdrop_path, "w1280")}
-                alt={details.name}
-                fill
-                className="object-cover"
-                loading="eager"
-                fetchPriority="high"
-              />
-              <div className="absolute inset-0 bg-black/60" />
-            </div>
-            <div className="relative z-10 container mx-auto px-4 py-8">
-              {/* Breadcrumbs */}
-              <MediaBreadcrumbs
-                mediaType="tv"
-                title={details.name}
-                genres={details.genres}
-              />
-              <div className="grid md:grid-cols-3 gap-8 max-w-6xl mt-6">
-                {/* Poster */}
-                <div className="md:col-span-1">
-                  <div className="relative aspect-2/3 w-full max-w-sm mx-auto">
-                    <Image
-                      src={tmdbApi.getImageUrl(details.poster_path, "w500")}
-                      alt={details.name}
-                      fill
-                      className="object-cover rounded-lg shadow-2xl"
-                      loading="eager"
-                    />
-                  </div>
-                </div>
-
-                {/* TV Show Info */}
-                <div className="md:col-span-2 text-white">
-                  <h1 className="text-4xl md:text-5xl font-bold mb-2">
-                    {details.name}
-                  </h1>
-                  {details.tagline && (
-                    <p className="text-xl text-gray-300 italic mb-4">
-                      {details.tagline}
-                    </p>
-                  )}
-
-                  <div className="flex flex-wrap items-center gap-4 mb-6">
-                    <span className="text-lg">
-                      {new Date(details.first_air_date).getFullYear() || "N/A"}
-                      {details.last_air_date &&
-                        details.last_air_date !== details.first_air_date && (
-                          <>
-                            {" "}
-                            -{" "}
-                            {new Date(details.last_air_date).getFullYear() ||
-                              "N/A"}
-                          </>
-                        )}
-                    </span>
-                    <span>•</span>
-                    <span>
-                      {details.number_of_seasons}{" "}
-                      {details.number_of_seasons === 1 ? "season" : "seasons"}
-                    </span>
-                    <span>•</span>
-                    <span>{details.number_of_episodes} episodes</span>
-                    <span>•</span>
-                    <span>{formatRuntime(details.episode_run_time)}</span>
-                    <span>•</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-yellow-400">★</span>
-                      <span>{details.vote_average?.toFixed(1)}</span>
-                      <span className="text-gray-300">
-                        ({details.vote_count.toLocaleString()} ratings)
-                      </span>
-                    </div>
-                  </div>
-
-                  <GenreTags genres={details.genres} />
-
-                  {details.overview && (
-                    <div className="mt-6">
-                      <h2 className="text-xl font-semibold mb-3">Overview</h2>
-                      <p className="text-gray-200 leading-relaxed">
-                        {details.overview}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Key Crew */}
-                  {creators.length > 0 && (
-                    <div className="mt-6">
-                      <h3 className="font-semibold">Creators</h3>
-                      <p className="text-gray-300">
-                        {creators
-                          .map((c: { name: string }) => c.name)
-                          .join(", ")}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Action Buttons */}
-                  <div className="flex gap-5 mt-6">
-                    <TVTrailerButton
-                      tvId={id}
-                      trailer={trailer}
-                      title={details.name}
-                    />
-                    <DetailPageWatchlistButton
-                      id={id}
-                      title={details.name}
-                      posterPath={details.poster_path}
-                      releaseDate={details.first_air_date}
-                      voteAverage={details.vote_average}
-                      mediaType="tv"
-                    />
-                  </div>
-                </div>
+          <div className="absolute inset-0 z-0">
+            <Image
+              src={tmdbApi.getImageUrl(details.backdrop_path, "w1280")}
+              alt={details.name}
+              fill
+              className="object-cover"
+              loading="eager"
+              fetchPriority="high"
+            />
+            <div className="absolute inset-0 bg-black/60" />
+          </div>
+        )}
+        <div className="relative z-10 container mx-auto px-4 py-8">
+          {/* Breadcrumbs */}
+          <MediaBreadcrumbs
+            mediaType="tv"
+            title={details.name}
+            genres={details.genres}
+          />
+          <div className="grid md:grid-cols-3 gap-8 max-w-6xl mt-6">
+            {/* Poster */}
+            <div className="md:col-span-1">
+              <div className="relative aspect-2/3 w-full max-w-sm mx-auto">
+                <Image
+                  src={tmdbApi.getImageUrl(details.poster_path, "w500")}
+                  alt={details.name}
+                  fill
+                  className="object-cover rounded-lg shadow-2xl"
+                  loading="eager"
+                />
               </div>
             </div>
-          </>
-        )}
+
+            {/* TV Show Info */}
+            <div className="md:col-span-2 text-white">
+              <h1 className="text-4xl md:text-5xl font-bold mb-2">
+                {details.name}
+              </h1>
+              {details.tagline && (
+                <p className="text-xl text-gray-300 italic mb-4">
+                  {details.tagline}
+                </p>
+              )}
+
+              <div className="flex flex-wrap items-center gap-4 mb-6">
+                <span className="text-lg">
+                  {new Date(details.first_air_date).getFullYear() || "N/A"}
+                  {details.last_air_date &&
+                    details.last_air_date !== details.first_air_date && (
+                      <>
+                        {" "}
+                        -{" "}
+                        {new Date(details.last_air_date).getFullYear() || "N/A"}
+                      </>
+                    )}
+                </span>
+                <span>•</span>
+                <span>
+                  {details.number_of_seasons}{" "}
+                  {details.number_of_seasons === 1 ? "season" : "seasons"}
+                </span>
+                <span>•</span>
+                <span>{details.number_of_episodes} episodes</span>
+                <span>•</span>
+                <span>{formatRuntime(details.episode_run_time)}</span>
+                <span>•</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-yellow-400">★</span>
+                  <span>{details.vote_average?.toFixed(1)}</span>
+                  <span className="text-gray-300">
+                    ({details.vote_count.toLocaleString()} ratings)
+                  </span>
+                </div>
+              </div>
+
+              <GenreTags genres={details.genres} />
+
+              {details.overview && (
+                <div className="mt-6">
+                  <h2 className="text-xl font-semibold mb-3">Overview</h2>
+                  <p className="text-gray-200 leading-relaxed">
+                    {details.overview}
+                  </p>
+                </div>
+              )}
+
+              {/* Key Crew */}
+              {creators.length > 0 && (
+                <div className="mt-6">
+                  <h3 className="font-semibold">Creators</h3>
+                  <p className="text-gray-300">
+                    {creators.map((c: { name: string }) => c.name).join(", ")}
+                  </p>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-5 mt-6">
+                <TVTrailerButton
+                  tvId={id}
+                  trailer={trailer}
+                  title={details.name}
+                />
+                <DetailPageWatchlistButton
+                  id={id}
+                  title={details.name}
+                  posterPath={details.poster_path}
+                  releaseDate={details.first_air_date}
+                  voteAverage={details.vote_average}
+                  mediaType="tv"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="container mx-auto px-4 py-8">
