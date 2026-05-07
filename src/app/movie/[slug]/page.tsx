@@ -247,118 +247,118 @@ export default async function MoviePage({ params }: MoviePageProps) {
       {/* Hero Section with Backdrop */}
       <div className="relative">
         {details.backdrop_path && (
-          <>
-            <div className="absolute inset-0 z-0">
-              <Image
-                src={tmdbApi.getImageUrl(details.backdrop_path, "w1280")}
-                alt={details.title}
-                fill
-                className="object-cover"
-                loading="eager"
-                fetchPriority="high"
-              />
-              <div className="absolute inset-0 bg-black/60" />
-            </div>
-            <div className="relative z-10 container mx-auto px-4 py-8">
-              {/* Breadcrumbs */}
-              <MediaBreadcrumbs
-                mediaType="movie"
-                title={details.title}
-                genres={details.genres}
-              />
-              <div className="grid md:grid-cols-3 gap-8 max-w-6xl mt-6">
-                {/* Poster */}
-                <div className="md:col-span-1">
-                  <div className="relative aspect-2/3 w-full max-w-sm mx-auto">
-                    <Image
-                      src={tmdbApi.getImageUrl(details.poster_path, "w500")}
-                      alt={details.title}
-                      fill
-                      className="object-cover rounded-lg shadow-2xl"
-                      loading="eager"
-                    />
-                  </div>
-                </div>
-
-                {/* Movie Info */}
-                <div className="md:col-span-2 text-white">
-                  <h1 className="text-4xl md:text-5xl font-bold mb-2">
-                    {details.title}
-                  </h1>
-                  {details.tagline && (
-                    <p className="text-xl text-gray-300 italic mb-4">
-                      {details.tagline}
-                    </p>
-                  )}
-
-                  <div className="flex flex-wrap items-center gap-4 mb-6">
-                    <span className="text-lg">
-                      {new Date(details.release_date).getFullYear() || "N/A"}
-                    </span>
-                    <span>•</span>
-                    <span>{formatRuntime(details.runtime)}</span>
-                    <span>•</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-yellow-400">★</span>
-                      <span>{details.vote_average?.toFixed(1)}</span>
-                      <span className="text-gray-300">
-                        ({details.vote_count.toLocaleString()} ratings)
-                      </span>
-                    </div>
-                  </div>
-
-                  <GenreTags genres={details.genres} />
-
-                  {details.overview && (
-                    <div className="mt-6">
-                      <h2 className="text-xl font-semibold mb-3">Overview</h2>
-                      <p className="text-gray-200 leading-relaxed">
-                        {details.overview}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Key Crew */}
-                  <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {director && (
-                      <div>
-                        <h3 className="font-semibold">Director</h3>
-                        <p className="text-gray-300">{director.name}</p>
-                      </div>
-                    )}
-                    {writers.length > 0 && (
-                      <div>
-                        <h3 className="font-semibold">Writers</h3>
-                        <p className="text-gray-300">
-                          {writers
-                            .map((w: { name: string }) => w.name)
-                            .join(", ")}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="flex gap-5 mt-6">
-                    <MovieTrailerButton
-                      movieId={id}
-                      trailer={trailer}
-                      title={details.title}
-                    />
-                    <DetailPageWatchlistButton
-                      id={id}
-                      title={details.title}
-                      posterPath={details.poster_path}
-                      releaseDate={details.release_date}
-                      voteAverage={details.vote_average}
-                      mediaType="movie"
-                    />
-                  </div>
+          <div className="absolute inset-0 z-0">
+            <Image
+              src={tmdbApi.getImageUrl(details.backdrop_path, "w1280")}
+              alt={details.title}
+              fill
+              className="object-cover"
+              loading="eager"
+              fetchPriority="high"
+            />
+            <div className="absolute inset-0 bg-black/60" />
+          </div>
+        )}
+        <div className="relative z-10 container mx-auto px-4 py-8">
+          {/* Breadcrumbs */}
+          <MediaBreadcrumbs
+            mediaType="movie"
+            title={details.title}
+            genres={details.genres}
+          />
+          <div className="grid md:grid-cols-3 gap-8 max-w-6xl mt-6">
+            {/* Poster */}
+            {details.poster_path && (
+              <div className="md:col-span-1">
+                <div className="relative aspect-2/3 w-full max-w-sm mx-auto">
+                  <Image
+                    src={tmdbApi.getImageUrl(details.poster_path, "w500")}
+                    alt={details.title}
+                    fill
+                    className="object-cover rounded-lg shadow-2xl"
+                    loading="eager"
+                  />
                 </div>
               </div>
+            )}
+
+            {/* Movie Info */}
+            <div
+              className={`${details.poster_path ? "md:col-span-2" : "md:col-span-3"} text-white`}
+            >
+              <h1 className="text-4xl md:text-5xl font-bold mb-2">
+                {details.title}
+              </h1>
+              {details.tagline && (
+                <p className="text-xl text-gray-300 italic mb-4">
+                  {details.tagline}
+                </p>
+              )}
+
+              <div className="flex flex-wrap items-center gap-4 mb-6">
+                <span className="text-lg">
+                  {new Date(details.release_date).getFullYear() || "N/A"}
+                </span>
+                <span>•</span>
+                <span>{formatRuntime(details.runtime)}</span>
+                <span>•</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-yellow-400">★</span>
+                  <span>{details.vote_average?.toFixed(1)}</span>
+                  <span className="text-gray-300">
+                    ({details.vote_count.toLocaleString()} ratings)
+                  </span>
+                </div>
+              </div>
+
+              <GenreTags genres={details.genres} />
+
+              {details.overview && (
+                <div className="mt-6">
+                  <h2 className="text-xl font-semibold mb-3">Overview</h2>
+                  <p className="text-gray-200 leading-relaxed">
+                    {details.overview}
+                  </p>
+                </div>
+              )}
+
+              {/* Key Crew */}
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                {director && (
+                  <div>
+                    <h3 className="font-semibold">Director</h3>
+                    <p className="text-gray-300">{director.name}</p>
+                  </div>
+                )}
+                {writers.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold">Writers</h3>
+                    <p className="text-gray-300">
+                      {writers.map((w: { name: string }) => w.name).join(", ")}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-5 mt-6">
+                <MovieTrailerButton
+                  movieId={id}
+                  trailer={trailer}
+                  title={details.title}
+                />
+                <DetailPageWatchlistButton
+                  id={id}
+                  title={details.title}
+                  posterPath={details.poster_path}
+                  releaseDate={details.release_date}
+                  voteAverage={details.vote_average}
+                  mediaType="movie"
+                />
+              </div>
             </div>
-          </>
-        )}
+          </div>
+        </div>
       </div>
 
       <div className="container mx-auto px-4 py-8">
