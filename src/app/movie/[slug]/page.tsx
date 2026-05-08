@@ -19,6 +19,8 @@ import { MediaBreadcrumbs } from "@/components/Breadcrumbs";
 import { MediaKeywords } from "@/components/MediaKeywords";
 import { MediaFullCrew } from "@/components/MediaFullCrew";
 import { MediaReviews } from "@/components/MediaReviews";
+import { MediaDidYouKnow } from "@/components/MediaDidYouKnowServer";
+import { buildMovieFacts } from "@/lib/did-you-know";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
 
 // Using Node.js runtime due to Edge Function size limitations
@@ -378,6 +380,7 @@ export default async function MoviePage({ params }: MoviePageProps) {
             <MediaFullCrew credits={credits} />
             <MediaKeywords keywords={details.keywords?.keywords ?? []} />
             <MediaReviews reviews={details.reviews} />
+            <MediaDidYouKnow facts={buildMovieFacts(details, credits)} />
             {details.belongs_to_collection && (
               <MovieCollection collection={details.belongs_to_collection} />
             )}

@@ -19,6 +19,8 @@ import { MediaBreadcrumbs } from "@/components/Breadcrumbs";
 import { MediaKeywords } from "@/components/MediaKeywords";
 import { MediaFullCrew } from "@/components/MediaFullCrew";
 import { MediaReviews } from "@/components/MediaReviews";
+import { MediaDidYouKnow } from "@/components/MediaDidYouKnowServer";
+import { buildTVFacts } from "@/lib/did-you-know";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
 
 // Using Node.js runtime due to Edge Function size limitations
@@ -408,6 +410,7 @@ export default async function TVPage({ params }: TVPageProps) {
             <MediaFullCrew credits={credits} />
             <MediaKeywords keywords={details.keywords?.results ?? []} />
             <MediaReviews reviews={details.reviews} />
+            <MediaDidYouKnow facts={buildTVFacts(details, credits)} />
             {details.seasons && details.seasons.length > 0 && (
               <TVSeasons seasons={details.seasons} tvId={id} />
             )}
