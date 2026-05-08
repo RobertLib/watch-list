@@ -10,7 +10,9 @@ import {
 } from "@/lib/watch-provider-settings";
 import { cookies } from "next/headers";
 import { tmdbServerApi } from "@/lib/tmdb-server";
+import { tmdbApi } from "@/lib/tmdb";
 import type { FilterOptions } from "@/types/filters";
+import type { SeasonDetails } from "@/types/tmdb";
 import { submitToIndexNow, getFullUrl } from "@/lib/indexnow";
 
 export async function changeRegion(formData: FormData) {
@@ -203,5 +205,16 @@ export async function notifyIndexNowOfUpdate(path?: string): Promise<boolean> {
   } catch (error) {
     console.error("Failed to notify IndexNow of update:", error);
     return false;
+  }
+}
+
+export async function fetchSeasonDetails(
+  tvId: number,
+  seasonNumber: number,
+): Promise<SeasonDetails | null> {
+  try {
+    return await tmdbApi.getSeasonDetails(tvId, seasonNumber);
+  } catch {
+    return null;
   }
 }

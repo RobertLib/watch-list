@@ -15,6 +15,7 @@ import {
   PersonTVCredits,
   Person,
   CollectionDetails,
+  SeasonDetails,
 } from "@/types/tmdb";
 import { getRegion } from "@/lib/region-server";
 import { getRegionCode } from "./region";
@@ -425,6 +426,15 @@ export const tmdbApi = {
   ): Promise<CollectionDetails> => {
     const url = await buildUrl(`/collection/${collectionId}`);
     return noStoreFetch(url) as Promise<CollectionDetails>;
+  },
+
+  // Get TV season details with episode list
+  getSeasonDetails: async (
+    tvId: number,
+    seasonNumber: number,
+  ): Promise<SeasonDetails> => {
+    const url = await buildUrl(`/tv/${tvId}/season/${seasonNumber}`);
+    return noStoreFetch(url) as Promise<SeasonDetails>;
   },
 };
 

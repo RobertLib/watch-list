@@ -244,6 +244,10 @@ export interface Season {
   vote_average: number;
 }
 
+export interface SeasonDetails extends Season {
+  episodes: Episode[];
+}
+
 export interface Episode {
   id: number;
   name: string;

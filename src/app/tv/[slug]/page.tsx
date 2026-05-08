@@ -409,7 +409,7 @@ export default async function TVPage({ params }: TVPageProps) {
             <MediaKeywords keywords={details.keywords?.results ?? []} />
             <MediaReviews reviews={details.reviews} />
             {details.seasons && details.seasons.length > 0 && (
-              <TVSeasons seasons={details.seasons} />
+              <TVSeasons seasons={details.seasons} tvId={id} />
             )}
             <SimilarTVShows similar={similar} />
           </div>
