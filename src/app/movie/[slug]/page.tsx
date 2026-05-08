@@ -21,6 +21,7 @@ import { MediaFullCrew } from "@/components/MediaFullCrew";
 import { MediaReviews } from "@/components/MediaReviews";
 import { MediaDidYouKnow } from "@/components/MediaDidYouKnowServer";
 import { buildMovieFacts } from "@/lib/did-you-know";
+import { MediaRatingPanel } from "@/components/MediaRatingPanel";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
 
 // Using Node.js runtime due to Edge Function size limitations
@@ -389,6 +390,11 @@ export default async function MoviePage({ params }: MoviePageProps) {
 
           {/* Sidebar */}
           <div className="space-y-8">
+            <MediaRatingPanel
+              voteAverage={details.vote_average}
+              voteCount={details.vote_count}
+              reviews={details.reviews}
+            />
             <MovieWatchProviders movieId={id} title={details.title} />
             <LanguageSupport translations={translations} />
             <MovieDetails details={details} certification={certification} />

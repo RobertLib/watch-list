@@ -21,6 +21,7 @@ import { MediaFullCrew } from "@/components/MediaFullCrew";
 import { MediaReviews } from "@/components/MediaReviews";
 import { MediaDidYouKnow } from "@/components/MediaDidYouKnowServer";
 import { buildTVFacts } from "@/lib/did-you-know";
+import { MediaRatingPanel } from "@/components/MediaRatingPanel";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
 
 // Using Node.js runtime due to Edge Function size limitations
@@ -419,6 +420,11 @@ export default async function TVPage({ params }: TVPageProps) {
 
           {/* Sidebar */}
           <div className="space-y-8">
+            <MediaRatingPanel
+              voteAverage={details.vote_average}
+              voteCount={details.vote_count}
+              reviews={details.reviews}
+            />
             <TVWatchProviders tvId={id} title={details.name} />
             <LanguageSupport translations={translations} />
             <TVDetails details={details} certification={certification} />
