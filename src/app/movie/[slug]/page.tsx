@@ -9,6 +9,7 @@ import { SimilarMovies } from "@/components/movie/SimilarMovies";
 import { MovieWatchProviders } from "@/components/movie/MovieWatchProviders";
 import { MovieDetails } from "@/components/movie/MovieDetails";
 import { MovieTrailerButton } from "@/components/movie/MovieTrailerButton";
+import { MovieCollection } from "@/components/movie/MovieCollection";
 import { DetailPageWatchlistButton } from "@/components/DetailPageWatchlistButton";
 import { LanguageSupport } from "@/components/LanguageSupport";
 import { StructuredData } from "@/components/StructuredData";
@@ -82,7 +83,7 @@ const getMovieBasicData = cache(async (id: number) => {
     // Use append_to_response to get all data in a single API call
     const details = await tmdbApi.getMovieDetails(
       id,
-      "watch/providers,credits,videos,similar,translations,keywords,reviews",
+      "watch/providers,credits,videos,similar,translations,keywords,reviews,release_dates",
     );
 
     return {
@@ -199,6 +200,15 @@ export default async function MoviePage({ params }: MoviePageProps) {
       member.job === "Screenplay" ||
       member.job === "Story",
   );
+
+  // Extract US age certification, fall back to first available
+  const certificationUS = details.release_dates?.results
+    ?.find((r) => r.iso_3166_1 === "US")
+    ?.release_dates?.find((d) => d.certification)?.certification;
+  const certificationFallback = details.release_dates?.results
+    ?.flatMap((r) => r.release_dates)
+    ?.find((d) => d.certification)?.certification;
+  const certification = certificationUS || certificationFallback;
 
   // Build breadcrumb items
   const breadcrumbItems = [
@@ -368,6 +378,9 @@ export default async function MoviePage({ params }: MoviePageProps) {
             <MediaFullCrew credits={credits} />
             <MediaKeywords keywords={details.keywords?.keywords ?? []} />
             <MediaReviews reviews={details.reviews} />
+            {details.belongs_to_collection && (
+              <MovieCollection collection={details.belongs_to_collection} />
+            )}
             <SimilarMovies similar={similar} />
           </div>
 
@@ -375,7 +388,7 @@ export default async function MoviePage({ params }: MoviePageProps) {
           <div className="space-y-8">
             <MovieWatchProviders movieId={id} title={details.title} />
             <LanguageSupport translations={translations} />
-            <MovieDetails details={details} />
+            <MovieDetails details={details} certification={certification} />
           </div>
         </div>
       </div>

@@ -9,6 +9,7 @@ import { SimilarTVShows } from "@/components/tv/SimilarTVShows";
 import { TVWatchProviders } from "@/components/tv/TVWatchProviders";
 import { TVDetails } from "@/components/tv/TVDetails";
 import { TVTrailerButton } from "@/components/tv/TVTrailerButton";
+import { TVSeasons } from "@/components/tv/TVSeasons";
 import { DetailPageWatchlistButton } from "@/components/DetailPageWatchlistButton";
 import { LanguageSupport } from "@/components/LanguageSupport";
 import { StructuredData } from "@/components/StructuredData";
@@ -76,7 +77,7 @@ const getTVBasicData = cache(async (id: number) => {
     // Use append_to_response to get all data in a single API call
     const details = await tmdbApi.getTVShowDetails(
       id,
-      "watch/providers,credits,videos,similar,translations,keywords,reviews",
+      "watch/providers,credits,videos,similar,translations,keywords,reviews,content_ratings,external_ids",
     );
 
     return {
@@ -187,6 +188,13 @@ export default async function TVPage({ params }: TVPageProps) {
   const creators = credits.crew.filter(
     (member: { job: string }) => member.job === "Creator",
   );
+
+  // Extract US content rating, fall back to first available
+  const certificationUS = details.content_ratings?.results?.find(
+    (r) => r.iso_3166_1 === "US",
+  )?.rating;
+  const certificationFallback = details.content_ratings?.results?.[0]?.rating;
+  const certification = certificationUS || certificationFallback;
 
   function formatRuntime(minutes: number[]): string {
     if (!minutes || minutes.length === 0) return "Unknown runtime";
@@ -341,6 +349,37 @@ export default async function TVPage({ params }: TVPageProps) {
                 </div>
               )}
 
+              {/* Next episode to air */}
+              {details.next_episode_to_air && (
+                <div className="mt-4 bg-white/10 rounded-lg px-4 py-3 inline-block">
+                  <p className="text-gray-300 text-sm font-semibold uppercase tracking-wider mb-1">
+                    Next Episode
+                  </p>
+                  <p className="text-white font-medium">
+                    S
+                    {details.next_episode_to_air.season_number
+                      .toString()
+                      .padStart(2, "0")}
+                    E
+                    {details.next_episode_to_air.episode_number
+                      .toString()
+                      .padStart(2, "0")}
+                    {details.next_episode_to_air.name
+                      ? ` — ${details.next_episode_to_air.name}`
+                      : ""}
+                  </p>
+                  <p className="text-gray-300 text-sm">
+                    {new Date(
+                      details.next_episode_to_air.air_date,
+                    ).toLocaleDateString("en-US", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    })}
+                  </p>
+                </div>
+              )}
+
               {/* Action Buttons */}
               <div className="flex gap-5 mt-6">
                 <TVTrailerButton
@@ -369,6 +408,9 @@ export default async function TVPage({ params }: TVPageProps) {
             <MediaFullCrew credits={credits} />
             <MediaKeywords keywords={details.keywords?.results ?? []} />
             <MediaReviews reviews={details.reviews} />
+            {details.seasons && details.seasons.length > 0 && (
+              <TVSeasons seasons={details.seasons} />
+            )}
             <SimilarTVShows similar={similar} />
           </div>
 
@@ -376,7 +418,7 @@ export default async function TVPage({ params }: TVPageProps) {
           <div className="space-y-8">
             <TVWatchProviders tvId={id} title={details.name} />
             <LanguageSupport translations={translations} />
-            <TVDetails details={details} />
+            <TVDetails details={details} certification={certification} />
           </div>
         </div>
       </div>

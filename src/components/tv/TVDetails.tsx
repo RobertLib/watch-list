@@ -4,9 +4,12 @@ import type { TVShowDetails } from "@/types/tmdb";
 
 interface TVDetailsProps {
   details: TVShowDetails;
+  certification?: string;
 }
 
-function TVDetailsContent({ details }: TVDetailsProps) {
+function TVDetailsContent({ details, certification }: TVDetailsProps) {
+  const imdbId = details.external_ids?.imdb_id;
+
   return (
     <div className="bg-gray-900 rounded-lg p-6 shadow border border-gray-800">
       <h3 className="text-xl font-bold mb-4 text-white">TV Show Facts</h3>
@@ -25,6 +28,17 @@ function TVDetailsContent({ details }: TVDetailsProps) {
           <span className="font-semibold text-gray-300">In Production:</span>
           <p className="text-white">{details.in_production ? "Yes" : "No"}</p>
         </div>
+
+        {certification && (
+          <div>
+            <span className="font-semibold text-gray-300">Age Rating:</span>
+            <p className="text-white">
+              <span className="inline-block border border-gray-400 text-gray-200 text-sm px-2 py-0.5 rounded mt-1">
+                {certification}
+              </span>
+            </p>
+          </div>
+        )}
 
         <div>
           <span className="font-semibold text-gray-300">Language:</span>
@@ -62,6 +76,30 @@ function TVDetailsContent({ details }: TVDetailsProps) {
           </div>
         )}
 
+        {details.networks && details.networks.length > 0 && (
+          <div>
+            <span className="font-semibold text-gray-300">Networks:</span>
+            <div className="mt-2 flex flex-wrap gap-3">
+              {details.networks.map((network) => (
+                <div key={network.id} className="flex items-center gap-2">
+                  {network.logo_path ? (
+                    <div className="relative w-14 h-6 shrink-0">
+                      <Image
+                        src={tmdbApi.getImageUrl(network.logo_path, "w500")}
+                        alt={network.name}
+                        fill
+                        className="object-contain"
+                      />
+                    </div>
+                  ) : (
+                    <span className="text-sm text-white">{network.name}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {details.production_companies &&
           details.production_companies.length > 0 && (
             <div>
@@ -88,8 +126,8 @@ function TVDetailsContent({ details }: TVDetailsProps) {
             </div>
           )}
 
-        {details.homepage && (
-          <div>
+        <div className="flex flex-col gap-2 pt-1">
+          {details.homepage && (
             <a
               href={details.homepage}
               target="_blank"
@@ -101,13 +139,26 @@ function TVDetailsContent({ details }: TVDetailsProps) {
                 <path d="M14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7zm-2 16H5V12H3v7c0 1.1.9 2 2 2h7v-2z" />
               </svg>
             </a>
-          </div>
-        )}
+          )}
+          {imdbId && (
+            <a
+              href={`https://www.imdb.com/title/${imdbId}/`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 text-yellow-400 hover:text-yellow-300"
+            >
+              View on IMDb
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7zm-2 16H5V12H3v7c0 1.1.9 2 2 2h7v-2z" />
+              </svg>
+            </a>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-export function TVDetails({ details }: TVDetailsProps) {
-  return <TVDetailsContent details={details} />;
+export function TVDetails({ details, certification }: TVDetailsProps) {
+  return <TVDetailsContent details={details} certification={certification} />;
 }

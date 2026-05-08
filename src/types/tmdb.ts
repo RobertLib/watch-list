@@ -226,6 +226,71 @@ export interface ReviewsResponse {
   total_results: number;
 }
 
+export interface Network {
+  id: number;
+  name: string;
+  logo_path: string | null;
+  origin_country: string;
+}
+
+export interface Season {
+  id: number;
+  name: string;
+  overview: string;
+  poster_path: string | null;
+  season_number: number;
+  episode_count: number;
+  air_date: string;
+  vote_average: number;
+}
+
+export interface Episode {
+  id: number;
+  name: string;
+  overview: string;
+  air_date: string;
+  episode_number: number;
+  season_number: number;
+  still_path: string | null;
+  vote_average: number;
+  runtime: number | null;
+}
+
+export interface ReleaseDateEntry {
+  certification: string;
+  iso_639_1: string;
+  release_date: string;
+  type: number;
+  note: string;
+}
+
+export interface ReleaseDatesResult {
+  iso_3166_1: string;
+  release_dates: ReleaseDateEntry[];
+}
+
+export interface ReleaseDatesResponse {
+  id: number;
+  results: ReleaseDatesResult[];
+}
+
+export interface ContentRatingEntry {
+  iso_3166_1: string;
+  rating: string;
+}
+
+export interface ContentRatingsResponse {
+  id: number;
+  results: ContentRatingEntry[];
+}
+
+export interface MovieCollection {
+  id: number;
+  name: string;
+  poster_path: string | null;
+  backdrop_path: string | null;
+}
+
 export interface MovieDetails extends Omit<Movie, "genre_ids"> {
   genres: Genre[];
   runtime: number | null;
@@ -238,6 +303,7 @@ export interface MovieDetails extends Omit<Movie, "genre_ids"> {
   tagline: string | null;
   imdb_id: string | null;
   homepage: string | null;
+  belongs_to_collection: MovieCollection | null;
   "watch/providers"?: WatchProvidersResponse;
   // append_to_response fields
   credits?: Credits;
@@ -247,6 +313,7 @@ export interface MovieDetails extends Omit<Movie, "genre_ids"> {
   translations?: TranslationsResponse;
   keywords?: MovieKeywordsResponse;
   reviews?: ReviewsResponse;
+  release_dates?: ReleaseDatesResponse;
 }
 
 export interface TVShowDetails extends Omit<TVShow, "genre_ids"> {
@@ -262,6 +329,10 @@ export interface TVShowDetails extends Omit<TVShow, "genre_ids"> {
   homepage: string | null;
   last_air_date: string;
   in_production: boolean;
+  networks: Network[];
+  seasons: Season[];
+  next_episode_to_air: Episode | null;
+  last_episode_to_air: Episode | null;
   "watch/providers"?: WatchProvidersResponse;
   // append_to_response fields
   credits?: Credits;
@@ -271,4 +342,6 @@ export interface TVShowDetails extends Omit<TVShow, "genre_ids"> {
   translations?: TVTranslationsResponse;
   keywords?: TVKeywordsResponse;
   reviews?: ReviewsResponse;
+  external_ids?: { imdb_id?: string | null; tvdb_id?: number | null };
+  content_ratings?: ContentRatingsResponse;
 }
