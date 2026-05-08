@@ -115,6 +115,19 @@ export default function Loading() {
 
           {/* Sidebar */}
           <div className="space-y-8">
+            {/* Rating Panel */}
+            <div className="bg-gray-800 rounded-lg p-5 animate-pulse">
+              <div className="h-6 bg-gray-700 rounded w-16 mb-4"></div>
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-24 h-24 bg-gray-700 rounded-full"></div>
+                <div className="space-y-2">
+                  <div className="h-8 bg-gray-700 rounded w-16"></div>
+                  <div className="h-4 bg-gray-700 rounded w-20"></div>
+                  <div className="h-3 bg-gray-700 rounded w-24"></div>
+                </div>
+              </div>
+            </div>
+
             {/* Watch Providers */}
             <div className="bg-gray-800 rounded-lg p-6 animate-pulse">
               <div className="h-6 bg-gray-700 rounded w-32 mb-4"></div>
