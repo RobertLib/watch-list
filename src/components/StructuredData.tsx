@@ -28,7 +28,13 @@ interface ProductionCountry {
 }
 
 interface StructuredDataProps {
-  type: "Website" | "Movie" | "TVSeries" | "WebApplication" | "BreadcrumbList";
+  type:
+    | "Website"
+    | "Movie"
+    | "TVSeries"
+    | "WebApplication"
+    | "BreadcrumbList"
+    | "Person";
   data: {
     title?: string;
     name?: string;
@@ -191,6 +197,25 @@ export function StructuredData({ type, data }: StructuredDataProps) {
             name: item.name,
             item: item.url,
           })) || [],
+      };
+      break;
+
+    case "Person":
+      structuredData = {
+        "@context": "https://schema.org",
+        "@type": "Person",
+        "@id": data.url,
+        url: data.url,
+        name: data.name,
+        description: data.overview || undefined,
+        image: data.poster_path
+          ? `https://image.tmdb.org/t/p/w500${data.poster_path}`
+          : undefined,
+        birthDate: data.release_date || undefined,
+        birthPlace: data.birthPlace
+          ? { "@type": "Place", name: data.birthPlace }
+          : undefined,
+        sameAs: data.sameAs || undefined,
       };
       break;
 

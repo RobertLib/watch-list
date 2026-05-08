@@ -7,7 +7,13 @@ import {
 } from "./watch-provider-server";
 import { getRegion } from "./region-server";
 import { getRegionCode } from "./region";
-import type { TMDBResponse, Movie, TVShow, MediaItem } from "@/types/tmdb";
+import type {
+  TMDBResponse,
+  Movie,
+  TVShow,
+  MediaItem,
+  Person,
+} from "@/types/tmdb";
 import type { FilterOptions } from "@/types/filters";
 
 // IMPORTANT: Watch providers are now loaded lazily on the client side via /api/watch-providers
@@ -456,5 +462,13 @@ export const tmdbServerApi = {
   ): Promise<TMDBResponse<MediaItem>> => {
     // Use the client API function since search doesn't need server-side filtering
     return tmdbApi.searchMulti(query, page);
+  },
+
+  // Search for people
+  searchPerson: async (
+    query: string,
+    page: number = 1,
+  ): Promise<TMDBResponse<Person>> => {
+    return tmdbApi.searchPerson(query, page);
   },
 };

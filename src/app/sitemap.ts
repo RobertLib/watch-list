@@ -24,6 +24,11 @@ interface TrendingItem {
   name?: string;
 }
 
+interface Person {
+  id: number;
+  name: string;
+}
+
 // Server-side TMDB config for sitemap generation (no cookies)
 const TMDB_CONFIG = {
   BASE_URL: "https://api.themoviedb.org/3",
@@ -206,6 +211,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.85,
     },
     {
+      url: `${baseUrl}/people`,
+      changeFrequency: "weekly" as const,
+      priority: 0.8,
+    },
+    {
       url: `${baseUrl}/about`,
       changeFrequency: "monthly" as const,
       priority: 0.5,
@@ -233,10 +243,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.7,
     }));
 
-    // Get movies and TV shows that are actually linked in the app
-    const [linkedMovies, linkedTVShows] = await Promise.all([
+    // Get movies, TV shows and people that are actually linked in the app
+    const [linkedMovies, linkedTVShows, popularPeople] = await Promise.all([
       getLinkedMovies(),
       getLinkedTVShows(),
+      fetchPages("/person/popular", 3),
     ]);
 
     // Movie pages — popular/top-rated titles get higher priority for SEO
@@ -253,12 +264,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.7,
     }));
 
+    // Person detail pages
+    const personPages = popularPeople.map((person: Person) => ({
+      url: `${baseUrl}/person/${createSlug(person.name, person.id)}`,
+      changeFrequency: "monthly" as const,
+      priority: 0.6,
+    }));
+
     return [
       ...staticPages,
       ...movieGenrePages,
       ...tvGenrePages,
       ...moviePages,
       ...tvPages,
+      ...personPages,
     ];
   } catch (error) {
     console.error("Error generating sitemap — detail pages omitted:", error);

@@ -8,12 +8,13 @@ import { cn } from "@/lib/utils";
 import { MediaCarousel } from "./MediaCarousel";
 import { LoadingSpinner } from "./LoadingSpinner";
 import { WatchlistCounter } from "./WatchlistCounter";
-import { MediaItem } from "@/types/tmdb";
-import { searchMulti } from "@/app/actions";
+import { MediaItem, Person } from "@/types/tmdb";
+import { searchMulti, searchPerson } from "@/app/actions";
 
 export function Navigation() {
   const pathname = usePathname();
   const [searchResults, setSearchResults] = useState<MediaItem[]>([]);
+  const [personResults, setPersonResults] = useState<Person[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -37,6 +38,9 @@ export function Navigation() {
     }
     if (href === "/watchlist") {
       return pathname === "/watchlist";
+    }
+    if (href === "/people") {
+      return pathname.startsWith("/people") || pathname.startsWith("/person");
     }
     return pathname === href;
   };
@@ -63,6 +67,7 @@ export function Navigation() {
   const handleSearch = async (query: string) => {
     if (!query.trim()) {
       setSearchResults([]);
+      setPersonResults([]);
       setIsSearching(false);
       setIsLoading(false);
       return;
@@ -73,8 +78,12 @@ export function Navigation() {
       setIsLoading(true);
       // Close mobile menu when search starts
       setIsMobileMenuOpen(false);
-      const response = await searchMulti(query, 1);
-      setSearchResults(response.results);
+      const [mediaResponse, peopleResponse] = await Promise.all([
+        searchMulti(query, 1),
+        searchPerson(query, 1),
+      ]);
+      setSearchResults(mediaResponse.results);
+      setPersonResults(peopleResponse.results.slice(0, 8));
     } catch (error) {
       console.error("Error searching:", error);
       setSearchResults([]);
@@ -91,6 +100,7 @@ export function Navigation() {
   const clearSearch = () => {
     setSearchQuery("");
     setSearchResults([]);
+    setPersonResults([]);
     setIsSearching(false);
     setIsLoading(false);
     setIsSearchOpen(false);
@@ -237,6 +247,20 @@ export function Navigation() {
                 Genres
               </Link>
               <Link
+                href="/people"
+                prefetch={false}
+                onClick={clearSearch}
+                className={cn(
+                  "transition-colors",
+                  isActiveLink("/people")
+                    ? "text-white border-b-2 border-blue-500 pb-1"
+                    : "text-gray-300 hover:text-white",
+                )}
+                aria-current={isActiveLink("/people") ? "page" : undefined}
+              >
+                People
+              </Link>
+              <Link
                 href="/watchlist"
                 prefetch={false}
                 onClick={clearSearch}
@@ -317,7 +341,7 @@ export function Navigation() {
                 id="search-input"
                 ref={searchInputRef}
                 type="text"
-                placeholder="Search movies, TV shows..."
+                placeholder="Search movies, TV shows, people..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full px-4 py-3 pl-12 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors"
@@ -416,6 +440,20 @@ export function Navigation() {
                 Genres
               </Link>
               <Link
+                href="/people"
+                prefetch={false}
+                onClick={handleMobileLinkClick}
+                className={cn(
+                  "block transition-colors",
+                  isActiveLink("/people")
+                    ? "text-white font-semibold"
+                    : "text-gray-300 hover:text-white",
+                )}
+                aria-current={isActiveLink("/people") ? "page" : undefined}
+              >
+                People
+              </Link>
+              <Link
                 href="/watchlist"
                 prefetch={false}
                 onClick={handleMobileLinkClick}
@@ -439,7 +477,10 @@ export function Navigation() {
 
       {/* Search Results Overlay */}
       {isSearching &&
-        (isLoading || searchResults.length > 0 || searchQuery.trim()) && (
+        (isLoading ||
+          searchResults.length > 0 ||
+          personResults.length > 0 ||
+          searchQuery.trim()) && (
           <div
             className="fixed inset-0 z-40 bg-black overflow-y-auto"
             role="dialog"
@@ -469,7 +510,7 @@ export function Navigation() {
                   >
                     {isLoading
                       ? "Searching..."
-                      : searchResults.length > 0
+                      : searchResults.length > 0 || personResults.length > 0
                         ? "Search Results"
                         : "No Results"}
                   </h2>
@@ -485,8 +526,8 @@ export function Navigation() {
                 <div id="search-results-info" className="sr-only">
                   {isLoading
                     ? "Searching for results..."
-                    : searchResults.length > 0
-                      ? `Found ${searchResults.length} results`
+                    : searchResults.length > 0 || personResults.length > 0
+                      ? `Found ${searchResults.length + personResults.length} results`
                       : "No results found"}
                 </div>
 
@@ -501,13 +542,59 @@ export function Navigation() {
                       Searching for results...
                     </p>
                   </div>
-                ) : searchResults.length > 0 ? (
+                ) : searchResults.length > 0 || personResults.length > 0 ? (
                   <div role="region" aria-labelledby="search-results-title">
-                    <MediaCarousel
-                      title=""
-                      items={searchResults}
-                      onCardClick={clearSearch}
-                    />
+                    {searchResults.length > 0 && (
+                      <MediaCarousel
+                        title=""
+                        items={searchResults}
+                        onCardClick={clearSearch}
+                      />
+                    )}
+                    {personResults.length > 0 && (
+                      <div className="mt-8">
+                        <h3 className="text-lg font-semibold text-white mb-4">
+                          People
+                        </h3>
+                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+                          {personResults.map((person) => (
+                            <Link
+                              key={person.id}
+                              href={`/person/${person.name
+                                .toLowerCase()
+                                .replace(/[^a-z0-9]+/g, "-")
+                                .replace(/^-|-$/g, "")}-${person.id}`}
+                              onClick={clearSearch}
+                              className="group block text-center"
+                            >
+                              <div className="relative aspect-2/3 mb-2 overflow-hidden rounded-lg bg-gray-800">
+                                {person.profile_path ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={`https://image.tmdb.org/t/p/w185${person.profile_path}`}
+                                    alt={person.name}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                                    loading="lazy"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-gray-600 text-3xl">
+                                    👤
+                                  </div>
+                                )}
+                              </div>
+                              <p className="text-xs font-medium text-white group-hover:text-blue-400 transition-colors line-clamp-2 leading-tight">
+                                {person.name}
+                              </p>
+                              {person.known_for_department && (
+                                <p className="text-xs text-gray-500">
+                                  {person.known_for_department}
+                                </p>
+                              )}
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div

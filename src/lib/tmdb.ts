@@ -10,6 +10,10 @@ import {
   VideosResponse,
   TranslationsResponse,
   TVTranslationsResponse,
+  PersonDetails,
+  PersonMovieCredits,
+  PersonTVCredits,
+  Person,
 } from "@/types/tmdb";
 import { getRegion } from "@/lib/region-server";
 import { getRegionCode } from "./region";
@@ -370,6 +374,48 @@ export const tmdbApi = {
     const url = await buildUrl(`/tv/${tvId}/translations`);
     const cacheKey = `tv-translations-${tvId}`;
     return cachedFetch(url, cacheKey, 86400) as Promise<TVTranslationsResponse>; // 24 hours cache
+  },
+
+  // Get person details
+  getPersonDetails: async (personId: number): Promise<PersonDetails> => {
+    const url = await buildUrl(`/person/${personId}`);
+    return noStoreFetch(url) as Promise<PersonDetails>;
+  },
+
+  // Get person movie credits
+  getPersonMovieCredits: async (
+    personId: number,
+  ): Promise<PersonMovieCredits> => {
+    const url = await buildUrl(`/person/${personId}/movie_credits`);
+    const cacheKey = `person-movie-credits-${personId}`;
+    return cachedFetch(url, cacheKey, 7200) as Promise<PersonMovieCredits>; // 2 hours cache
+  },
+
+  // Get person TV credits
+  getPersonTVCredits: async (personId: number): Promise<PersonTVCredits> => {
+    const url = await buildUrl(`/person/${personId}/tv_credits`);
+    const cacheKey = `person-tv-credits-${personId}`;
+    return cachedFetch(url, cacheKey, 7200) as Promise<PersonTVCredits>; // 2 hours cache
+  },
+
+  // Get popular people
+  getPopularPeople: async (page: number = 1): Promise<TMDBResponse<Person>> => {
+    const url = await buildUrl("/person/popular", { page });
+    const cacheKey = `popular-people-${page}`;
+    return cachedFetch(url, cacheKey, 3600) as Promise<TMDBResponse<Person>>; // 1 hour cache
+  },
+
+  // Search people by name
+  searchPerson: async (
+    query: string,
+    page: number = 1,
+  ): Promise<TMDBResponse<Person>> => {
+    const url = await buildUrl("/search/person", {
+      query: encodeURIComponent(query),
+      page,
+    });
+    const cacheKey = `search-person-${query}-${page}`;
+    return cachedFetch(url, cacheKey, 3600) as Promise<TMDBResponse<Person>>; // 1 hour cache
   },
 };
 

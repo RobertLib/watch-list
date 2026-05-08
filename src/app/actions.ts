@@ -126,6 +126,10 @@ export async function searchMulti(query: string, page: number = 1) {
   return await tmdbServerApi.searchMulti(query, page);
 }
 
+export async function searchPerson(query: string, page: number = 1) {
+  return await tmdbServerApi.searchPerson(query, page);
+}
+
 export async function discoverTVShowsByGenre(genreId: number, page: number) {
   return await tmdbServerApi.discoverTVShowsByGenre(genreId, page);
 }

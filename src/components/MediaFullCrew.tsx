@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { createSlug } from "@/lib/utils";
 import type { Credits } from "@/types/tmdb";
 
 interface MediaFullCrewProps {
@@ -42,7 +44,12 @@ export function MediaFullCrew({ credits }: MediaFullCrewProps) {
                   className="text-white text-sm"
                 >
                   <span className="text-gray-400">{member.job}: </span>
-                  {member.name}
+                  <Link
+                    href={`/person/${createSlug(member.name, member.id)}`}
+                    className="hover:text-blue-400 transition-colors"
+                  >
+                    {member.name}
+                  </Link>
                 </li>
               ))}
             </ul>

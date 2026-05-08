@@ -87,6 +87,13 @@ export function Footer() {
                 Browse Genres
               </Link>
               <Link
+                href="/people"
+                prefetch={false}
+                className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
+              >
+                People
+              </Link>
+              <Link
                 href="/about"
                 prefetch={false}
                 className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"

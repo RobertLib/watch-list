@@ -291,6 +291,67 @@ export interface MovieCollection {
   backdrop_path: string | null;
 }
 
+export interface Person {
+  id: number;
+  name: string;
+  profile_path: string | null;
+  known_for_department: string;
+  popularity: number;
+  known_for: (Movie | TVShow)[];
+}
+
+export interface PersonDetails {
+  id: number;
+  name: string;
+  biography: string | null;
+  birthday: string | null;
+  deathday: string | null;
+  place_of_birth: string | null;
+  profile_path: string | null;
+  known_for_department: string;
+  gender: number;
+  popularity: number;
+  adult: boolean;
+  also_known_as: string[];
+  homepage: string | null;
+  imdb_id: string | null;
+}
+
+export interface PersonMovieCredit {
+  id: number;
+  title: string;
+  character: string;
+  poster_path: string | null;
+  release_date: string;
+  vote_average: number;
+  vote_count: number;
+  popularity: number;
+}
+
+export interface PersonTVCredit {
+  id: number;
+  name: string;
+  character: string;
+  poster_path: string | null;
+  first_air_date: string;
+  vote_average: number;
+  vote_count: number;
+  popularity: number;
+  episode_count: number;
+}
+
+export interface PersonCredits {
+  cast: PersonMovieCredit[] | PersonTVCredit[];
+}
+
+export interface PersonMovieCredits {
+  cast: PersonMovieCredit[];
+}
+
+export interface PersonTVCredits {
+  cast: PersonTVCredit[];
+}
+
 export interface MovieDetails extends Omit<Movie, "genre_ids"> {
   genres: Genre[];
   runtime: number | null;
