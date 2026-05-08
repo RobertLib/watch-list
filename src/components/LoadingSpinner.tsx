@@ -17,13 +17,10 @@ export function LoadingSpinner({ className = "" }: { className?: string }) {
 export function LoadingCard() {
   return (
     <div
-      className="animate-pulse"
+      className="w-full h-60 sm:h-72 bg-gray-700 rounded-lg animate-pulse"
       role="status"
       aria-label="Loading content card"
     >
-      <div className="bg-gray-700 rounded-lg aspect-2/3 mb-3"></div>
-      <div className="h-4 bg-gray-700 rounded mb-2"></div>
-      <div className="h-3 bg-gray-700 rounded w-1/2"></div>
       <span className="sr-only">Loading content...</span>
     </div>
   );
@@ -31,20 +28,20 @@ export function LoadingCard() {
 
 export function LoadingSection({
   title,
-  rows = 2,
-  cols = 6,
+  count = 20,
 }: {
   title: string;
+  count?: number;
+  /** @deprecated use count */
   rows?: number;
+  /** @deprecated use count */
   cols?: number;
 }) {
   return (
     <section className="mb-12">
       <h2 className="text-2xl font-bold mb-6">{title}</h2>
-      <div
-        className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-${cols} gap-4`}
-      >
-        {Array.from({ length: rows * cols }).map((_, i) => (
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+        {Array.from({ length: count }).map((_, i) => (
           <LoadingCard key={i} />
         ))}
       </div>
