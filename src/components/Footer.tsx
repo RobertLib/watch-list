@@ -24,13 +24,6 @@ export function Footer() {
             <h3 className="text-white font-semibold mb-4">Quick Links</h3>
             <nav className="space-y-2" aria-label="Footer navigation">
               <Link
-                href="/trending"
-                prefetch={false}
-                className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
-              >
-                Trending Now
-              </Link>
-              <Link
                 href="/movies"
                 prefetch={false}
                 className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
@@ -38,46 +31,11 @@ export function Footer() {
                 Popular Movies
               </Link>
               <Link
-                href="/movies/top-rated"
-                prefetch={false}
-                className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
-              >
-                Top Rated Movies
-              </Link>
-              <Link
-                href="/movies/now-playing"
-                prefetch={false}
-                className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
-              >
-                Now Playing
-              </Link>
-              <Link
-                href="/movies/upcoming"
-                prefetch={false}
-                className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
-              >
-                Upcoming Movies
-              </Link>
-              <Link
                 href="/tv-shows"
                 prefetch={false}
                 className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
               >
                 Popular TV Shows
-              </Link>
-              <Link
-                href="/tv-shows/top-rated"
-                prefetch={false}
-                className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
-              >
-                Top Rated TV Shows
-              </Link>
-              <Link
-                href="/tv-shows/on-the-air"
-                prefetch={false}
-                className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
-              >
-                TV Shows on the Air
               </Link>
               <Link
                 href="/genres"

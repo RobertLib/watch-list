@@ -213,36 +213,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     },
     {
-      url: `${baseUrl}/trending`,
-      changeFrequency: "daily" as const,
-      priority: 0.9,
-    },
-    {
-      url: `${baseUrl}/movies/top-rated`,
-      changeFrequency: "weekly" as const,
-      priority: 0.85,
-    },
-    {
-      url: `${baseUrl}/movies/now-playing`,
-      changeFrequency: "daily" as const,
-      priority: 0.85,
-    },
-    {
-      url: `${baseUrl}/movies/upcoming`,
-      changeFrequency: "daily" as const,
-      priority: 0.85,
-    },
-    {
-      url: `${baseUrl}/tv-shows/top-rated`,
-      changeFrequency: "weekly" as const,
-      priority: 0.85,
-    },
-    {
-      url: `${baseUrl}/tv-shows/on-the-air`,
-      changeFrequency: "daily" as const,
-      priority: 0.85,
-    },
-    {
       url: `${baseUrl}/people`,
       changeFrequency: "weekly" as const,
       priority: 0.8,
