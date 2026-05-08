@@ -14,6 +14,7 @@ import {
   PersonMovieCredits,
   PersonTVCredits,
   Person,
+  CollectionDetails,
 } from "@/types/tmdb";
 import { getRegion } from "@/lib/region-server";
 import { getRegionCode } from "./region";
@@ -416,6 +417,14 @@ export const tmdbApi = {
     });
     const cacheKey = `search-person-${query}-${page}`;
     return cachedFetch(url, cacheKey, 3600) as Promise<TMDBResponse<Person>>; // 1 hour cache
+  },
+
+  // Get collection details (movies in a collection)
+  getCollectionDetails: async (
+    collectionId: number,
+  ): Promise<CollectionDetails> => {
+    const url = await buildUrl(`/collection/${collectionId}`);
+    return noStoreFetch(url) as Promise<CollectionDetails>;
   },
 };
 

@@ -291,6 +291,15 @@ export interface MovieCollection {
   backdrop_path: string | null;
 }
 
+export interface CollectionDetails {
+  id: number;
+  name: string;
+  overview: string | null;
+  poster_path: string | null;
+  backdrop_path: string | null;
+  parts: Movie[];
+}
+
 export interface Person {
   id: number;
   name: string;

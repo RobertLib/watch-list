@@ -34,7 +34,8 @@ interface StructuredDataProps {
     | "TVSeries"
     | "WebApplication"
     | "BreadcrumbList"
-    | "Person";
+    | "Person"
+    | "MovieCollection";
   data: {
     title?: string;
     name?: string;
@@ -57,6 +58,12 @@ interface StructuredDataProps {
     keywords?: string[];
     breadcrumbItems?: Array<{ name: string; url: string }>;
     url?: string; // Canonical URL for the entity
+    parts?: Array<{
+      id: number;
+      title: string;
+      release_date?: string;
+      poster_path?: string | null;
+    }>;
     [key: string]: unknown;
   };
 }
@@ -216,6 +223,39 @@ export function StructuredData({ type, data }: StructuredDataProps) {
           ? { "@type": "Place", name: data.birthPlace }
           : undefined,
         sameAs: data.sameAs || undefined,
+      };
+      break;
+
+    case "MovieCollection":
+      structuredData = {
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        "@id": data.url,
+        url: data.url,
+        name: data.name,
+        description: data.overview || undefined,
+        image: data.poster_path
+          ? `https://image.tmdb.org/t/p/w500${data.poster_path}`
+          : undefined,
+        itemListElement:
+          data.parts?.map((part, index) => ({
+            "@type": "ListItem",
+            position: index + 1,
+            item: {
+              "@type": "Movie",
+              name: part.title,
+              url: `https://www.watch-list.me/movie/${part.id}-${part.title
+                .toLowerCase()
+                .replace(/[^a-z0-9\s-]/g, "")
+                .replace(/\s+/g, "-")
+                .replace(/-+/g, "-")
+                .trim()}`,
+              datePublished: part.release_date || undefined,
+              image: part.poster_path
+                ? `https://image.tmdb.org/t/p/w500${part.poster_path}`
+                : undefined,
+            },
+          })) || [],
       };
       break;
 

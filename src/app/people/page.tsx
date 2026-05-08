@@ -30,7 +30,11 @@ export default async function PeoplePage() {
     tmdbApi.getPopularPeople(2),
   ]);
 
-  const people = [...page1.results, ...page2.results];
+  const people = Array.from(
+    new Map(
+      [...page1.results, ...page2.results].map((p) => [p.id, p]),
+    ).values(),
+  );
   const featured = people[0];
 
   return (

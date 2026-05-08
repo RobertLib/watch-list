@@ -69,6 +69,38 @@ async function fetchPages(endpoint: string, pages: number) {
   return results.flatMap((r) => r.results || []);
 }
 
+// Fetch details for top popular movies and extract unique collections
+async function getPopularCollections() {
+  try {
+    const popularMovies = await fetchPages("/movie/popular", 3); // top 60 movies
+
+    const detailResults = await Promise.allSettled(
+      popularMovies.map((movie: { id: number }) =>
+        fetch(`${TMDB_CONFIG.BASE_URL}/movie/${movie.id}`, {
+          headers: TMDB_CONFIG.headers,
+          next: { revalidate: 86400 },
+        }).then((res) => res.json()),
+      ),
+    );
+
+    const collectionsMap = new Map<number, { id: number; name: string }>();
+    for (const result of detailResults) {
+      if (
+        result.status === "fulfilled" &&
+        result.value?.belongs_to_collection
+      ) {
+        const col = result.value.belongs_to_collection;
+        collectionsMap.set(col.id, col);
+      }
+    }
+
+    return Array.from(collectionsMap.values());
+  } catch (error) {
+    console.error("Error fetching popular collections:", error);
+    return [];
+  }
+}
+
 // Fetch movies that are actually linked in the app (from homepage and /movies page)
 async function getLinkedMovies() {
   try {
@@ -244,11 +276,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }));
 
     // Get movies, TV shows and people that are actually linked in the app
-    const [linkedMovies, linkedTVShows, popularPeople] = await Promise.all([
-      getLinkedMovies(),
-      getLinkedTVShows(),
-      fetchPages("/person/popular", 3),
-    ]);
+    const [linkedMovies, linkedTVShows, popularPeople, popularCollections] =
+      await Promise.all([
+        getLinkedMovies(),
+        getLinkedTVShows(),
+        fetchPages("/person/popular", 3),
+        getPopularCollections(),
+      ]);
 
     // Movie pages — popular/top-rated titles get higher priority for SEO
     const moviePages = linkedMovies.results.map((movie: Movie) => ({
@@ -271,6 +305,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.6,
     }));
 
+    // Collection pages
+    const collectionPages = popularCollections.map(
+      (col: { id: number; name: string }) => ({
+        url: `${baseUrl}/collection/${createSlug(col.name, col.id)}`,
+        changeFrequency: "monthly" as const,
+        priority: 0.65,
+      }),
+    );
+
     return [
       ...staticPages,
       ...movieGenrePages,
@@ -278,6 +321,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       ...moviePages,
       ...tvPages,
       ...personPages,
+      ...collectionPages,
     ];
   } catch (error) {
     console.error("Error generating sitemap — detail pages omitted:", error);
