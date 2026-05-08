@@ -109,6 +109,21 @@ export interface TVKeywordsResponse {
   results: Keyword[];
 }
 
+export interface TMDBImage {
+  file_path: string;
+  width: number;
+  height: number;
+  vote_average: number;
+  vote_count: number;
+  iso_639_1: string | null;
+}
+
+export interface ImagesResponse {
+  id: number;
+  backdrops: TMDBImage[];
+  posters: TMDBImage[];
+}
+
 export interface ProductionCountry {
   iso_3166_1: string;
   name: string;
@@ -388,6 +403,7 @@ export interface MovieDetails extends Omit<Movie, "genre_ids"> {
   keywords?: MovieKeywordsResponse;
   reviews?: ReviewsResponse;
   release_dates?: ReleaseDatesResponse;
+  images?: ImagesResponse;
 }
 
 export interface TVShowDetails extends Omit<TVShow, "genre_ids"> {
@@ -418,4 +434,5 @@ export interface TVShowDetails extends Omit<TVShow, "genre_ids"> {
   reviews?: ReviewsResponse;
   external_ids?: { imdb_id?: string | null; tvdb_id?: number | null };
   content_ratings?: ContentRatingsResponse;
+  images?: ImagesResponse;
 }

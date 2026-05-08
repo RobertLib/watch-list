@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { ChevronDown, ChevronUp, Star, User } from "lucide-react";
 import type { Review, ReviewsResponse } from "@/types/tmdb";
 
@@ -31,8 +31,19 @@ const LONG_THRESHOLD = 350;
 
 function ReviewCard({ review }: { review: Review }) {
   const [expanded, setExpanded] = useState(false);
+  const [isClamped, setIsClamped] = useState(false);
+  const textRef = useRef<HTMLParagraphElement>(null);
   const content = stripMarkdown(review.content);
-  const isLong = content.length > LONG_THRESHOLD;
+  const mightBeLong = content.length > LONG_THRESHOLD;
+
+  // After mount, check if the text is actually clamped (overflowing)
+  useEffect(() => {
+    if (!mightBeLong) return;
+    const el = textRef.current;
+    if (el) {
+      setIsClamped(el.scrollHeight > el.clientHeight);
+    }
+  }, [mightBeLong]);
 
   return (
     <article className="bg-gray-800 rounded-lg p-5 border border-gray-700">
@@ -60,13 +71,14 @@ function ReviewCard({ review }: { review: Review }) {
 
       {/* Full text always in HTML — only visually clamped via CSS */}
       <p
-        className={`text-gray-300 leading-relaxed text-sm${!expanded && isLong ? " line-clamp-5" : ""}`}
+        ref={textRef}
+        className={`text-gray-300 leading-relaxed text-sm${!expanded && mightBeLong ? " line-clamp-5" : ""}`}
       >
         {content}
       </p>
 
       <div className="mt-3 flex items-center gap-4">
-        {isLong && (
+        {(isClamped || expanded) && (
           <button
             onClick={() => setExpanded((v) => !v)}
             className="text-blue-400 text-sm hover:underline flex items-center gap-1"
@@ -110,7 +122,7 @@ export function MediaReviews({ reviews }: MediaReviewsProps) {
   const hasMore = reviews.results.length > INITIAL_REVIEWS;
 
   return (
-    <section className="mb-12">
+    <section className="mt-12 mb-12">
       <h2 className="text-2xl font-bold mb-6">
         User Reviews
         {reviews.total_results > 0 && (

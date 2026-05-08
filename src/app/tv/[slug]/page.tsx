@@ -22,6 +22,8 @@ import { MediaReviews } from "@/components/MediaReviews";
 import { MediaDidYouKnow } from "@/components/MediaDidYouKnowServer";
 import { buildTVFacts } from "@/lib/did-you-know";
 import { MediaRatingPanel } from "@/components/MediaRatingPanel";
+import { MediaGallery } from "@/components/MediaGallery";
+import { MediaVideos } from "@/components/MediaVideos";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
 
 // Using Node.js runtime due to Edge Function size limitations
@@ -80,7 +82,7 @@ const getTVBasicData = cache(async (id: number) => {
     // Use append_to_response to get all data in a single API call
     const details = await tmdbApi.getTVShowDetails(
       id,
-      "watch/providers,credits,videos,similar,translations,keywords,reviews,content_ratings,external_ids",
+      "watch/providers,credits,videos,similar,translations,keywords,reviews,content_ratings,external_ids,images",
     );
 
     return {
@@ -410,8 +412,14 @@ export default async function TVPage({ params }: TVPageProps) {
             <TVCast credits={credits} />
             <MediaFullCrew credits={credits} />
             <MediaKeywords keywords={details.keywords?.results ?? []} />
+            <MediaVideos videos={videos.results} />
             <MediaReviews reviews={details.reviews} />
             <MediaDidYouKnow facts={buildTVFacts(details, credits)} />
+            <MediaGallery
+              backdrops={details.images?.backdrops ?? []}
+              posters={details.images?.posters ?? []}
+              title={details.name}
+            />
             {details.seasons && details.seasons.length > 0 && (
               <TVSeasons seasons={details.seasons} tvId={id} />
             )}

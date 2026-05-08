@@ -22,6 +22,8 @@ import { MediaReviews } from "@/components/MediaReviews";
 import { MediaDidYouKnow } from "@/components/MediaDidYouKnowServer";
 import { buildMovieFacts } from "@/lib/did-you-know";
 import { MediaRatingPanel } from "@/components/MediaRatingPanel";
+import { MediaGallery } from "@/components/MediaGallery";
+import { MediaVideos } from "@/components/MediaVideos";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
 
 // Using Node.js runtime due to Edge Function size limitations
@@ -86,7 +88,7 @@ const getMovieBasicData = cache(async (id: number) => {
     // Use append_to_response to get all data in a single API call
     const details = await tmdbApi.getMovieDetails(
       id,
-      "watch/providers,credits,videos,similar,translations,keywords,reviews,release_dates",
+      "watch/providers,credits,videos,similar,translations,keywords,reviews,release_dates,images",
     );
 
     return {
@@ -380,8 +382,14 @@ export default async function MoviePage({ params }: MoviePageProps) {
             <MovieCast credits={credits} />
             <MediaFullCrew credits={credits} />
             <MediaKeywords keywords={details.keywords?.keywords ?? []} />
+            <MediaVideos videos={videos.results} />
             <MediaReviews reviews={details.reviews} />
             <MediaDidYouKnow facts={buildMovieFacts(details, credits)} />
+            <MediaGallery
+              backdrops={details.images?.backdrops ?? []}
+              posters={details.images?.posters ?? []}
+              title={details.title}
+            />
             {details.belongs_to_collection && (
               <MovieCollection collection={details.belongs_to_collection} />
             )}
