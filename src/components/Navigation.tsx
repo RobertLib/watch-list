@@ -374,7 +374,7 @@ export function Navigation() {
             id="mobile-menu"
             className={cn(
               "md:hidden overflow-hidden transition-all duration-300 ease-in-out",
-              isMobileMenuOpen ? "max-h-60 pb-4" : "max-h-0",
+              isMobileMenuOpen ? "max-h-80 pb-6" : "max-h-0",
             )}
             aria-hidden={!isMobileMenuOpen}
           >
