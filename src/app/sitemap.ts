@@ -254,66 +254,90 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ];
 
+  // Fetch each group independently so a single TMDB failure doesn't wipe
+  // out all detail pages from the sitemap.
+  const settled = await Promise.allSettled([
+    getMovieGenres(),
+    getTVGenres(),
+    getLinkedMovies(),
+    getLinkedTVShows(),
+    fetchPages("/person/popular", 3),
+    getPopularCollections(),
+  ]);
+
+  const [
+    movieGenresResult,
+    tvGenresResult,
+    linkedMoviesResult,
+    linkedTVShowsResult,
+    popularPeopleResult,
+    popularCollectionsResult,
+  ] = settled;
+
+  // Log any partial failures so they're visible in deployment logs.
+  settled.forEach((result, i) => {
+    if (result.status === "rejected") {
+      console.error(`Sitemap fetch [${i}] failed:`, result.reason);
+    }
+  });
+
+  const movieGenrePages =
+    movieGenresResult.status === "fulfilled"
+      ? (movieGenresResult.value.genres ?? []).map((genre: Genre) => ({
+          url: `${baseUrl}/genres/movie/${createSlug(genre.name, genre.id)}`,
+          changeFrequency: "daily" as const,
+          priority: 0.7,
+        }))
+      : [];
+
+  const tvGenrePages =
+    tvGenresResult.status === "fulfilled"
+      ? (tvGenresResult.value.genres ?? []).map((genre: Genre) => ({
+          url: `${baseUrl}/genres/tv/${createSlug(genre.name, genre.id)}`,
+          changeFrequency: "daily" as const,
+          priority: 0.7,
+        }))
+      : [];
+
+  const moviePages =
+    linkedMoviesResult.status === "fulfilled"
+      ? (linkedMoviesResult.value.results ?? []).map((movie: Movie) => ({
+          url: `${baseUrl}/movie/${createSlug(movie.title, movie.id)}`,
+          changeFrequency: "weekly" as const,
+          priority: 0.7,
+        }))
+      : [];
+
+  const tvPages =
+    linkedTVShowsResult.status === "fulfilled"
+      ? (linkedTVShowsResult.value.results ?? []).map((show: TVShow) => ({
+          url: `${baseUrl}/tv/${createSlug(show.name, show.id)}`,
+          changeFrequency: "weekly" as const,
+          priority: 0.7,
+        }))
+      : [];
+
+  const personPages =
+    popularPeopleResult.status === "fulfilled"
+      ? (popularPeopleResult.value ?? []).map((person: Person) => ({
+          url: `${baseUrl}/person/${createSlug(person.name, person.id)}`,
+          changeFrequency: "monthly" as const,
+          priority: 0.6,
+        }))
+      : [];
+
+  const collectionPages =
+    popularCollectionsResult.status === "fulfilled"
+      ? (popularCollectionsResult.value ?? []).map(
+          (col: { id: number; name: string }) => ({
+            url: `${baseUrl}/collection/${createSlug(col.name, col.id)}`,
+            changeFrequency: "monthly" as const,
+            priority: 0.65,
+          }),
+        )
+      : [];
+
   try {
-    // Get genres for dynamic pages
-    const [movieGenres, tvGenres] = await Promise.all([
-      getMovieGenres(),
-      getTVGenres(),
-    ]);
-
-    // Movie genre pages
-    const movieGenrePages = movieGenres.genres.map((genre: Genre) => ({
-      url: `${baseUrl}/genres/movie/${createSlug(genre.name, genre.id)}`,
-      changeFrequency: "daily" as const,
-      priority: 0.7,
-    }));
-
-    // TV show genre pages
-    const tvGenrePages = tvGenres.genres.map((genre: Genre) => ({
-      url: `${baseUrl}/genres/tv/${createSlug(genre.name, genre.id)}`,
-      changeFrequency: "daily" as const,
-      priority: 0.7,
-    }));
-
-    // Get movies, TV shows and people that are actually linked in the app
-    const [linkedMovies, linkedTVShows, popularPeople, popularCollections] =
-      await Promise.all([
-        getLinkedMovies(),
-        getLinkedTVShows(),
-        fetchPages("/person/popular", 3),
-        getPopularCollections(),
-      ]);
-
-    // Movie pages — popular/top-rated titles get higher priority for SEO
-    const moviePages = linkedMovies.results.map((movie: Movie) => ({
-      url: `${baseUrl}/movie/${createSlug(movie.title, movie.id)}`,
-      changeFrequency: "weekly" as const,
-      priority: 0.7,
-    }));
-
-    // TV show pages — popular/top-rated titles get higher priority for SEO
-    const tvPages = linkedTVShows.results.map((show: TVShow) => ({
-      url: `${baseUrl}/tv/${createSlug(show.name, show.id)}`,
-      changeFrequency: "weekly" as const,
-      priority: 0.7,
-    }));
-
-    // Person detail pages
-    const personPages = popularPeople.map((person: Person) => ({
-      url: `${baseUrl}/person/${createSlug(person.name, person.id)}`,
-      changeFrequency: "monthly" as const,
-      priority: 0.6,
-    }));
-
-    // Collection pages
-    const collectionPages = popularCollections.map(
-      (col: { id: number; name: string }) => ({
-        url: `${baseUrl}/collection/${createSlug(col.name, col.id)}`,
-        changeFrequency: "monthly" as const,
-        priority: 0.65,
-      }),
-    );
-
     return [
       ...staticPages,
       ...movieGenrePages,
@@ -324,9 +348,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       ...collectionPages,
     ];
   } catch (error) {
-    console.error("Error generating sitemap — detail pages omitted:", error);
-    // Return at least static pages on error; detail pages will be missing
-    // but the sitemap won't break entirely.
+    console.error("Error assembling sitemap:", error);
     return staticPages;
   }
 }
