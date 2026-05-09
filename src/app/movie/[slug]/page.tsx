@@ -267,7 +267,7 @@ export default async function MoviePage({ params }: MoviePageProps) {
               src={tmdbApi.getImageUrl(details.backdrop_path, "w1280")}
               alt={details.title}
               fill
-              className="object-cover"
+              className="object-cover object-top"
               loading="eager"
               fetchPriority="high"
             />

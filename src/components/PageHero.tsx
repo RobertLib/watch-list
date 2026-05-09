@@ -30,7 +30,7 @@ function PageHeroContent({
           src={backdropUrl}
           alt={`Background image for ${itemTitle}`}
           fill
-          className="object-cover"
+          className="object-cover object-top"
           priority
         />
         <div className="absolute inset-0 bg-linear-to-r from-black/90 via-black/60 to-black/30" />

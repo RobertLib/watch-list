@@ -263,7 +263,7 @@ export default async function TVPage({ params }: TVPageProps) {
               src={tmdbApi.getImageUrl(details.backdrop_path, "w1280")}
               alt={details.name}
               fill
-              className="object-cover"
+              className="object-cover object-top"
               loading="eager"
               fetchPriority="high"
             />

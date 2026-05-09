@@ -31,7 +31,7 @@ function HeroSectionContent({ featuredItem }: HeroSectionContentProps) {
           src={backdropUrl}
           alt={`Featured backdrop for ${title}`}
           fill
-          className="object-cover"
+          className="object-cover object-top"
           priority
         />
         <div className="absolute inset-0 bg-linear-to-r from-black/80 via-black/40 to-transparent" />
