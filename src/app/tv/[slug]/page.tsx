@@ -25,6 +25,7 @@ import { MediaRatingPanel } from "@/components/MediaRatingPanel";
 import { MediaGallery } from "@/components/MediaGallery";
 import { MediaVideos } from "@/components/MediaVideos";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
+import { ShareButton } from "@/components/ShareButton";
 
 // Using Node.js runtime due to Edge Function size limitations
 // export const runtime = "edge";
@@ -396,7 +397,7 @@ export default async function TVPage({ params }: TVPageProps) {
               )}
 
               {/* Action Buttons */}
-              <div className="flex gap-5 mt-6">
+              <div className="flex flex-wrap items-center gap-3.5 mt-6">
                 <TVTrailerButton
                   tvId={id}
                   trailer={trailer}
@@ -409,6 +410,10 @@ export default async function TVPage({ params }: TVPageProps) {
                   releaseDate={details.first_air_date}
                   voteAverage={details.vote_average}
                   mediaType="tv"
+                />
+                <ShareButton
+                  title={details.name}
+                  url={`https://www.watch-list.me/tv/${slug}`}
                 />
               </div>
             </div>

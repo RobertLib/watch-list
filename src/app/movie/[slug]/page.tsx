@@ -25,6 +25,7 @@ import { MediaRatingPanel } from "@/components/MediaRatingPanel";
 import { MediaGallery } from "@/components/MediaGallery";
 import { MediaVideos } from "@/components/MediaVideos";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
+import { ShareButton } from "@/components/ShareButton";
 
 // Using Node.js runtime due to Edge Function size limitations
 // export const runtime = "edge";
@@ -379,7 +380,7 @@ export default async function MoviePage({ params }: MoviePageProps) {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-5 mt-6">
+              <div className="flex flex-wrap items-center gap-3.5 mt-6">
                 <MovieTrailerButton
                   movieId={id}
                   trailer={trailer}
@@ -392,6 +393,10 @@ export default async function MoviePage({ params }: MoviePageProps) {
                   releaseDate={details.release_date}
                   voteAverage={details.vote_average}
                   mediaType="movie"
+                />
+                <ShareButton
+                  title={details.title}
+                  url={`https://www.watch-list.me/movie/${slug}`}
                 />
               </div>
             </div>
