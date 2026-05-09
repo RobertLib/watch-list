@@ -190,9 +190,7 @@ export default async function TVPage({ params }: TVPageProps) {
       video.type === "Trailer" && video.site === "YouTube",
   );
 
-  const creators = credits.crew.filter(
-    (member: { job: string }) => member.job === "Creator",
-  );
+  const creators = details.created_by ?? [];
 
   // Extract US content rating, fall back to first available
   const certificationUS = details.content_ratings?.results?.find(
@@ -349,7 +347,19 @@ export default async function TVPage({ params }: TVPageProps) {
                 <div className="mt-6">
                   <h3 className="font-semibold">Creators</h3>
                   <p className="text-gray-300">
-                    {creators.map((c: { name: string }) => c.name).join(", ")}
+                    {creators.map(
+                      (c: { id: number; name: string }, i: number) => (
+                        <span key={c.id}>
+                          {i > 0 && ", "}
+                          <a
+                            href={`/person/${createSlug(c.name, c.id)}`}
+                            className="hover:text-white transition-colors"
+                          >
+                            {c.name}
+                          </a>
+                        </span>
+                      ),
+                    )}
                   </p>
                 </div>
               )}

@@ -408,6 +408,7 @@ export interface MovieDetails extends Omit<Movie, "genre_ids"> {
 
 export interface TVShowDetails extends Omit<TVShow, "genre_ids"> {
   genres: Genre[];
+  created_by: { id: number; name: string; profile_path: string | null }[];
   number_of_episodes: number;
   number_of_seasons: number;
   episode_run_time: number[];

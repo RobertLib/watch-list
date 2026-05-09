@@ -199,11 +199,17 @@ export default async function MoviePage({ params }: MoviePageProps) {
   const director = credits.crew.find(
     (member: { job: string }) => member.job === "Director",
   );
-  const writers = credits.crew.filter(
-    (member: { job: string }) =>
-      member.job === "Writer" ||
-      member.job === "Screenplay" ||
-      member.job === "Story",
+  const writers = Array.from(
+    new Map(
+      credits.crew
+        .filter(
+          (member: { job: string }) =>
+            member.job === "Writer" ||
+            member.job === "Screenplay" ||
+            member.job === "Story",
+        )
+        .map((m: { id: number; name: string; job: string }) => [m.id, m]),
+    ).values(),
   );
 
   // Extract US age certification, fall back to first available
@@ -342,14 +348,31 @@ export default async function MoviePage({ params }: MoviePageProps) {
                 {director && (
                   <div>
                     <h3 className="font-semibold">Director</h3>
-                    <p className="text-gray-300">{director.name}</p>
+                    <a
+                      href={`/person/${createSlug(director.name, director.id)}`}
+                      className="text-gray-300 hover:text-white transition-colors"
+                    >
+                      {director.name}
+                    </a>
                   </div>
                 )}
                 {writers.length > 0 && (
                   <div>
                     <h3 className="font-semibold">Writers</h3>
                     <p className="text-gray-300">
-                      {writers.map((w: { name: string }) => w.name).join(", ")}
+                      {writers.map(
+                        (w: { id: number; name: string }, i: number) => (
+                          <span key={w.id}>
+                            {i > 0 && ", "}
+                            <a
+                              href={`/person/${createSlug(w.name, w.id)}`}
+                              className="hover:text-white transition-colors"
+                            >
+                              {w.name}
+                            </a>
+                          </span>
+                        ),
+                      )}
                     </p>
                   </div>
                 )}
