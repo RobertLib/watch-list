@@ -251,7 +251,7 @@ export function Navigation() {
                 prefetch={false}
                 onClick={clearSearch}
                 className={cn(
-                  "transition-colors",
+                  "transition-colors hidden lg:block",
                   isActiveLink("/people")
                     ? "text-white border-b-2 border-blue-500 pb-1"
                     : "text-gray-300 hover:text-white",
