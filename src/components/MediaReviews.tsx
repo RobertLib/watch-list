@@ -97,7 +97,7 @@ function ReviewCard({ review }: { review: Review }) {
         <a
           href={review.url}
           target="_blank"
-          rel="noopener noreferrer nofollow"
+          rel="noopener noreferrer"
           className="text-gray-500 text-sm hover:text-gray-300 transition-colors ml-auto"
         >
           Full review →

@@ -6,6 +6,8 @@ import { PaginatedGenreTVSection } from "@/components/PaginatedGenreTVSection";
 import { discoverTVShowsByGenre } from "../../../actions";
 import { extractIdFromSlug } from "@/lib/utils";
 
+export const revalidate = 86400;
+
 interface GenreTVShowsPageProps {
   params: Promise<{
     slug: string;

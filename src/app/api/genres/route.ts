@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-export const revalidate = 86400; // 24 h — genre lists rarely change
+export const revalidate = 31536000; // 1 year — genre lists almost never change
 
 // Server-side TMDB config
 const TMDB_CONFIG = {
@@ -16,11 +16,11 @@ export async function GET() {
     const [movieGenresResponse, tvGenresResponse] = await Promise.all([
       fetch(`${TMDB_CONFIG.BASE_URL}/genre/movie/list`, {
         headers: TMDB_CONFIG.headers,
-        next: { revalidate: 86400 }, // Cache for 24 hours
+        next: { revalidate: 31536000 }, // Cache for 1 year
       }),
       fetch(`${TMDB_CONFIG.BASE_URL}/genre/tv/list`, {
         headers: TMDB_CONFIG.headers,
-        next: { revalidate: 86400 }, // Cache for 24 hours
+        next: { revalidate: 31536000 }, // Cache for 1 year
       }),
     ]);
 

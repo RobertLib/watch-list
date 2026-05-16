@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export const revalidate = 86400; // 24 h — video metadata rarely changes
+export const revalidate = 2592000; // 1 month — video metadata rarely changes
 
 // Server-side TMDB config (bez NEXT_PUBLIC_)
 const TMDB_CONFIG = {
@@ -29,7 +29,7 @@ export async function GET(
     const url = `${TMDB_CONFIG.BASE_URL}/${type}/${id}/videos`;
     const response = await fetch(url, {
       headers: TMDB_CONFIG.headers,
-      next: { revalidate: 86400 }, // Cache for 24 hours
+      next: { revalidate: 2592000 }, // Cache for 1 month
     });
 
     if (!response.ok) {

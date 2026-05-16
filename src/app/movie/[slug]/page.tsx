@@ -30,8 +30,8 @@ import { ShareButton } from "@/components/ShareButton";
 // Using Node.js runtime due to Edge Function size limitations
 // export const runtime = "edge";
 
-// ISR – revalidate every 24 hours so Googlebot gets pre-rendered HTML
-export const revalidate = 86400;
+// ISR – revalidate every month so Googlebot gets pre-rendered HTML
+export const revalidate = 2592000;
 
 function formatRuntime(minutes: number | null): string {
   if (!minutes) return "Unknown runtime";
@@ -141,6 +141,11 @@ export async function generateMetadata({
     data.credits,
   );
 
+  const ogImagePath = details.backdrop_path ?? details.poster_path;
+  const ogImageUrl = ogImagePath
+    ? `https://image.tmdb.org/t/p/${details.backdrop_path ? "w1280" : "w780"}${ogImagePath}`
+    : null;
+
   return {
     title: `${details.title} (${
       new Date(details.release_date).getFullYear() || "N/A"
@@ -154,15 +159,17 @@ export async function generateMetadata({
       type: "video.movie",
       url: `https://www.watch-list.me/movie/${createSlug(details.title, details.id)}`,
       siteName: "WatchList",
-      images: [
-        {
-          url: `https://www.watch-list.me/movie/${createSlug(details.title, details.id)}/opengraph-image`,
-          width: 1200,
-          height: 630,
-          alt: `${details.title} - Movie Details`,
-          type: "image/png",
-        },
-      ],
+      images: ogImageUrl
+        ? [
+            {
+              url: ogImageUrl,
+              width: details.backdrop_path ? 1280 : 780,
+              height: details.backdrop_path ? 720 : 1170,
+              alt: `${details.title} - Movie Details`,
+              type: "image/jpeg",
+            },
+          ]
+        : [],
     },
     alternates: {
       canonical: `https://www.watch-list.me/movie/${createSlug(details.title, details.id)}`,

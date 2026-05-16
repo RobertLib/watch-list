@@ -24,7 +24,6 @@ function SimilarMoviesContent({ similar }: SimilarMoviesProps) {
               key={movie.id}
               href={`/movie/${slug}`}
               prefetch={false}
-              rel="nofollow"
               className="flex gap-3 group"
             >
               <div className="relative w-16 shrink-0 aspect-2/3">

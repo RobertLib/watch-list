@@ -6,6 +6,8 @@ import { PaginatedGenreMovieSection } from "@/components/PaginatedGenreMovieSect
 import { discoverMoviesByGenre } from "../../../actions";
 import { extractIdFromSlug } from "@/lib/utils";
 
+export const revalidate = 86400;
+
 interface GenreMoviesPageProps {
   params: Promise<{
     slug: string;

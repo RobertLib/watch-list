@@ -9,7 +9,7 @@ import { StructuredData } from "@/components/StructuredData";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
 import type { MediaItem } from "@/types/tmdb";
 
-export const revalidate = 86400;
+export const revalidate = 2592000; // 1 month
 
 interface CollectionPageProps {
   params: Promise<{

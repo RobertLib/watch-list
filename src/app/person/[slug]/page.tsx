@@ -10,7 +10,7 @@ import { PersonFilmography } from "@/components/person/PersonFilmography";
 import { StructuredData } from "@/components/StructuredData";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
 
-export const revalidate = 86400;
+export const revalidate = 2592000; // 1 month
 
 interface PersonPageProps {
   params: Promise<{
@@ -122,7 +122,7 @@ export async function generateMetadata({
       images: details.profile_path
         ? [
             {
-              url: `${canonicalUrl}/opengraph-image`,
+              url: `https://image.tmdb.org/t/p/w780${details.profile_path}`,
               width: 780,
               height: 1170,
               alt: details.name,
@@ -135,7 +135,9 @@ export async function generateMetadata({
       card: "summary_large_image",
       title: details.name,
       description,
-      images: details.profile_path ? [`${canonicalUrl}/opengraph-image`] : [],
+      images: details.profile_path
+        ? [`https://image.tmdb.org/t/p/w780${details.profile_path}`]
+        : [],
     },
     alternates: {
       canonical: canonicalUrl,

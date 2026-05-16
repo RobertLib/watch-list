@@ -30,8 +30,8 @@ import { ShareButton } from "@/components/ShareButton";
 // Using Node.js runtime due to Edge Function size limitations
 // export const runtime = "edge";
 
-// ISR – revalidate every 24 hours so Googlebot gets pre-rendered HTML
-export const revalidate = 86400;
+// ISR – revalidate every month so Googlebot gets pre-rendered HTML
+export const revalidate = 2592000;
 
 function formatDescription(
   overview: string | null,
@@ -135,6 +135,11 @@ export async function generateMetadata({
     data.credits,
   );
 
+  const ogImagePath = details.backdrop_path ?? details.poster_path;
+  const ogImageUrl = ogImagePath
+    ? `https://image.tmdb.org/t/p/${details.backdrop_path ? "w1280" : "w780"}${ogImagePath}`
+    : null;
+
   return {
     title: `${details.name} (${
       new Date(details.first_air_date).getFullYear() || "N/A"
@@ -148,15 +153,17 @@ export async function generateMetadata({
       type: "video.tv_show",
       url: `https://www.watch-list.me/tv/${createSlug(details.name, details.id)}`,
       siteName: "WatchList",
-      images: [
-        {
-          url: `https://www.watch-list.me/tv/${createSlug(details.name, details.id)}/opengraph-image`,
-          width: 1200,
-          height: 630,
-          alt: `${details.name} - TV Show Details`,
-          type: "image/png",
-        },
-      ],
+      images: ogImageUrl
+        ? [
+            {
+              url: ogImageUrl,
+              width: details.backdrop_path ? 1280 : 780,
+              height: details.backdrop_path ? 720 : 1170,
+              alt: `${details.name} - TV Show Details`,
+              type: "image/jpeg",
+            },
+          ]
+        : [],
     },
     alternates: {
       canonical: `https://www.watch-list.me/tv/${createSlug(details.name, details.id)}`,

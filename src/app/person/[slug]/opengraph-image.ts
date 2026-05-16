@@ -19,7 +19,7 @@ export default async function Image({
   try {
     res = await fetch(`${TMDB_CONFIG.BASE_URL}/person/${id}?language=en-US`, {
       headers: TMDB_CONFIG.headers,
-      next: { revalidate: 86400 },
+      next: { revalidate: 2592000 }, // 1 month
       signal: AbortSignal.timeout(10000),
     });
   } catch {
