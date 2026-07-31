@@ -70,6 +70,13 @@ export interface WatchProvidersResponse {
   };
 }
 
+/** A single region's providers, split by how the title is offered. */
+export interface RegionWatchProviders {
+  streaming: WatchProvider[];
+  rent: WatchProvider[];
+  buy: WatchProvider[];
+}
+
 export type MediaType = "movie" | "tv";
 
 export interface MediaItem {

@@ -24,6 +24,9 @@ import { MediaRatingPanel } from "@/components/MediaRatingPanel";
 import { MediaGallery } from "@/components/MediaGallery";
 import { MediaVideos } from "@/components/MediaVideos";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
+import { resolveRegionProviders } from "@/lib/media-converters";
+import { getRegion } from "@/lib/region-server";
+import { getRegionCode } from "@/lib/region";
 import { ShareButton } from "@/components/ShareButton";
 
 // Using Node.js runtime due to Edge Function size limitations
@@ -207,6 +210,14 @@ export default async function TVPage({ params }: TVPageProps) {
   }
 
   const { details, credits, videos, similar, translations } = data;
+
+  // Resolved server-side from the already-appended watch/providers payload, so
+  // the "Where to Watch" section lands in the HTML instead of behind an /api/
+  // fetch that robots.txt hides from crawlers.
+  const watchProviders = resolveRegionProviders(
+    details["watch/providers"],
+    getRegionCode(await getRegion()),
+  );
 
   const wikiContent = await getTVWikipediaContent(details.name);
 
@@ -485,7 +496,7 @@ export default async function TVPage({ params }: TVPageProps) {
               voteCount={details.vote_count}
               reviews={details.reviews}
             />
-            <TVWatchProviders tvId={id} title={details.name} />
+            <TVWatchProviders providers={watchProviders} title={details.name} />
             <LanguageSupport translations={translations} />
             <TVDetails details={details} certification={certification} />
           </div>

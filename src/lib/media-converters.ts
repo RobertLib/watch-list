@@ -1,4 +1,31 @@
-import { Movie, TVShow, MediaItem } from "@/types/tmdb";
+import {
+  Movie,
+  TVShow,
+  MediaItem,
+  RegionWatchProviders,
+  WatchProvidersResponse,
+} from "@/types/tmdb";
+
+/**
+ * Pick one region out of an appended `watch/providers` response.
+ *
+ * Detail pages already request `watch/providers` via append_to_response, so
+ * resolving it here costs no extra TMDB call. It has to happen on the server:
+ * robots.txt disallows /api/, so the equivalent client-side fetch is invisible
+ * to crawlers and the "Where to Watch" section never reaches the rendered HTML.
+ */
+export const resolveRegionProviders = (
+  response: WatchProvidersResponse | undefined,
+  regionCode: string,
+): RegionWatchProviders => {
+  const region = response?.results?.[regionCode];
+
+  return {
+    streaming: region?.flatrate ?? [],
+    rent: region?.rent ?? [],
+    buy: region?.buy ?? [],
+  };
+};
 
 // Type for trending items that can be either Movie or TVShow with media_type
 type TrendingItem =
