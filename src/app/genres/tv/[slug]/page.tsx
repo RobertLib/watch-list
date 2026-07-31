@@ -5,9 +5,18 @@ import { tmdbApi } from "@/lib/tmdb";
 import { tmdbServerApi } from "@/lib/tmdb-server";
 import { MediaSection } from "@/components/MediaSection";
 import { WikipediaInsights } from "@/components/WikipediaInsights";
+import { DiscoverFilterBar } from "@/components/DiscoverFilterBar";
 import { extractIdFromSlug } from "@/lib/utils";
 import { getGenreWikipediaContent } from "@/lib/wikipedia";
 import { convertTVShowToMediaItem } from "@/lib/media-converters";
+import {
+  buildDiscoverFilterQuery,
+  discoverFiltersToFilterOptions,
+  hasActiveDiscoverFilters,
+  parseDiscoverFilters,
+  type DiscoverFilters,
+  type DiscoverSearchParams,
+} from "@/lib/discover-filters";
 
 export const revalidate = 86400;
 
@@ -17,24 +26,42 @@ interface GenreTVShowsPageProps {
   params: Promise<{
     slug: string;
   }>;
-  searchParams: Promise<{
-    page?: string;
-  }>;
+  searchParams: Promise<DiscoverSearchParams>;
 }
 
-async function getGenreTVShowsData(genreId: number, page: number) {
+async function getTVGenres() {
   try {
-    const [genresResponse, tvShowsResponse] = await Promise.all([
-      tmdbApi.getTVGenres(),
-      tmdbServerApi.discoverTVShowsByGenre(genreId, page),
+    return (await tmdbApi.getTVGenres()).genres;
+  } catch (error) {
+    console.error("Error fetching TV genres:", error);
+    return null;
+  }
+}
+
+async function getGenreTVShowsData(
+  genreId: number,
+  page: number,
+  filters: DiscoverFilters,
+) {
+  try {
+    const [genres, tvShowsResponse] = await Promise.all([
+      tmdbApi.getTVGenres().then((response) => response.genres),
+      tmdbServerApi.discoverTVShowsByGenre(
+        genreId,
+        page,
+        discoverFiltersToFilterOptions(filters, "tv"),
+      ),
     ]);
 
-    const genre = genresResponse.genres.find((g) => g.id === genreId);
+    const genre = genres.find((g) => g.id === genreId);
 
     return {
       genre,
+      // Offered as the "combine with" options in the filter bar
+      otherGenres: genres.filter((g) => g.id !== genreId),
       tvShows: tvShowsResponse.results,
       totalPages: Math.min(tvShowsResponse.total_pages, MAX_PAGE),
+      totalResults: tvShowsResponse.total_results,
     };
   } catch (error) {
     console.error("Error fetching genre TV shows:", error);
@@ -47,12 +74,18 @@ export async function generateMetadata({
   searchParams,
 }: GenreTVShowsPageProps): Promise<Metadata> {
   const { slug } = await params;
-  const { page: pageParam } = await searchParams;
+  const resolvedSearchParams = await searchParams;
   const id = extractIdFromSlug(slug);
   const page = Math.max(
     1,
-    Math.min(parseInt(pageParam ?? "1", 10) || 1, MAX_PAGE),
+    Math.min(parseInt(resolvedSearchParams.page ?? "1", 10) || 1, MAX_PAGE),
   );
+  const filters = parseDiscoverFilters(
+    resolvedSearchParams,
+    "tv",
+    "with_genre",
+  );
+  const isFiltered = hasActiveDiscoverFilters(filters);
 
   if (!id) {
     return {
@@ -60,21 +93,24 @@ export async function generateMetadata({
     };
   }
 
-  const data = await getGenreTVShowsData(id, page);
+  const genres = await getTVGenres();
+  const genre = genres?.find((g) => g.id === id);
 
-  if (!data || !data.genre) {
+  if (!genre) {
     return {
       title: "Genre not found",
     };
   }
 
-  const { genre } = data;
+  // Filtered views are user-facing refinements of the same listing – they point
+  // back at the unfiltered page and stay out of the index as duplicates.
   const canonicalUrl =
     page === 1
       ? `https://www.watch-list.me/genres/tv/${slug}`
       : `https://www.watch-list.me/genres/tv/${slug}?page=${page}`;
 
   return {
+    ...(isFiltered && { robots: { index: false, follow: true } }),
     title:
       page === 1
         ? `${genre.name} TV Shows`
@@ -115,24 +151,30 @@ export default async function GenreTVShowsPage({
   searchParams,
 }: GenreTVShowsPageProps) {
   const { slug } = await params;
-  const { page: pageParam } = await searchParams;
+  const resolvedSearchParams = await searchParams;
   const id = extractIdFromSlug(slug);
   const page = Math.max(
     1,
-    Math.min(parseInt(pageParam ?? "1", 10) || 1, MAX_PAGE),
+    Math.min(parseInt(resolvedSearchParams.page ?? "1", 10) || 1, MAX_PAGE),
   );
+  const filters = parseDiscoverFilters(
+    resolvedSearchParams,
+    "tv",
+    "with_genre",
+  );
+  const isFiltered = hasActiveDiscoverFilters(filters);
 
   if (!id) {
     notFound();
   }
 
-  const data = await getGenreTVShowsData(id, page);
+  const data = await getGenreTVShowsData(id, page, filters);
 
   if (!data || !data.genre) {
     notFound();
   }
 
-  const { genre, tvShows, totalPages } = data;
+  const { genre, otherGenres, tvShows, totalPages, totalResults } = data;
   const mediaItems = tvShows.map(convertTVShowToMediaItem);
 
   const wikiContent =
@@ -142,22 +184,38 @@ export default async function GenreTVShowsPage({
     <div className="min-h-screen bg-black pt-20">
       <div className="container mx-auto px-6 lg:px-8 py-8">
         {/* Header */}
-        <div className="mb-12">
+        <div className="mb-8">
           <h1 className="text-4xl font-bold text-white mb-4">
             {genre.name} TV Shows
           </h1>
           <p className="text-gray-400 text-lg">
-            Discover popular {genre.name.toLowerCase()} TV shows
+            {isFiltered
+              ? `Browse ${genre.name.toLowerCase()} TV shows matching your filters`
+              : `Discover popular ${genre.name.toLowerCase()} TV shows`}
             {page > 1 && ` – page ${page}`}
           </p>
         </div>
+
+        <DiscoverFilterBar
+          type="tv"
+          genres={otherGenres}
+          genreParamKey="with_genre"
+          genreLabel="Combine With"
+          genreAllLabel="No Second Genre"
+          totalResults={totalResults}
+          emptyHint="Showing the most popular titles in this genre."
+        />
 
         {/* TV Shows Grid */}
         <MediaSection
           title=""
           items={mediaItems}
           size="medium"
-          emptyMessage={`No ${genre.name.toLowerCase()} TV shows found.`}
+          emptyMessage={
+            isFiltered
+              ? `No ${genre.name.toLowerCase()} TV shows match these filters. Try loosening them.`
+              : `No ${genre.name.toLowerCase()} TV shows found.`
+          }
           className="mb-0"
         />
 
@@ -169,11 +227,11 @@ export default async function GenreTVShowsPage({
           >
             {page > 1 && (
               <Link
-                href={
-                  page === 2
-                    ? `/genres/tv/${slug}`
-                    : `/genres/tv/${slug}?page=${page - 1}`
-                }
+                href={`/genres/tv/${slug}${buildDiscoverFilterQuery(
+                  filters,
+                  page - 1,
+                  "with_genre",
+                )}`}
                 className="px-5 py-2 rounded-lg bg-gray-800 text-white hover:bg-gray-700 transition-colors"
               >
                 ← Previous
@@ -184,7 +242,11 @@ export default async function GenreTVShowsPage({
             </span>
             {page < totalPages && (
               <Link
-                href={`/genres/tv/${slug}?page=${page + 1}`}
+                href={`/genres/tv/${slug}${buildDiscoverFilterQuery(
+                  filters,
+                  page + 1,
+                  "with_genre",
+                )}`}
                 className="px-5 py-2 rounded-lg bg-gray-800 text-white hover:bg-gray-700 transition-colors"
               >
                 Next →

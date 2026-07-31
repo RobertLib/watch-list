@@ -23,6 +23,7 @@ async function TVShowsDataWrapper() {
         title="Discover TV Shows"
         initialTVShows={popular.results}
         initialTotalPages={popular.total_pages}
+        initialTotalResults={popular.total_results}
       />
       <PaginatedTVSection
         title="Trending This Week"

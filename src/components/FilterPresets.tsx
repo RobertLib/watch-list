@@ -2,6 +2,11 @@
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { AdvancedFiltersPanel } from "./AdvancedFiltersPanel";
+import {
+  hasActiveDiscoverFilters,
+  parseDiscoverFilters,
+  type DiscoverMediaType,
+} from "@/lib/discover-filters";
 import type { FilterOptions } from "@/types/filters";
 
 interface FilterPreset {
@@ -119,11 +124,10 @@ export const TV_PRESETS: FilterPreset[] = [
 ];
 
 interface FilterPresetsProps {
-  type: "movie" | "tv";
-  onFiltersChange: (filters: FilterOptions) => void;
+  type: DiscoverMediaType;
 }
 
-export function FilterPresets({ type, onFiltersChange }: FilterPresetsProps) {
+export function FilterPresets({ type }: FilterPresetsProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -131,21 +135,16 @@ export function FilterPresets({ type, onFiltersChange }: FilterPresetsProps) {
 
   const selectedPreset = searchParams.get("preset");
 
+  // A preset replaces every other filter – picking the active one again clears it.
   const handlePresetSelect = (preset: FilterPreset) => {
-    router.push(`${pathname}?preset=${preset.id}`, { scroll: false });
-    onFiltersChange(preset.filters);
+    router.push(
+      selectedPreset === preset.id ? pathname : `${pathname}?preset=${preset.id}`,
+      { scroll: false },
+    );
   };
 
-  const handleCustomFilters = (filters: FilterOptions) => {
-    onFiltersChange(filters);
-  };
-
-  const hasAdvancedFilters = Boolean(
-    searchParams.get("sort_by") ||
-    searchParams.get("year") ||
-    searchParams.get("genre") ||
-    searchParams.get("min_rating") ||
-    searchParams.get("language"),
+  const hasAdvancedFilters = hasActiveDiscoverFilters(
+    parseDiscoverFilters(searchParams, type),
   );
 
   return (
@@ -168,7 +167,11 @@ export function FilterPresets({ type, onFiltersChange }: FilterPresetsProps) {
                   : "border-gray-700 bg-gray-800/50 hover:border-gray-600 hover:bg-gray-800"
               }`}
               aria-pressed={selectedPreset === preset.id}
-              aria-label={`Apply ${preset.name} filter preset`}
+              aria-label={
+                selectedPreset === preset.id
+                  ? `Remove ${preset.name} filter preset`
+                  : `Apply ${preset.name} filter preset`
+              }
             >
               <h4 className="font-medium text-white mb-1">{preset.name}</h4>
               <p className="text-sm text-gray-400">{preset.description}</p>
@@ -178,11 +181,7 @@ export function FilterPresets({ type, onFiltersChange }: FilterPresetsProps) {
       </section>
 
       {/* Advanced Filters */}
-      <AdvancedFiltersPanel
-        type={type}
-        onFiltersChange={handleCustomFilters}
-        isExpanded={hasAdvancedFilters}
-      />
+      <AdvancedFiltersPanel type={type} isExpanded={hasAdvancedFilters} />
     </div>
   );
 }

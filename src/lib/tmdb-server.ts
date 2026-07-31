@@ -25,6 +25,7 @@ const makeDiscoveryRequest = cache(
     endpoint: string,
     params: Record<string, string | number>,
     cacheKey: string,
+    filters: FilterOptions = {},
   ): Promise<TMDBResponse<Movie> | TMDBResponse<TVShow>> => {
     // Include provider filter info in cache key for proper cache invalidation
     const watchProviderFilter = await getWatchProviderFilter();
@@ -37,12 +38,27 @@ const makeDiscoveryRequest = cache(
         ? `${cacheKey}-${regionCode}-providers-${selectedProviders}`
         : `${cacheKey}-${regionCode}-all`;
 
-    const url = await buildFilteredUrl(endpoint, params);
+    const url = await buildFilteredUrl(endpoint, params, filters);
     return (await getCachedDiscoveryRequest(url, fullCacheKey)) as
       | TMDBResponse<Movie>
       | TMDBResponse<TVShow>;
   },
 );
+
+// Stable cache-key suffix for a set of filters (keys sorted so the same filters
+// always map to the same key regardless of insertion order).
+function buildFilterCacheKey(filters: FilterOptions): string {
+  const entries = Object.entries(filters).filter(
+    ([, value]) => value !== undefined && value !== "",
+  );
+
+  if (entries.length === 0) return "";
+
+  return `-${entries
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}-${value}`)
+    .join("_")}`;
+}
 
 async function buildFilteredUrl(
   endpoint: string,
@@ -348,20 +364,28 @@ export const tmdbServerApi = {
 
   // Discover movies by genre with optional streaming filter.
   // Upper date bound prevents unreleased/future movies from appearing.
+  // `filters` come from the genre page filter bar and override the defaults.
   discoverMoviesByGenre: async (
     genreId: number,
     page: number = 1,
+    filters: FilterOptions = {},
   ): Promise<TMDBResponse<Movie>> => {
     const today = new Date().toISOString().split("T")[0];
+    // The page genre always applies; a genre picked in the filter bar narrows
+    // results further (comma-separated genres are AND-ed by TMDB).
+    const mergedFilters: FilterOptions = {
+      ...filters,
+      genre: filters.genre ? `${genreId},${filters.genre}` : String(genreId),
+    };
     const data = (await makeDiscoveryRequest(
       "/discover/movie",
       {
-        with_genres: genreId,
         page,
         sort_by: "popularity.desc",
         "primary_release_date.lte": today,
       },
-      `genre-movies-${genreId}-${page}`,
+      `genre-movies-${genreId}-${page}${buildFilterCacheKey(filters)}`,
+      mergedFilters,
     )) as TMDBResponse<Movie>;
 
     return data;
@@ -369,24 +393,32 @@ export const tmdbServerApi = {
 
   // Discover TV shows by genre with optional streaming filter.
   // first_air_date bounds keep soap operas and future shows out of results.
+  // `filters` come from the genre page filter bar and override the defaults.
   discoverTVShowsByGenre: async (
     genreId: number,
     page: number = 1,
+    filters: FilterOptions = {},
   ): Promise<TMDBResponse<TVShow>> => {
     const today = new Date().toISOString().split("T")[0];
     const tenYearsAgo = new Date(Date.now() - 10 * 365 * 24 * 60 * 60 * 1000)
       .toISOString()
       .split("T")[0];
+    const mergedFilters: FilterOptions = {
+      ...filters,
+      genre: filters.genre ? `${genreId},${filters.genre}` : String(genreId),
+    };
     const data = (await makeDiscoveryRequest(
       "/discover/tv",
       {
-        with_genres: genreId,
         page,
         sort_by: "popularity.desc",
-        "first_air_date.gte": tenYearsAgo,
+        // The 10-year floor is only a default for the unfiltered listing – it
+        // would wipe out the results whenever an older year is requested.
+        ...(filters.year ? {} : { "first_air_date.gte": tenYearsAgo }),
         "first_air_date.lte": today,
       },
-      `genre-tv-${genreId}-${page}`,
+      `genre-tv-${genreId}-${page}${buildFilterCacheKey(filters)}`,
+      mergedFilters,
     )) as TMDBResponse<TVShow>;
 
     return data;

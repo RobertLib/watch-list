@@ -1,11 +1,16 @@
 import { Metadata } from "next";
 import { PageHero } from "@/components/PageHero";
 import { TVShowsContent } from "@/components/TVShowsContent";
+import {
+  hasActiveDiscoverFilters,
+  parseDiscoverFilters,
+  type DiscoverSearchParams,
+} from "@/lib/discover-filters";
 
 // Force dynamic rendering to avoid issues with cookies during build
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
+const baseMetadata: Metadata = {
   title: "TV Shows",
   description:
     "Explore the best TV shows and series. Discover popular, top-rated, and trending television content across all streaming platforms.",
@@ -47,6 +52,23 @@ export const metadata: Metadata = {
     canonical: "https://www.watch-list.me/tv-shows",
   },
 };
+
+// Filtered views are refinements of the same listing – they keep the canonical
+// pointing at /tv-shows and stay out of the index as duplicates.
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<DiscoverSearchParams>;
+}): Promise<Metadata> {
+  const params = await searchParams;
+  const isFiltered =
+    Boolean(params.preset) ||
+    hasActiveDiscoverFilters(parseDiscoverFilters(params, "tv"));
+
+  return isFiltered
+    ? { ...baseMetadata, robots: { index: false, follow: true } }
+    : baseMetadata;
+}
 
 export default function TVShowsPage() {
   return (

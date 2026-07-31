@@ -27,6 +27,7 @@ async function MoviesDataWrapper() {
         title="Discover Movies"
         initialMovies={popular.results}
         initialTotalPages={popular.total_pages}
+        initialTotalResults={popular.total_results}
       />
       <PaginatedMovieSection
         title="Trending This Week"

@@ -5,9 +5,18 @@ import { tmdbApi } from "@/lib/tmdb";
 import { tmdbServerApi } from "@/lib/tmdb-server";
 import { MediaSection } from "@/components/MediaSection";
 import { WikipediaInsights } from "@/components/WikipediaInsights";
+import { DiscoverFilterBar } from "@/components/DiscoverFilterBar";
 import { extractIdFromSlug } from "@/lib/utils";
 import { getGenreWikipediaContent } from "@/lib/wikipedia";
 import { convertMovieToMediaItem } from "@/lib/media-converters";
+import {
+  buildDiscoverFilterQuery,
+  discoverFiltersToFilterOptions,
+  hasActiveDiscoverFilters,
+  parseDiscoverFilters,
+  type DiscoverFilters,
+  type DiscoverSearchParams,
+} from "@/lib/discover-filters";
 
 export const revalidate = 86400;
 
@@ -17,24 +26,42 @@ interface GenreMoviesPageProps {
   params: Promise<{
     slug: string;
   }>;
-  searchParams: Promise<{
-    page?: string;
-  }>;
+  searchParams: Promise<DiscoverSearchParams>;
 }
 
-async function getGenreMoviesData(genreId: number, page: number) {
+async function getMovieGenres() {
   try {
-    const [genresResponse, moviesResponse] = await Promise.all([
-      tmdbApi.getMovieGenres(),
-      tmdbServerApi.discoverMoviesByGenre(genreId, page),
+    return (await tmdbApi.getMovieGenres()).genres;
+  } catch (error) {
+    console.error("Error fetching movie genres:", error);
+    return null;
+  }
+}
+
+async function getGenreMoviesData(
+  genreId: number,
+  page: number,
+  filters: DiscoverFilters,
+) {
+  try {
+    const [genres, moviesResponse] = await Promise.all([
+      tmdbApi.getMovieGenres().then((response) => response.genres),
+      tmdbServerApi.discoverMoviesByGenre(
+        genreId,
+        page,
+        discoverFiltersToFilterOptions(filters, "movie"),
+      ),
     ]);
 
-    const genre = genresResponse.genres.find((g) => g.id === genreId);
+    const genre = genres.find((g) => g.id === genreId);
 
     return {
       genre,
+      // Offered as the "combine with" options in the filter bar
+      otherGenres: genres.filter((g) => g.id !== genreId),
       movies: moviesResponse.results,
       totalPages: Math.min(moviesResponse.total_pages, MAX_PAGE),
+      totalResults: moviesResponse.total_results,
     };
   } catch (error) {
     console.error("Error fetching genre movies:", error);
@@ -47,12 +74,18 @@ export async function generateMetadata({
   searchParams,
 }: GenreMoviesPageProps): Promise<Metadata> {
   const { slug } = await params;
-  const { page: pageParam } = await searchParams;
+  const resolvedSearchParams = await searchParams;
   const id = extractIdFromSlug(slug);
   const page = Math.max(
     1,
-    Math.min(parseInt(pageParam ?? "1", 10) || 1, MAX_PAGE),
+    Math.min(parseInt(resolvedSearchParams.page ?? "1", 10) || 1, MAX_PAGE),
   );
+  const filters = parseDiscoverFilters(
+    resolvedSearchParams,
+    "movie",
+    "with_genre",
+  );
+  const isFiltered = hasActiveDiscoverFilters(filters);
 
   if (!id) {
     return {
@@ -60,21 +93,24 @@ export async function generateMetadata({
     };
   }
 
-  const data = await getGenreMoviesData(id, page);
+  const genres = await getMovieGenres();
+  const genre = genres?.find((g) => g.id === id);
 
-  if (!data || !data.genre) {
+  if (!genre) {
     return {
       title: "Genre not found",
     };
   }
 
-  const { genre } = data;
+  // Filtered views are user-facing refinements of the same listing – they point
+  // back at the unfiltered page and stay out of the index as duplicates.
   const canonicalUrl =
     page === 1
       ? `https://www.watch-list.me/genres/movie/${slug}`
       : `https://www.watch-list.me/genres/movie/${slug}?page=${page}`;
 
   return {
+    ...(isFiltered && { robots: { index: false, follow: true } }),
     title:
       page === 1
         ? `${genre.name} Movies`
@@ -115,24 +151,30 @@ export default async function GenreMoviesPage({
   searchParams,
 }: GenreMoviesPageProps) {
   const { slug } = await params;
-  const { page: pageParam } = await searchParams;
+  const resolvedSearchParams = await searchParams;
   const id = extractIdFromSlug(slug);
   const page = Math.max(
     1,
-    Math.min(parseInt(pageParam ?? "1", 10) || 1, MAX_PAGE),
+    Math.min(parseInt(resolvedSearchParams.page ?? "1", 10) || 1, MAX_PAGE),
   );
+  const filters = parseDiscoverFilters(
+    resolvedSearchParams,
+    "movie",
+    "with_genre",
+  );
+  const isFiltered = hasActiveDiscoverFilters(filters);
 
   if (!id) {
     notFound();
   }
 
-  const data = await getGenreMoviesData(id, page);
+  const data = await getGenreMoviesData(id, page, filters);
 
   if (!data || !data.genre) {
     notFound();
   }
 
-  const { genre, movies, totalPages } = data;
+  const { genre, otherGenres, movies, totalPages, totalResults } = data;
   const mediaItems = movies.map(convertMovieToMediaItem);
 
   const wikiContent =
@@ -142,22 +184,38 @@ export default async function GenreMoviesPage({
     <div className="min-h-screen bg-black pt-20">
       <div className="container mx-auto px-6 lg:px-8 py-8">
         {/* Header */}
-        <div className="mb-12">
+        <div className="mb-8">
           <h1 className="text-4xl font-bold text-white mb-4">
             {genre.name} Movies
           </h1>
           <p className="text-gray-400 text-lg">
-            Discover popular {genre.name.toLowerCase()} movies
+            {isFiltered
+              ? `Browse ${genre.name.toLowerCase()} movies matching your filters`
+              : `Discover popular ${genre.name.toLowerCase()} movies`}
             {page > 1 && ` – page ${page}`}
           </p>
         </div>
+
+        <DiscoverFilterBar
+          type="movie"
+          genres={otherGenres}
+          genreParamKey="with_genre"
+          genreLabel="Combine With"
+          genreAllLabel="No Second Genre"
+          totalResults={totalResults}
+          emptyHint="Showing the most popular titles in this genre."
+        />
 
         {/* Movies Grid */}
         <MediaSection
           title=""
           items={mediaItems}
           size="medium"
-          emptyMessage={`No ${genre.name.toLowerCase()} movies found.`}
+          emptyMessage={
+            isFiltered
+              ? `No ${genre.name.toLowerCase()} movies match these filters. Try loosening them.`
+              : `No ${genre.name.toLowerCase()} movies found.`
+          }
           className="mb-0"
         />
 
@@ -169,11 +227,11 @@ export default async function GenreMoviesPage({
           >
             {page > 1 && (
               <Link
-                href={
-                  page === 2
-                    ? `/genres/movie/${slug}`
-                    : `/genres/movie/${slug}?page=${page - 1}`
-                }
+                href={`/genres/movie/${slug}${buildDiscoverFilterQuery(
+                  filters,
+                  page - 1,
+                  "with_genre",
+                )}`}
                 className="px-5 py-2 rounded-lg bg-gray-800 text-white hover:bg-gray-700 transition-colors"
               >
                 ← Previous
@@ -184,7 +242,11 @@ export default async function GenreMoviesPage({
             </span>
             {page < totalPages && (
               <Link
-                href={`/genres/movie/${slug}?page=${page + 1}`}
+                href={`/genres/movie/${slug}${buildDiscoverFilterQuery(
+                  filters,
+                  page + 1,
+                  "with_genre",
+                )}`}
                 className="px-5 py-2 rounded-lg bg-gray-800 text-white hover:bg-gray-700 transition-colors"
               >
                 Next →

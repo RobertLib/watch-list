@@ -1,53 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { MediaGrid } from "./MediaGrid";
 import { LoadMoreButton } from "./LoadMoreButton";
-import { FilterPresets } from "./FilterPresets";
+import { FilterPresets, TV_PRESETS } from "./FilterPresets";
 import { LoadingSpinner } from "./LoadingSpinner";
 import { discoverTVShowsWithFilters } from "@/app/actions";
-import { TV_PRESETS } from "@/components/FilterPresets";
+import {
+  formatResultCount,
+  resolveDiscoverFilters,
+} from "@/lib/discover-filters";
 import type { TVShow, MediaItem } from "@/types/tmdb";
 import type { FilterOptions } from "@/types/filters";
-
-// Extract filter options from URL search params (used both for lazy state init and in useEffect)
-function extractFiltersFromParams(params: {
-  get: (key: string) => string | null;
-}): FilterOptions {
-  const presetId = params.get("preset");
-  const hasOtherFilters =
-    params.get("sort_by") ||
-    params.get("year") ||
-    params.get("genre") ||
-    params.get("min_rating") ||
-    params.get("language");
-
-  if (presetId && !hasOtherFilters) {
-    const preset = TV_PRESETS.find((p) => p.id === presetId);
-    if (preset) return preset.filters;
-  }
-
-  const filters: FilterOptions = {};
-  const sortBy = params.get("sort_by");
-  if (sortBy) filters.sortBy = sortBy;
-  const year = params.get("year");
-  if (year) filters.year = year;
-  const genre = params.get("genre");
-  if (genre) filters.genre = genre;
-  const minRating = params.get("min_rating");
-  if (minRating) filters.minRating = Number(minRating);
-  const language = params.get("language");
-  if (language) filters.withOriginalLanguage = language;
-  return filters;
-}
-
-function checkHasActiveFilters(filters: FilterOptions): boolean {
-  return Object.values(filters).some(
-    (value) =>
-      value !== undefined && value !== "" && value !== "popularity.desc",
-  );
-}
 
 // Helper function to convert TVShow to MediaItem
 const tvShowToMediaItem = (tvShow: TVShow): MediaItem => ({
@@ -68,39 +33,40 @@ interface FilteredTVSectionProps {
   title: string;
   initialTVShows?: TVShow[];
   initialTotalPages?: number;
+  initialTotalResults?: number;
 }
 
 export function FilteredTVSection({
   title,
   initialTVShows = [],
   initialTotalPages = 1,
+  initialTotalResults,
 }: FilteredTVSectionProps) {
   const searchParams = useSearchParams();
 
-  // Synchronously detect active filters from URL to avoid flashing unfiltered content
-  // when the user navigates back to this page with a filter already applied.
-  const initialFiltersFromURL = extractFiltersFromParams(searchParams);
-  const initialHasFilters = checkHasActiveFilters(initialFiltersFromURL);
+  // The URL is the single source of truth: the filter bar and the presets only
+  // push params, this section reacts to whatever ends up in the URL. Deriving it
+  // during render also avoids flashing unfiltered content when the user lands
+  // here with filters already applied.
+  const { options: filterOptions, isActive: hasFilters } =
+    resolveDiscoverFilters(searchParams, "tv", TV_PRESETS);
+  const filtersKey = JSON.stringify(filterOptions);
+  // Read inside the effect without making the object identity a dependency.
+  const filterOptionsRef = useRef(filterOptions);
+  filterOptionsRef.current = filterOptions;
 
   const [tvShows, setTVShows] = useState<TVShow[]>(
-    initialHasFilters ? [] : initialTVShows,
+    hasFilters ? [] : initialTVShows,
   );
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(
-    initialHasFilters ? 1 : initialTotalPages,
+    hasFilters ? 1 : initialTotalPages,
   );
-  const [loading, setLoading] = useState(initialHasFilters);
-  const [hasFilters, setHasFilters] = useState(initialHasFilters);
+  const [totalResults, setTotalResults] = useState(
+    hasFilters ? undefined : initialTotalResults,
+  );
+  const [loading, setLoading] = useState(hasFilters);
   const [hasLoadedMore, setHasLoadedMore] = useState(false);
-  const [activeFilters, setActiveFilters] = useState<FilterOptions>(
-    initialHasFilters ? initialFiltersFromURL : {},
-  );
-  const lastCallbackFilters = useRef<string>("");
-
-  // Extract filters from URL parameters
-  const getFiltersFromParams = useCallback((): FilterOptions => {
-    return extractFiltersFromParams(searchParams);
-  }, [searchParams]);
 
   // Load TV shows based on current filters
   const loadTVShows = async (page: number = 1, filters: FilterOptions = {}) => {
@@ -122,6 +88,7 @@ export function FilteredTVSection({
 
       setCurrentPage(response.page);
       setTotalPages(response.total_pages);
+      setTotalResults(response.total_results);
     } catch (error) {
       console.error("Error loading TV shows:", error);
     } finally {
@@ -129,53 +96,32 @@ export function FilteredTVSection({
     }
   };
 
-  // Handle filter changes (from presets or FilterBar callback)
-  const handleFiltersChange = (filters: FilterOptions) => {
-    const hasActiveFilters = Object.values(filters).some(
-      (value) =>
-        value !== undefined && value !== "" && value !== "popularity.desc",
-    );
-    setHasFilters(hasActiveFilters);
-    setActiveFilters(hasActiveFilters ? filters : {});
-    if (hasActiveFilters) {
-      lastCallbackFilters.current = JSON.stringify(filters);
-      loadTVShows(1, filters);
-    }
-  };
-
-  // Load TV shows when URL parameters change
+  // Load TV shows whenever the filters in the URL change
   useEffect(() => {
-    const filters = getFiltersFromParams();
-    const hasActiveFilters = Object.values(filters).some(
-      (value) =>
-        value !== undefined && value !== "" && value !== "popularity.desc",
-    );
-
-    setHasFilters(hasActiveFilters);
-
-    if (hasActiveFilters) {
-      const filtersKey = JSON.stringify(filters);
-      if (filtersKey === lastCallbackFilters.current) {
-        lastCallbackFilters.current = "";
-        return;
-      }
-      setActiveFilters(filters);
-      loadTVShows(1, filters);
-    } else {
-      // Reset to initial TV shows if no filters
-      lastCallbackFilters.current = "";
-      setActiveFilters({});
+    if (!hasFilters) {
+      // Reset to the server-rendered listing
       setTVShows(initialTVShows);
       setHasLoadedMore(false);
       setCurrentPage(1);
       setTotalPages(initialTotalPages);
+      setTotalResults(initialTotalResults);
+      setLoading(false);
+      return;
     }
-  }, [searchParams, initialTVShows, initialTotalPages, getFiltersFromParams]);
+
+    loadTVShows(1, filterOptionsRef.current);
+  }, [
+    filtersKey,
+    hasFilters,
+    initialTVShows,
+    initialTotalPages,
+    initialTotalResults,
+  ]);
 
   const handleLoadMore = async () => {
     if (currentPage < totalPages && !loading) {
       if (!hasFilters) setHasLoadedMore(true);
-      await loadTVShows(currentPage + 1, activeFilters);
+      await loadTVShows(currentPage + 1, filterOptions);
     }
   };
 
@@ -187,7 +133,7 @@ export function FilteredTVSection({
     <section className="mb-12">
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-white mb-4">{title}</h2>
-        <FilterPresets type="tv" onFiltersChange={handleFiltersChange} />
+        <FilterPresets type="tv" />
       </div>
 
       {loading && displayTVShows.length === 0 ? (
@@ -196,7 +142,20 @@ export function FilteredTVSection({
         </div>
       ) : (
         <>
-          <MediaGrid items={displayItems} />
+          <p className="text-sm text-gray-400 mb-4 min-h-5" aria-live="polite">
+            {loading
+              ? "Updating results…"
+              : totalResults !== undefined &&
+                formatResultCount(totalResults, "tv")}
+          </p>
+
+          <div
+            className={
+              loading ? "opacity-60 transition-opacity" : "transition-opacity"
+            }
+          >
+            <MediaGrid items={displayItems} />
+          </div>
 
           {canLoadMore && (
             <LoadMoreButton onLoadMore={handleLoadMore} disabled={loading} />
