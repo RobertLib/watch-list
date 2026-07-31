@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "My Watchlist",
   description:
-    "View and manage your personal watchlist of movies and TV shows. Keep track of what you want to watch next on WatchList.",
+    "View and manage your personal watchlist of movies and TV shows. Keep track of what you want to watch next and what you have already seen on WatchList.",
   openGraph: {
     title: "My Watchlist - WatchList",
     description:
@@ -27,6 +27,8 @@ export const metadata: Metadata = {
     "saved tv shows",
     "watch later",
     "movie tracker",
+    "watched list",
+    "movies i watched",
   ],
   twitter: {
     card: "summary_large_image",

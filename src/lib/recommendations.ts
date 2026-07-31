@@ -34,8 +34,9 @@ const EMPTY_RESULT: RecommendationsResult = { items: [], basedOn: [] };
 // Only the most recent entries drive the query – further seeds cost another
 // TMDB round trip while barely moving the ranking.
 const MAX_SEEDS = 6;
-// Upper bound on the payload a client may send; the rest of the watchlist is
-// still needed so saved titles can be excluded from the results.
+// Upper bound on the payload a client may send per list; the entries beyond the
+// seeds are still needed so saved and watched titles can be excluded from the
+// results.
 const MAX_WATCHLIST_ITEMS = 100;
 const MAX_TITLE_LENGTH = 200;
 const MAX_RESULTS = 20;
@@ -83,21 +84,36 @@ export function sanitizeSeeds(input: unknown): RecommendationSeed[] {
 }
 
 /**
- * Build a "Recommended for You" list from the user's watchlist.
+ * Build a "Recommended for You" list from the user's watchlist and watched list.
  *
- * `watchlist` is expected newest-first: the most recently saved titles say the
- * most about what someone wants to watch right now.
+ * Both lists are expected newest-first: the most recently saved titles say the
+ * most about what someone wants to watch right now. `watched` titles are never
+ * recommended back, and they keep the carousel alive once a watchlist has been
+ * worked through – they still describe the same taste.
  */
 export async function getRecommendationsFromWatchlist(
   watchlist: RecommendationSeed[],
+  watched: RecommendationSeed[] = [],
 ): Promise<RecommendationsResult> {
-  if (watchlist.length === 0) return EMPTY_RESULT;
+  if (watchlist.length === 0 && watched.length === 0) return EMPTY_RESULT;
 
-  const seeds = watchlist.slice(0, MAX_SEEDS);
-  // Everything already saved is excluded, not just the titles used as seeds.
-  const alreadySaved = new Set(
-    watchlist.map((entry) => itemKey(entry.id, entry.mediaType)),
-  );
+  // Saved titles lead: intent to watch describes the current mood better than a
+  // viewing history, which only fills the remaining seed slots. A title can sit
+  // on both lists, so the two are de-duplicated against each other here.
+  // Everything on either list is excluded from the results, not just the titles
+  // used as seeds.
+  const alreadySaved = new Set<string>();
+  const combined: RecommendationSeed[] = [];
+
+  for (const entry of [...watchlist, ...watched]) {
+    const key = itemKey(entry.id, entry.mediaType);
+    if (alreadySaved.has(key)) continue;
+
+    alreadySaved.add(key);
+    combined.push(entry);
+  }
+
+  const seeds = combined.slice(0, MAX_SEEDS);
 
   const responses = await Promise.allSettled(
     seeds.map((seed) =>

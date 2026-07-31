@@ -10,6 +10,8 @@ import { WatchProviders } from "./WatchProviders";
 import { GenreTags } from "./GenreTags";
 import { VideoOverlay } from "./VideoOverlay";
 import { WatchlistButton } from "./WatchlistButton";
+import { WatchedButton } from "./WatchedButton";
+import { useWatched } from "@/contexts/WatchedContext";
 import { useVideoOverlay } from "@/hooks/useVideoOverlay";
 import { cn, createSlug } from "@/lib/utils";
 import { throttle } from "@/lib/throttle";
@@ -36,6 +38,7 @@ export function MediaCard({
   onCardClick,
 }: MediaCardProps) {
   const { isOpen, video, isLoading, openVideo, closeVideo } = useVideoOverlay();
+  const { isWatched } = useWatched();
   const [isMobileOverlayVisible, setIsMobileOverlayVisible] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -53,6 +56,7 @@ export function MediaCard({
 
   const imageUrl = tmdbApi.getImageUrl(item.poster_path, "w500");
   const year = new Date(item.release_date).getFullYear();
+  const watched = isWatched(item.id, item.media_type);
 
   // Get title based on media type - handle both movies and TV shows
   const title =
@@ -221,11 +225,15 @@ export function MediaCard({
           sizeClasses[size],
           className,
         )}
-        aria-label={`View details for ${title} (${year})`}
+        aria-label={`View details for ${title} (${year})${
+          watched ? " – watched" : ""
+        }`}
       >
         <article
           className={cn(
             "group relative rounded-lg overflow-hidden bg-gray-900 cursor-pointer transition-all duration-300 hover:scale-105 hover:shadow-xl w-full h-full",
+            // Marks a title as already seen without hiding the poster
+            watched && "ring-2 ring-green-500/60",
           )}
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
@@ -338,9 +346,10 @@ export function MediaCard({
             </div>
           </div>
 
-          {/* Watchlist button */}
-          <div className="absolute top-2 left-2">
+          {/* Watchlist and watched buttons */}
+          <div className="absolute top-2 left-2 flex items-center gap-1.5">
             <WatchlistButton item={item} variant="compact" />
+            <WatchedButton item={item} variant="compact" />
           </div>
         </article>
       </Link>

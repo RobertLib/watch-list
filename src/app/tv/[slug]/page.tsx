@@ -11,6 +11,7 @@ import { TVDetails } from "@/components/tv/TVDetails";
 import { TVTrailerButton } from "@/components/tv/TVTrailerButton";
 import { TVSeasons } from "@/components/tv/TVSeasons";
 import { DetailPageWatchlistButton } from "@/components/DetailPageWatchlistButton";
+import { DetailPageWatchedButton } from "@/components/DetailPageWatchedButton";
 import { LanguageSupport } from "@/components/LanguageSupport";
 import { StructuredData } from "@/components/StructuredData";
 import { MediaBreadcrumbs } from "@/components/Breadcrumbs";
@@ -432,6 +433,14 @@ export default async function TVPage({ params }: TVPageProps) {
               <div className="flex flex-wrap items-center gap-3.5 mt-6">
                 <TVTrailerButton tvId={id} trailer={trailer} />
                 <DetailPageWatchlistButton
+                  id={id}
+                  title={details.name}
+                  posterPath={details.poster_path}
+                  releaseDate={details.first_air_date}
+                  voteAverage={details.vote_average}
+                  mediaType="tv"
+                />
+                <DetailPageWatchedButton
                   id={id}
                   title={details.name}
                   posterPath={details.poster_path}

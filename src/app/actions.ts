@@ -168,13 +168,17 @@ export async function hasUserCustomSettings(): Promise<boolean> {
   return Boolean(hasCustomRegion || hasCustomWatchProvider);
 }
 
-// Personalised picks derived from the watchlist. The watchlist lives in a
-// browser cookie the client owns, so it is sent in rather than read here –
-// that keeps the (statically rendered) home page out of dynamic rendering.
+// Personalised picks derived from the watchlist and the watched list. Both live
+// in browser storage the client owns, so they are sent in rather than read here
+// – that keeps the (statically rendered) home page out of dynamic rendering.
 export async function getWatchlistRecommendations(
   watchlist: unknown,
+  watched: unknown,
 ): Promise<RecommendationsResult> {
-  return getRecommendationsFromWatchlist(sanitizeSeeds(watchlist));
+  return getRecommendationsFromWatchlist(
+    sanitizeSeeds(watchlist),
+    sanitizeSeeds(watched),
+  );
 }
 
 export async function fetchSeasonDetails(

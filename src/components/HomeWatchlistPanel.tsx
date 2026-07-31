@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Film, Tv, ArrowRight } from "lucide-react";
+import { Film, Tv, Eye, ArrowRight } from "lucide-react";
 import { useWatchlist } from "@/contexts/WatchlistContext";
+import { useWatched } from "@/contexts/WatchedContext";
 import { tmdbApi } from "@/lib/tmdb";
 
 export function HomeWatchlistPanel() {
   const { watchlist, isLoading } = useWatchlist();
+  const { watched } = useWatched();
 
   if (isLoading) return null;
   if (watchlist.length === 0) return null;
@@ -113,6 +115,20 @@ export function HomeWatchlistPanel() {
                   {tvShows.length}
                 </span>{" "}
                 TV show{tvShows.length !== 1 ? "s" : ""}
+              </span>
+            </Link>
+          )}
+          {watched.length > 0 && (
+            <Link
+              href="/watchlist#watched"
+              className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors"
+            >
+              <Eye className="h-4 w-4 text-green-500" aria-hidden="true" />
+              <span>
+                <span className="font-semibold text-white">
+                  {watched.length}
+                </span>{" "}
+                watched
               </span>
             </Link>
           )}

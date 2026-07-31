@@ -11,6 +11,7 @@ import { MovieDetails } from "@/components/movie/MovieDetails";
 import { MovieTrailerButton } from "@/components/movie/MovieTrailerButton";
 import { MovieCollection } from "@/components/movie/MovieCollection";
 import { DetailPageWatchlistButton } from "@/components/DetailPageWatchlistButton";
+import { DetailPageWatchedButton } from "@/components/DetailPageWatchedButton";
 import { LanguageSupport } from "@/components/LanguageSupport";
 import { StructuredData } from "@/components/StructuredData";
 import { MediaBreadcrumbs } from "@/components/Breadcrumbs";
@@ -418,6 +419,14 @@ export default async function MoviePage({ params }: MoviePageProps) {
               <div className="flex flex-wrap items-center gap-3.5 mt-6">
                 <MovieTrailerButton movieId={id} trailer={trailer} />
                 <DetailPageWatchlistButton
+                  id={id}
+                  title={details.title}
+                  posterPath={details.poster_path}
+                  releaseDate={details.release_date}
+                  voteAverage={details.vote_average}
+                  mediaType="movie"
+                />
+                <DetailPageWatchedButton
                   id={id}
                   title={details.title}
                   posterPath={details.poster_path}

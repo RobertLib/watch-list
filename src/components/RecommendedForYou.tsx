@@ -4,8 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { MediaCarousel } from "@/components/MediaCarousel";
 import { CarouselSkeleton } from "@/components/skeletons";
 import { useWatchlist } from "@/contexts/WatchlistContext";
+import { useWatched } from "@/contexts/WatchedContext";
 import { getWatchlistRecommendations } from "@/app/actions";
 import type { RecommendationsResult } from "@/lib/recommendations";
+import type { MediaType } from "@/types/tmdb";
 
 // Mirrors the server-side cap – anything beyond it is discarded there anyway.
 const MAX_ITEMS_SENT = 100;
@@ -15,36 +17,33 @@ const REFRESH_DELAY_MS = 500;
 const EMPTY_RESULT: RecommendationsResult = { items: [], basedOn: [] };
 
 /**
- * "Recommended for You" carousel driven by the watchlist.
+ * "Recommended for You" carousel driven by the watchlist and the watched list.
  *
- * The watchlist is client state (a cookie written in the browser), so the picks
- * are requested after mount – the home page itself stays statically rendered.
+ * Both lists are client state (browser storage), so the picks are requested
+ * after mount – the home page itself stays statically rendered.
  */
 export function RecommendedForYou() {
-  const { watchlist, isLoading } = useWatchlist();
+  const { watchlist, isLoading: isWatchlistLoading } = useWatchlist();
+  const { watched, isLoading: isWatchedLoading } = useWatched();
   const [result, setResult] = useState<RecommendationsResult>(EMPTY_RESULT);
   const [isFetching, setIsFetching] = useState(false);
 
-  const seeds = useMemo(
-    () =>
-      [...watchlist]
-        .sort(
-          (a, b) =>
-            new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime(),
-        )
-        .slice(0, MAX_ITEMS_SENT)
-        .map((item) => ({
-          id: item.id,
-          mediaType: item.mediaType,
-          title: item.title,
-        })),
+  const isLoading = isWatchlistLoading || isWatchedLoading;
+
+  const watchlistSeeds = useMemo(
+    () => toSeeds(watchlist, (item) => item.addedAt),
     [watchlist],
   );
+  const watchedSeeds = useMemo(
+    () => toSeeds(watched, (item) => item.watchedAt),
+    [watched],
+  );
+  const seedCount = watchlistSeeds.length + watchedSeeds.length;
 
   useEffect(() => {
     if (isLoading) return;
 
-    if (seeds.length === 0) {
+    if (seedCount === 0) {
       setResult(EMPTY_RESULT);
       return;
     }
@@ -54,7 +53,10 @@ export function RecommendedForYou() {
 
     const timer = setTimeout(async () => {
       try {
-        const recommendations = await getWatchlistRecommendations(seeds);
+        const recommendations = await getWatchlistRecommendations(
+          watchlistSeeds,
+          watchedSeeds,
+        );
         if (isCurrent) setResult(recommendations);
       } catch (error) {
         console.error("Error loading recommendations:", error);
@@ -64,14 +66,14 @@ export function RecommendedForYou() {
       }
     }, REFRESH_DELAY_MS);
 
-    // Watchlist changed (or the user navigated away) – drop the stale response.
+    // A list changed (or the user navigated away) – drop the stale response.
     return () => {
       isCurrent = false;
       clearTimeout(timer);
     };
-  }, [seeds, isLoading]);
+  }, [watchlistSeeds, watchedSeeds, seedCount, isLoading]);
 
-  if (isLoading || seeds.length === 0) return null;
+  if (isLoading || seedCount === 0) return null;
 
   // Keep the previous picks on screen while a refresh is in flight.
   if (isFetching && result.items.length === 0) {
@@ -90,7 +92,24 @@ export function RecommendedForYou() {
   );
 }
 
-/** e.g. "Based on Dune and Arrival, plus 3 more from your watchlist" */
+/** Newest first, since the latest picks describe the current mood best. */
+function toSeeds<T extends { id: number; mediaType: MediaType; title: string }>(
+  items: T[],
+  savedAt: (item: T) => string,
+): Array<{ id: number; mediaType: MediaType; title: string }> {
+  return [...items]
+    .sort(
+      (a, b) => new Date(savedAt(b)).getTime() - new Date(savedAt(a)).getTime(),
+    )
+    .slice(0, MAX_ITEMS_SENT)
+    .map((item) => ({
+      id: item.id,
+      mediaType: item.mediaType,
+      title: item.title,
+    }));
+}
+
+/** e.g. "Based on Dune and Arrival, plus 3 more from your lists" */
 function buildSubtitle(basedOn: string[]): string | undefined {
   const titles = basedOn.filter(Boolean);
   if (titles.length === 0) return undefined;
@@ -100,6 +119,6 @@ function buildSubtitle(basedOn: string[]): string | undefined {
   const named = shown.join(" and ");
 
   return remaining > 0
-    ? `Based on ${named}, plus ${remaining} more from your watchlist`
-    : `Based on ${named} from your watchlist`;
+    ? `Based on ${named}, plus ${remaining} more from your lists`
+    : `Based on ${named} from your lists`;
 }

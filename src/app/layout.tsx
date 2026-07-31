@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import { GenresProvider } from "@/contexts/GenresContext";
 import { WatchlistProvider } from "@/contexts/WatchlistContext";
+import { WatchedProvider } from "@/contexts/WatchedContext";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { ToastContainer } from "@/components/Toast";
@@ -104,14 +105,16 @@ export default function RootLayout({
 
         <GenresProvider>
           <WatchlistProvider>
-            <div className="font-sans min-h-screen bg-black text-white">
-              <Navigation />
-              <div className="pt-16">
-                <main id="main-content">{children}</main>
+            <WatchedProvider>
+              <div className="font-sans min-h-screen bg-black text-white">
+                <Navigation />
+                <div className="pt-16">
+                  <main id="main-content">{children}</main>
+                </div>
+                <Footer />
+                <ToastContainer />
               </div>
-              <Footer />
-              <ToastContainer />
-            </div>
+            </WatchedProvider>
           </WatchlistProvider>
         </GenresProvider>
       </body>

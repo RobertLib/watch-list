@@ -77,9 +77,11 @@ export default function AboutPage() {
       <section className="mb-10">
         <h2 className="text-2xl font-bold text-white mb-3">Privacy</h2>
         <p className="text-gray-400 leading-relaxed">
-          WatchList does not require an account. Your watchlist is saved locally
-          in your browser and never sent to a server. Your streaming provider
-          preferences and region are stored in a cookie on your device only.
+          WatchList does not require an account. Your watchlist and the titles
+          you mark as watched are saved locally in your browser, and are only
+          ever sent to the server to work out your recommendations. Your
+          streaming provider preferences and region are stored in a cookie on
+          your device only.
         </p>
       </section>
 
