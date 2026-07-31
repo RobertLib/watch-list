@@ -6,6 +6,7 @@ import { MediaGrid } from "./MediaGrid";
 import { LoadMoreButton } from "./LoadMoreButton";
 import { FilterPresets, MOVIE_PRESETS } from "./FilterPresets";
 import { LoadingSpinner } from "./LoadingSpinner";
+import { ViewModeToggle } from "./ViewModeToggle";
 import { discoverMoviesWithFilters } from "@/app/actions";
 import {
   formatResultCount,
@@ -132,7 +133,10 @@ export function FilteredMovieSection({
   return (
     <section className="mb-12">
       <div className="mb-8">
-        <h2 className="text-2xl font-bold text-white mb-4">{title}</h2>
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+          <h2 className="text-2xl font-bold text-white">{title}</h2>
+          <ViewModeToggle className="ml-auto" />
+        </div>
         <FilterPresets type="movie" />
       </div>
 

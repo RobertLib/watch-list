@@ -211,6 +211,7 @@ export default async function GenreTVShowsPage({
           title=""
           items={mediaItems}
           size="medium"
+          showViewToggle
           emptyMessage={
             isFiltered
               ? `No ${genre.name.toLowerCase()} TV shows match these filters. Try loosening them.`

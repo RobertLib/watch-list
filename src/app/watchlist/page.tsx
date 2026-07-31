@@ -5,7 +5,10 @@ import Link from "next/link";
 import { useWatchlist } from "@/contexts/WatchlistContext";
 import { useWatched } from "@/contexts/WatchedContext";
 import { MediaCard } from "@/components/MediaCard";
+import { MediaListRow } from "@/components/MediaListRow";
+import { ViewModeToggle } from "@/components/ViewModeToggle";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
+import { useViewMode } from "@/hooks/useViewMode";
 import { Trash2, Star, Heart, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MediaItem, MediaType } from "@/types/tmdb";
@@ -56,6 +59,7 @@ export default function WatchlistPage() {
     readTabFromFragment,
     () => "to-watch" as Tab,
   );
+  const { viewMode } = useViewMode();
 
   const isLoading = isWatchlistLoading || isWatchedLoading;
 
@@ -139,24 +143,34 @@ export default function WatchlistPage() {
     media_type: item.mediaType,
   });
 
-  const renderGrid = (gridItems: ListItem[]) => (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4">
-      {gridItems.map((item) => (
-        <div
-          key={`${item.id}-${item.mediaType}`}
-          className="relative group aspect-2/3"
-        >
-          <MediaCard
+  const renderItems = (sectionItems: ListItem[]) =>
+    viewMode === "list" ? (
+      <div className="flex flex-col gap-3">
+        {sectionItems.map((item) => (
+          <MediaListRow
+            key={`${item.id}-${item.mediaType}`}
             item={toMediaItem(item)}
-            size="medium"
-            showOverlay={true}
-            forceShowOverlay={false}
-            className="w-full h-full"
           />
-        </div>
-      ))}
-    </div>
-  );
+        ))}
+      </div>
+    ) : (
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4">
+        {sectionItems.map((item) => (
+          <div
+            key={`${item.id}-${item.mediaType}`}
+            className="relative group aspect-2/3"
+          >
+            <MediaCard
+              item={toMediaItem(item)}
+              size="medium"
+              showOverlay={true}
+              forceShowOverlay={false}
+              className="w-full h-full"
+            />
+          </div>
+        ))}
+      </div>
+    );
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -175,13 +189,16 @@ export default function WatchlistPage() {
         </div>
 
         {items.length > 0 && (
-          <button
-            onClick={handleClearAll}
-            className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-semibold transition-colors shrink-0"
-          >
-            <Trash2 className="w-4 h-4" />
-            Clear All
-          </button>
+          <div className="flex items-center gap-3 shrink-0">
+            <ViewModeToggle />
+            <button
+              onClick={handleClearAll}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-semibold transition-colors shrink-0"
+            >
+              <Trash2 className="w-4 h-4" />
+              Clear All
+            </button>
+          </div>
         )}
       </div>
 
@@ -229,7 +246,7 @@ export default function WatchlistPage() {
                     ({movies.length})
                   </span>
                 </h2>
-                {renderGrid(movies)}
+                {renderItems(movies)}
               </section>
             )}
 
@@ -241,7 +258,7 @@ export default function WatchlistPage() {
                     ({tvShows.length})
                   </span>
                 </h2>
-                {renderGrid(tvShows)}
+                {renderItems(tvShows)}
               </section>
             )}
           </>
