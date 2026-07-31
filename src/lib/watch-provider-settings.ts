@@ -1,7 +1,16 @@
 const WATCH_PROVIDER_FILTER_COOKIE = "watch-provider-filter";
 const SELECTED_PROVIDERS_COOKIE = "selected-watch-providers";
 
+/** Upper bound for stored provider IDs - the API only offers 30 per region */
+const MAX_SELECTED_PROVIDERS = 50;
+
 export type WatchProviderFilter = "all" | "streaming-only";
+
+export function isWatchProviderFilter(
+  value: unknown,
+): value is WatchProviderFilter {
+  return value === "all" || value === "streaming-only";
+}
 
 /**
  * Get the cookie name for watch provider filter
@@ -22,6 +31,20 @@ export function getSelectedProvidersCookieName(): string {
  */
 export function providerIdsToCookieValue(ids: number[]): string {
   return ids.join(",");
+}
+
+/**
+ * Drop anything that is not a usable provider ID and de-duplicate.
+ * Server actions are reachable directly, so the payload is never trusted.
+ */
+export function sanitizeProviderIds(ids: unknown): number[] {
+  if (!Array.isArray(ids)) return [];
+
+  const valid = ids.filter(
+    (id): id is number => Number.isInteger(id) && (id as number) > 0,
+  );
+
+  return Array.from(new Set(valid)).slice(0, MAX_SELECTED_PROVIDERS);
 }
 
 /**
