@@ -105,6 +105,12 @@ export function AdvancedFiltersPanel({
                   countries
                 </li>
                 <li>
+                  • Streaming Platform narrows results to the platforms saved in
+                  your profile, or to any single platform available in your
+                  region – handy for checking what a service you don&apos;t have
+                  yet would give you
+                </li>
+                <li>
                   • Remove a single filter with its ✕ chip, or click &ldquo;Clear
                   Filters&rdquo; to reset everything
                 </li>

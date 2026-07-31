@@ -48,6 +48,29 @@ export function sanitizeProviderIds(ids: unknown): number[] {
 }
 
 /**
+ * Provider filter value standing for "the platforms saved in my profile".
+ * Kept as a sentinel because the saved platforms live in an httpOnly cookie and
+ * can only be resolved on the server.
+ */
+export const MY_PROVIDERS = "mine";
+
+/**
+ * Validate a provider filter value coming from the URL or a server action.
+ * Returns the `MY_PROVIDERS` sentinel, `|`-separated provider IDs for TMDB, or
+ * "" when the value carries nothing usable.
+ */
+export function sanitizeWatchProvidersFilter(value: unknown): string {
+  if (typeof value !== "string" || !value) return "";
+  if (value === MY_PROVIDERS) return MY_PROVIDERS;
+
+  const ids = sanitizeProviderIds(
+    value.split(/[,|]/).map((id) => parseInt(id.trim(), 10)),
+  );
+
+  return ids.join("|");
+}
+
+/**
  * Parse provider IDs from cookie value string
  * Returns empty array if no providers are saved (user hasn't configured yet)
  */

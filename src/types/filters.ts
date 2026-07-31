@@ -12,6 +12,12 @@ export interface FilterOptions {
   withOriginalLanguage?: string;
   firstAirDateGte?: string;
   firstAirDateLte?: string;
+  /**
+   * Streaming platforms the results have to be available on. Either the
+   * `MY_PROVIDERS` sentinel – resolved from the platforms saved in the profile
+   * once the request reaches the server – or `|`-separated TMDB provider IDs.
+   */
+  watchProviders?: string;
 }
 
 export interface MovieSortOptions {

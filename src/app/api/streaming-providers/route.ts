@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRegion } from "@/lib/region-server";
 import { getRegionCode, isValidRegion } from "@/lib/region";
 import { TMDB_CONFIG } from "@/lib/tmdb-cache";
+import { getSelectedProviderIds } from "@/lib/watch-provider-server";
 import type { Region } from "@/lib/region-server";
 
 export interface StreamingProviderFromAPI {
@@ -91,6 +92,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       providers: sortedProviders,
       region: regionCode,
+      // The saved platforms sit in an httpOnly cookie, so clients that need to
+      // highlight them (profile picker, filter bar) get them from here.
+      selected: await getSelectedProviderIds(),
     });
   } catch (error) {
     console.error("Error fetching streaming providers:", error);

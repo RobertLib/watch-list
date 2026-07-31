@@ -5,6 +5,10 @@ import {
   getWatchProviderFilter,
   getSelectedProviderIdsString,
 } from "./watch-provider-server";
+import {
+  MY_PROVIDERS,
+  sanitizeWatchProvidersFilter,
+} from "./watch-provider-settings";
 import { getRegion } from "./region-server";
 import { getRegionCode } from "./region";
 import type {
@@ -33,10 +37,21 @@ const makeDiscoveryRequest = cache(
     const region = await getRegion();
     const regionCode = getRegionCode(region);
 
-    const fullCacheKey =
-      watchProviderFilter === "streaming-only" && selectedProviders
-        ? `${cacheKey}-${regionCode}-providers-${selectedProviders}`
-        : `${cacheKey}-${regionCode}-all`;
+    // A platform picked in the filter bar produces a different result set than
+    // the profile-wide setting, so it has to be part of the cache key too.
+    const providerFilter = sanitizeWatchProvidersFilter(filters.watchProviders);
+    const usesSavedProviders =
+      providerFilter === MY_PROVIDERS ||
+      (!providerFilter && watchProviderFilter === "streaming-only");
+
+    const providerScope =
+      providerFilter && !usesSavedProviders
+        ? `providers-${providerFilter}`
+        : usesSavedProviders && selectedProviders
+          ? `providers-${selectedProviders}`
+          : "all";
+
+    const fullCacheKey = `${cacheKey}-${regionCode}-${providerScope}`;
 
     const url = await buildFilteredUrl(endpoint, params, filters);
     return (await getCachedDiscoveryRequest(url, fullCacheKey)) as
@@ -76,8 +91,20 @@ async function buildFilteredUrl(
     region: regionCode,
   };
 
-  // Add watch provider filter if enabled and user has selected providers
-  if (watchProviderFilter === "streaming-only") {
+  // A platform picked in the filter bar wins over the profile-wide setting –
+  // that is what makes it possible to look outside your own subscriptions.
+  // The value can arrive straight from a server action, so it is re-validated.
+  const providerFilter = sanitizeWatchProvidersFilter(filters.watchProviders);
+
+  if (providerFilter && providerFilter !== MY_PROVIDERS) {
+    finalParams.with_watch_providers = providerFilter;
+    finalParams.watch_region = regionCode;
+    // Deliberately no monetization type: storefronts such as Apple TV or
+    // Google Play only ever rent/sell, so a flatrate-only query returns nothing.
+  } else if (
+    providerFilter === MY_PROVIDERS ||
+    watchProviderFilter === "streaming-only"
+  ) {
     // Use user-selected streaming platforms
     const selectedProviders = await getSelectedProviderIdsString();
     // Only apply filter if user has selected at least one provider

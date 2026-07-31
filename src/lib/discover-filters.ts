@@ -5,6 +5,7 @@ import {
   TV_SORT_OPTIONS,
   type FilterOptions,
 } from "@/types/filters";
+import { sanitizeWatchProvidersFilter } from "@/lib/watch-provider-settings";
 
 export type DiscoverMediaType = "movie" | "tv";
 
@@ -28,6 +29,8 @@ export interface DiscoverFilters {
   minRating: string;
   language: string;
   genre: string;
+  /** `MY_PROVIDERS`, or the ID of a single platform picked from all of them. */
+  provider: string;
 }
 
 export const EMPTY_DISCOVER_FILTERS: DiscoverFilters = {
@@ -36,6 +39,7 @@ export const EMPTY_DISCOVER_FILTERS: DiscoverFilters = {
   minRating: "",
   language: "",
   genre: "",
+  provider: "",
 };
 
 export interface DiscoverSearchParams {
@@ -47,6 +51,7 @@ export interface DiscoverSearchParams {
   language?: string;
   genre?: string;
   with_genre?: string;
+  provider?: string;
 }
 
 /** Accepts both the awaited `searchParams` of a page and `useSearchParams()`. */
@@ -107,6 +112,9 @@ export function parseDiscoverFilters(
       ? (languageParam as string)
       : "",
     genre: Number.isInteger(genre) && genre > 0 ? String(genre) : "",
+    // Which provider IDs exist depends on the region, so – like the genre – the
+    // value is only checked for shape here and stays harmless if unknown.
+    provider: sanitizeWatchProvidersFilter(readParam(params, "provider")),
   };
 }
 
@@ -135,6 +143,9 @@ export function discoverFiltersToFilterOptions(
   }
   if (filters.genre) {
     options.genre = filters.genre;
+  }
+  if (filters.provider) {
+    options.watchProviders = filters.provider;
   }
   if (filters.minRating || filters.sortBy.startsWith("vote_average")) {
     options.voteCountGte = RATING_VOTE_FLOOR;
@@ -196,6 +207,7 @@ export function buildDiscoverFilterQuery(
   if (filters.minRating) params.set("min_rating", filters.minRating);
   if (filters.language) params.set("language", filters.language);
   if (filters.genre) params.set(genreParamKey, filters.genre);
+  if (filters.provider) params.set("provider", filters.provider);
 
   const query = params.toString();
   return query ? `?${query}` : "";

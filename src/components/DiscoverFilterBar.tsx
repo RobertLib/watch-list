@@ -15,6 +15,8 @@ import {
   type DiscoverMediaType,
   type GenreParamKey,
 } from "@/lib/discover-filters";
+import { useStreamingProviders } from "@/hooks/useStreamingProviders";
+import { MY_PROVIDERS } from "@/lib/watch-provider-settings";
 import type { Genre } from "@/types/tmdb";
 
 const SELECT_CLASS =
@@ -55,6 +57,13 @@ export function DiscoverFilterBar({
   const sortOptions = getSortOptions(type);
   const isMovie = type === "movie";
 
+  const {
+    providers,
+    myProviders,
+    otherProviders,
+    isLoading: isLoadingProviders,
+  } = useStreamingProviders();
+
   // The URL is the single source of truth – every control reads the validated
   // filters back out of it, so a shared link reproduces the exact same view.
   const filters = parseDiscoverFilters(searchParams, type, genreParamKey);
@@ -77,6 +86,25 @@ export function DiscoverFilterBar({
       router.push(pathname, { scroll: false });
     });
   };
+
+  // The platform list only arrives after the first paint, and a shared link can
+  // name a platform the current region no longer offers, so the selected value
+  // never depends on the list being there.
+  const selectedProviderName = providers.find(
+    (provider) => String(provider.provider_id) === filters.provider,
+  )?.provider_name;
+  const isUnlistedProvider = Boolean(
+    filters.provider &&
+      filters.provider !== MY_PROVIDERS &&
+      !selectedProviderName,
+  );
+  const showMyProvidersOption =
+    myProviders.length > 0 || filters.provider === MY_PROVIDERS;
+  const myProvidersLabel = isLoadingProviders
+    ? "My Platforms"
+    : myProviders.length > 0
+      ? `My Platforms (${myProviders.length})`
+      : "My Platforms (none picked yet)";
 
   const activeChips: {
     key: string;
@@ -120,6 +148,17 @@ export function DiscoverFilterBar({
       patch: { genre: "" },
     });
   }
+  if (filters.provider) {
+    activeChips.push({
+      key: "provider",
+      label: `Platform: ${
+        filters.provider === MY_PROVIDERS
+          ? "My platforms"
+          : (selectedProviderName ?? `#${filters.provider}`)
+      }`,
+      patch: { provider: "" },
+    });
+  }
 
   return (
     <div className="bg-gray-900/50 rounded-lg p-6 mb-8">
@@ -128,7 +167,7 @@ export function DiscoverFilterBar({
           Filter and sort options for {isMovie ? "movies" : "TV shows"}
         </legend>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           {/* Sort By */}
           <div>
             <label htmlFor="filter-sort-select" className={LABEL_CLASS}>
@@ -235,6 +274,63 @@ export function DiscoverFilterBar({
                   {genre.name}
                 </option>
               ))}
+            </select>
+          </div>
+
+          {/* Streaming platform – either the ones saved in the profile, or any
+              single platform available in the region. */}
+          <div>
+            <label htmlFor="filter-provider-select" className={LABEL_CLASS}>
+              Streaming Platform
+            </label>
+            <select
+              id="filter-provider-select"
+              value={filters.provider}
+              onChange={(e) => applyFilters({ provider: e.target.value })}
+              className={SELECT_CLASS}
+              aria-label="Filter by streaming platform"
+            >
+              <option value="">Any Platform</option>
+              {showMyProvidersOption && (
+                <option value={MY_PROVIDERS}>{myProvidersLabel}</option>
+              )}
+              {isUnlistedProvider && (
+                <option value={filters.provider}>
+                  {isLoadingProviders
+                    ? "Loading platforms…"
+                    : `Platform #${filters.provider}`}
+                </option>
+              )}
+              {myProviders.length > 0 && (
+                <optgroup label="My platforms">
+                  {myProviders.map((provider) => (
+                    <option
+                      key={provider.provider_id}
+                      value={provider.provider_id}
+                    >
+                      {provider.provider_name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {otherProviders.length > 0 && (
+                <optgroup
+                  label={
+                    myProviders.length > 0
+                      ? "All other platforms"
+                      : "All platforms"
+                  }
+                >
+                  {otherProviders.map((provider) => (
+                    <option
+                      key={provider.provider_id}
+                      value={provider.provider_id}
+                    >
+                      {provider.provider_name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
         </div>
