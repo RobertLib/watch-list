@@ -1,5 +1,6 @@
 import { MetadataRoute } from "next";
 import { createSlug } from "@/lib/utils";
+import { STREAMING_LANDING_PLATFORMS } from "@/lib/streaming-landing";
 
 // Types for sitemap generation
 interface Genre {
@@ -320,6 +321,28 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         }))
       : [];
 
+  // Curated genre x platform landings. Listed unconditionally: whether a given
+  // combination has enough titles to be worth indexing depends on the visitor's
+  // region, which this build-time sitemap has no access to, so the page itself
+  // decides via MIN_RESULTS_TO_INDEX.
+  const platformLandingPages = (
+    [
+      ["movie", movieGenresResult],
+      ["tv", tvGenresResult],
+    ] as const
+  ).flatMap(([type, result]) =>
+    result.status === "fulfilled"
+      ? (result.value.genres ?? []).flatMap((genre: Genre) =>
+          STREAMING_LANDING_PLATFORMS.map((platform) => ({
+            url: `${baseUrl}/genres/${type}/${createSlug(genre.name, genre.id)}/${platform.slug}`,
+            lastModified: now,
+            changeFrequency: "weekly" as const,
+            priority: 0.75,
+          })),
+        )
+      : [],
+  );
+
   const collectionPages =
     popularCollectionsResult.status === "fulfilled"
       ? (popularCollectionsResult.value ?? []).map(
@@ -337,6 +360,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       ...staticPages,
       ...movieGenrePages,
       ...tvGenrePages,
+      ...platformLandingPages,
       ...moviePages,
       ...tvPages,
       ...personPages,

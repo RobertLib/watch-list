@@ -8,6 +8,7 @@ import { WikipediaInsights } from "@/components/WikipediaInsights";
 import { DiscoverFilterBar } from "@/components/DiscoverFilterBar";
 import { extractIdFromSlug } from "@/lib/utils";
 import { getGenreWikipediaContent } from "@/lib/wikipedia";
+import { STREAMING_LANDING_PLATFORMS } from "@/lib/streaming-landing";
 import { convertTVShowToMediaItem } from "@/lib/media-converters";
 import {
   buildDiscoverFilterQuery,
@@ -255,6 +256,25 @@ export default async function GenreTVShowsPage({
             )}
           </nav>
         )}
+
+        {/* Entry points into the curated genre x platform landings. Without these
+            the landings would only be reachable from the sitemap. */}
+        <section className="mt-16">
+          <h2 className="text-lg font-semibold text-white mb-3">
+            Where to stream {genre.name.toLowerCase()} series
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {STREAMING_LANDING_PLATFORMS.map((platform) => (
+              <Link
+                key={platform.slug}
+                href={`/genres/tv/${slug}/${platform.slug}`}
+                className="px-3 py-1.5 rounded-full bg-gray-800 text-gray-300 text-sm hover:bg-gray-700 hover:text-white transition-colors"
+              >
+                {genre.name} on {platform.name}
+              </Link>
+            ))}
+          </div>
+        </section>
 
         {wikiContent && (
           <div className="mt-20 max-w-3xl">
