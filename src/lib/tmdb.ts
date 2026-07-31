@@ -384,6 +384,25 @@ export const tmdbApi = {
     return cachedFetch(url, cacheKey, 3600) as Promise<TMDBResponse<TVShow>>; // 1 hour cache
   },
 
+  // Get movies recommended for a movie – TMDB's own "viewers also liked" list,
+  // which blends genre, cast and audience overlap rather than metadata alone.
+  getMovieRecommendations: async (
+    movieId: number,
+  ): Promise<TMDBResponse<Movie>> => {
+    const url = await buildUrl(`/movie/${movieId}/recommendations`);
+    const cacheKey = `movie-recommendations-${movieId}`;
+    return cachedFetch(url, cacheKey, 21600) as Promise<TMDBResponse<Movie>>; // 6 hours cache
+  },
+
+  // Get TV shows recommended for a TV show
+  getTVShowRecommendations: async (
+    tvId: number,
+  ): Promise<TMDBResponse<TVShow>> => {
+    const url = await buildUrl(`/tv/${tvId}/recommendations`);
+    const cacheKey = `tv-recommendations-${tvId}`;
+    return cachedFetch(url, cacheKey, 21600) as Promise<TMDBResponse<TVShow>>; // 6 hours cache
+  },
+
   // Discover movies by genre
   discoverMoviesByGenre: async (
     genreId: number,

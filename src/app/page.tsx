@@ -1,6 +1,7 @@
 import { HeroSection } from "@/components/HeroSection";
 import { WelcomePanelContent } from "@/components/WelcomePanelContent";
 import { HomeWatchlistPanel } from "@/components/HomeWatchlistPanel";
+import { RecommendedForYou } from "@/components/RecommendedForYou";
 import { GenreQuickNav } from "@/components/GenreQuickNav";
 import { StructuredData } from "@/components/StructuredData";
 import {
@@ -84,6 +85,8 @@ export default async function Home() {
         <WelcomePanelContent />
 
         <HomeWatchlistPanel />
+
+        <RecommendedForYou />
 
         <TrendingCarousel trendingData={trendingData} />
 

@@ -14,6 +14,11 @@ import { cookies } from "next/headers";
 import { refresh } from "next/cache";
 import { tmdbServerApi } from "@/lib/tmdb-server";
 import { tmdbApi } from "@/lib/tmdb";
+import {
+  getRecommendationsFromWatchlist,
+  sanitizeSeeds,
+  type RecommendationsResult,
+} from "@/lib/recommendations";
 import type { FilterOptions } from "@/types/filters";
 import type { SeasonDetails } from "@/types/tmdb";
 
@@ -161,6 +166,15 @@ export async function hasUserCustomSettings(): Promise<boolean> {
     watchProviderCookie && watchProviderCookie.value === "streaming-only";
 
   return Boolean(hasCustomRegion || hasCustomWatchProvider);
+}
+
+// Personalised picks derived from the watchlist. The watchlist lives in a
+// browser cookie the client owns, so it is sent in rather than read here –
+// that keeps the (statically rendered) home page out of dynamic rendering.
+export async function getWatchlistRecommendations(
+  watchlist: unknown,
+): Promise<RecommendationsResult> {
+  return getRecommendationsFromWatchlist(sanitizeSeeds(watchlist));
 }
 
 export async function fetchSeasonDetails(

@@ -9,11 +9,27 @@ import { throttle } from "@/lib/throttle";
 
 interface MediaCarouselProps {
   title: string;
+  subtitle?: string; // Optional line under the title, e.g. why these items
   items: MediaItem[];
   loading?: boolean;
   className?: string;
   onCardClick?: () => void;
   id?: string; // Unique identifier for scroll position persistence
+}
+
+function CarouselHeader({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle?: string;
+}) {
+  return (
+    <div className="mb-6">
+      <h2 className="text-2xl font-bold text-white">{title}</h2>
+      {subtitle && <p className="text-sm text-gray-400 mt-1">{subtitle}</p>}
+    </div>
+  );
 }
 
 // Generate a storage key for scroll position
@@ -23,6 +39,7 @@ function getScrollStorageKey(id: string): string {
 
 export function MediaCarousel({
   title,
+  subtitle,
   items,
   loading = false,
   className,
@@ -112,7 +129,7 @@ export function MediaCarousel({
   if (loading) {
     return (
       <div className={cn("mb-12", className)}>
-        <h2 className="text-2xl font-bold text-white mb-6">{title}</h2>
+        <CarouselHeader title={title} subtitle={subtitle} />
         <div className="flex gap-4 overflow-hidden">
           {Array.from({ length: 6 }).map((_, i) => (
             <div
@@ -131,7 +148,7 @@ export function MediaCarousel({
 
   return (
     <div className={cn("mb-12 relative", className)}>
-      <h2 className="text-2xl font-bold text-white mb-6">{title}</h2>
+      <CarouselHeader title={title} subtitle={subtitle} />
 
       <div className="relative group">
         {/* Left scroll button */}
