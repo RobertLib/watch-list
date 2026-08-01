@@ -133,6 +133,15 @@ export async function generateMetadata({
 
   const { details } = data;
 
+  // A slug that is not the canonical one still renders, and the page body
+  // redirects – but only as a client-side meta refresh, because `loading.tsx`
+  // has already flushed a 200 by then (see the note above; moving the redirect
+  // up here does not help, the Suspense fallback commits first either way).
+  // So the duplicate is marked noindex for as long as it is reachable. `follow`
+  // stays on: the crawler should carry on to the canonical URL below.
+  const canonicalSlug = createSlug(details.name, id);
+  const isCanonicalSlug = slug === canonicalSlug;
+
   const formattedDescription = formatDescription(
     details.overview,
     details.name,
@@ -184,10 +193,10 @@ export async function generateMetadata({
       images: ogImageUrl ? [ogImageUrl] : [],
     },
     alternates: {
-      canonical: `https://www.watch-list.me/tv/${createSlug(details.name, details.id)}`,
+      canonical: `https://www.watch-list.me/tv/${canonicalSlug}`,
     },
     robots: {
-      index: true,
+      index: isCanonicalSlug,
       follow: true,
     },
   };
@@ -207,7 +216,9 @@ export default async function TVPage({ params }: TVPageProps) {
     notFound();
   }
 
-  // Redirect to canonical slug if URL doesn't match
+  // Redirect to canonical slug if URL doesn't match. `generateMetadata` has
+  // already marked this response noindex, because the redirect below can only
+  // be a client-side one by the time we get here.
   const canonicalSlug = createSlug(data.details.name, id);
   if (slug !== canonicalSlug) {
     permanentRedirect(`/tv/${canonicalSlug}`);
@@ -541,8 +552,6 @@ export default async function TVPage({ params }: TVPageProps) {
           </div>
         </div>
       </div>
-
-      {/* <MediaDetailTracker mediaId={id} mediaType="tv" title={details.name} /> */}
     </div>
   );
 }

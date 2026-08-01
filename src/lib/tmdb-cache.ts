@@ -109,12 +109,45 @@ export const TMDB_CONFIG = {
   },
 } as const;
 
+/**
+ * Guard for a value interpolated into a TMDB *path* rather than a query string.
+ * `URLSearchParams` escapes parameters; a template literal in a path escapes
+ * nothing – so an id carrying "/../" would walk the request to a different TMDB
+ * endpoint with our bearer token attached.
+ */
+function pathId(value: number, name: string, min = 1): string {
+  const id = Number(value);
+  if (!Number.isInteger(id) || id < min) {
+    throw new Error(`Invalid ${name}: ${String(value)}`);
+  }
+
+  return String(id);
+}
+
+/**
+ * The same guard for a region, which reaches a TMDB query string *and* a cache
+ * tag. Callers pass `getRegionCode()` output, which is already a validated ISO
+ * code – this is the backstop for the one that eventually forgets, and it keeps
+ * an unbounded set of tag values (an unbounded set of cache entries) out of
+ * reach. Not `encodeURIComponent`: a region that needs escaping is not a region.
+ */
+function regionParam(region: string): string {
+  if (!/^[A-Z]{2}$/.test(region)) {
+    throw new Error(`Invalid region: ${String(region)}`);
+  }
+
+  return region;
+}
+
 // Cache TMDB API calls using native fetch cache with optimized settings
 export const getCachedMovieWatchProviders = async (
   movieId: number,
   region: string,
 ): Promise<WatchProvidersResponse> => {
-  const url = `${TMDB_CONFIG.BASE_URL}/movie/${movieId}/watch/providers?region=${region}`;
+  const url = `${TMDB_CONFIG.BASE_URL}/movie/${pathId(
+    movieId,
+    "movieId",
+  )}/watch/providers?region=${regionParam(region)}`;
   return tmdbFetchJson<WatchProvidersResponse>(url, {
     headers: TMDB_CONFIG.headers,
     next: {
@@ -133,7 +166,10 @@ export const getCachedTVWatchProviders = async (
   tvId: number,
   region: string,
 ): Promise<WatchProvidersResponse> => {
-  const url = `${TMDB_CONFIG.BASE_URL}/tv/${tvId}/watch/providers?region=${region}`;
+  const url = `${TMDB_CONFIG.BASE_URL}/tv/${pathId(
+    tvId,
+    "tvId",
+  )}/watch/providers?region=${regionParam(region)}`;
   return tmdbFetchJson<WatchProvidersResponse>(url, {
     headers: TMDB_CONFIG.headers,
     next: {
@@ -147,21 +183,6 @@ export const getCachedTVWatchProviders = async (
     },
   });
 };
-
-/**
- * Guard for a value interpolated into a TMDB *path* rather than a query string.
- * `URLSearchParams` escapes parameters; a template literal in a path escapes
- * nothing – so an id carrying "/../" would walk the request to a different TMDB
- * endpoint with our bearer token attached.
- */
-function pathId(value: number, name: string, min = 1): string {
-  const id = Number(value);
-  if (!Number.isInteger(id) || id < min) {
-    throw new Error(`Invalid ${name}: ${String(value)}`);
-  }
-
-  return String(id);
-}
 
 /**
  * TV details, cached – unlike `tmdbApi.getTVShowDetails`, which is `no-store`

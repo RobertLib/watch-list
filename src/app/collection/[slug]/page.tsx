@@ -42,7 +42,15 @@ export async function generateMetadata({
   const collection = await getCollectionData(id);
   if (!collection) return NOT_FOUND_METADATA;
 
-  const canonicalUrl = `https://www.watch-list.me/collection/${createSlug(collection.name, collection.id)}`;
+  // A slug that is not the canonical one still renders, and the page body
+  // redirects – but only as a client-side meta refresh, because the response has
+  // already committed to 200 by then. So the duplicate is marked noindex for as
+  // long as it is reachable. `follow` stays on: the crawler should carry on to
+  // the canonical URL.
+  const canonicalSlug = createSlug(collection.name, id);
+  const isCanonicalSlug = slug === canonicalSlug;
+
+  const canonicalUrl = `https://www.watch-list.me/collection/${canonicalSlug}`;
   const description =
     collection.overview ||
     `All movies in the ${collection.name} collection on WatchList.`;
@@ -86,7 +94,7 @@ export async function generateMetadata({
       canonical: canonicalUrl,
     },
     robots: {
-      index: true,
+      index: isCanonicalSlug,
       follow: true,
     },
   };
@@ -101,6 +109,8 @@ export default async function CollectionPage({ params }: CollectionPageProps) {
   const collection = await getCollectionData(id);
   if (!collection) notFound();
 
+  // `generateMetadata` has already marked this response noindex, because the
+  // redirect below can only be a client-side one by the time we get here.
   const canonicalSlug = createSlug(collection.name, id);
   if (slug !== canonicalSlug) {
     permanentRedirect(`/collection/${canonicalSlug}`);

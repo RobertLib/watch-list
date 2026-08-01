@@ -7,7 +7,7 @@ Live at **[watch-list.me](https://www.watch-list.me)**
 ## Features
 
 - **Browse & Discover** — Trending content, now playing in theaters, popular and top-rated movies and TV shows
-- **Detail pages** — Full info for movies, TV shows, and people: cast, crew, trailers, gallery, reviews, seasons, similar content, streaming providers, ratings, Wikipedia insights, and "Did You Know" facts
+- **Detail pages** — Full info for movies, TV shows, and people: cast, crew, trailers, gallery, reviews, seasons, similar content, streaming providers, ratings and Wikipedia insights
 - **People pages** — Actor/director filmographies with movie and TV credits
 - **Collection pages** — Movie collection groupings (e.g. film series)
 - **Personal Watchlist** — Add/remove titles, persisted in cookies; real-time counter in navigation
@@ -164,7 +164,6 @@ src/
 │   ├── watchlist-availability.ts # Where every saved title streams, in one round trip
 │   ├── portable-data.ts     # Backup/restore format and its validation
 │   ├── shared-list*.ts      # Encoding a list into a URL and resolving it back
-│   ├── did-you-know.ts      # "Did You Know" fact builder from TMDb data
 │   ├── wikipedia.ts         # Wikipedia API client for editorial context
 │   ├── region*.ts           # Region detection, validation, and data
 │   ├── provider-urls.ts     # Streaming provider deep-link URL builders

@@ -206,6 +206,9 @@ function loadProfileData(profileId: string): void {
     console.error("Error reading the profile's data:", error);
   }
 
+  // `writeLiveData` is deliberately not wrapped: a failure part-way through
+  // leaves the live keys holding two people's data, which `switchProfile` has to
+  // hear about so it can put the original back.
   writeLiveData(snapshot);
 }
 
@@ -231,12 +234,37 @@ export function switchProfile(profileId: string): boolean {
     return false;
   }
 
-  loadProfileData(profileId);
-
+  // The name moves before the data, and moves back if the data cannot follow.
+  //
+  // Whichever order these two go in, one of them can fail with the other already
+  // done – and the pairing is what matters, because the *next* switch parks
+  // whatever is in the live keys into the slot named by the active id. A
+  // mismatch there does not read as a failed switch; it silently overwrites one
+  // profile's watchlist with another's. So the only safe arrangement is one
+  // where every exit path has the two agreeing, which means being able to undo.
+  // Writing the id is the undoable half: it is one short string, and the data it
+  // names is still parked and intact.
   try {
     window.localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, profileId);
   } catch (error) {
     console.error("Error recording the active profile:", error);
+    return false;
+  }
+
+  try {
+    loadProfileData(profileId);
+  } catch (error) {
+    console.error("Error loading the profile's data:", error);
+
+    // Put both halves back the way they were. The outgoing profile's data was
+    // parked a moment ago, so it can be read straight back in.
+    try {
+      window.localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, current);
+      loadProfileData(current);
+    } catch (rollbackError) {
+      console.error("Error restoring the previous profile:", rollbackError);
+    }
+
     return false;
   }
 

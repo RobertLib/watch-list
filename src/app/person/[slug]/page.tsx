@@ -95,7 +95,16 @@ export async function generateMetadata({
       ?.slice(0, 200) ||
     `${details.name} — ${details.known_for_department ?? "actor"} profile on WatchList.`;
 
-  const canonicalUrl = `https://www.watch-list.me/person/${createSlug(details.name, details.id)}`;
+  // A slug that is not the canonical one still renders, and the page body
+  // redirects – but only as a client-side meta refresh, because `loading.tsx`
+  // has already flushed a 200 by then (see the note above; moving the redirect
+  // up here does not help, the Suspense fallback commits first either way).
+  // So the duplicate is marked noindex for as long as it is reachable. `follow`
+  // stays on: the crawler should carry on to the canonical URL.
+  const canonicalSlug = createSlug(details.name, id);
+  const isCanonicalSlug = slug === canonicalSlug;
+
+  const canonicalUrl = `https://www.watch-list.me/person/${canonicalSlug}`;
 
   const topTitles = [
     ...movieCredits.cast
@@ -151,7 +160,7 @@ export async function generateMetadata({
       canonical: canonicalUrl,
     },
     robots: {
-      index: true,
+      index: isCanonicalSlug,
       follow: true,
     },
   };
@@ -168,6 +177,8 @@ export default async function PersonPage({ params }: PersonPageProps) {
 
   const { details, movieCredits, tvCredits } = data;
 
+  // `generateMetadata` has already marked this response noindex, because the
+  // redirect below can only be a client-side one by the time we get here.
   const canonicalSlug = createSlug(details.name, id);
   if (slug !== canonicalSlug) {
     permanentRedirect(`/person/${canonicalSlug}`);
