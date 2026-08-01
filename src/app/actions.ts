@@ -1,6 +1,14 @@
 "use server";
 
-import { setRegion, type Region } from "@/lib/region-server";
+import { getRegion, setRegion, type Region } from "@/lib/region-server";
+import {
+  getSelectedProviderIds,
+  getWatchProviderFilter,
+} from "@/lib/watch-provider-server";
+import {
+  sanitizePortableSettings,
+  type PortableSettings,
+} from "@/lib/portable-data";
 import { isValidRegion } from "@/lib/region";
 import {
   getWatchProviderFilterCookieName,
@@ -19,6 +27,27 @@ import {
   sanitizeSeeds,
   type RecommendationsResult,
 } from "@/lib/recommendations";
+import { getContinueWatchingEpisodes } from "@/lib/continue-watching-server";
+import {
+  sanitizeContinueWatchingSeeds,
+  type UpNextEpisode,
+} from "@/lib/continue-watching";
+import {
+  getDailyPuzzleView,
+  isCorrectGuess,
+  type DailyPuzzleView,
+} from "@/lib/daily-puzzle-server";
+import { todayUtc } from "@/lib/daily-puzzle";
+import {
+  getWatchlistAvailability,
+  sanitizeAvailabilityRefs,
+  type WatchlistAvailability,
+} from "@/lib/watchlist-availability";
+import { getReleaseCalendarFor } from "@/lib/release-calendar-server";
+import {
+  sanitizeCalendarSeeds,
+  type ReleaseCalendar,
+} from "@/lib/release-calendar";
 import { sanitizeFilterOptions, sanitizePage } from "@/lib/discover-filters";
 import type { FilterOptions } from "@/types/filters";
 import type { SeasonDetails } from "@/types/tmdb";
@@ -225,6 +254,124 @@ export async function getWatchlistRecommendations(
     sanitizeSeeds(watchlist),
     sanitizeSeeds(watched),
   );
+}
+
+// The next unwatched episode of every show the visitor has started. Episode
+// ticks live in browser storage, so they are sent in for the same reason the
+// watchlist is: the home page stays statically rendered.
+export async function getContinueWatching(
+  progress: unknown,
+): Promise<UpNextEpisode[]> {
+  try {
+    return await getContinueWatchingEpisodes(
+      sanitizeContinueWatchingSeeds(progress),
+    );
+  } catch (error) {
+    // One failing show should not take the whole row down; the per-show reads are
+    // already settled individually, so anything reaching here is systemic.
+    console.error("Error building continue watching row:", error);
+    return [];
+  }
+}
+
+// Where every saved title can be watched, in one call rather than one per title.
+// The region and the chosen platforms come from httpOnly cookies, so this has to
+// happen here regardless.
+export async function getWatchlistAvailabilityFor(
+  refs: unknown,
+): Promise<WatchlistAvailability> {
+  return getWatchlistAvailability(sanitizeAvailabilityRefs(refs));
+}
+
+// The daily puzzle. The day is decided here rather than accepted from the client:
+// it is what selects the film, so taking it from a payload would let anyone ask
+// for tomorrow's answer.
+export async function getDailyPuzzle(
+  guessCount: unknown,
+  isOver: unknown,
+): Promise<DailyPuzzleView | null> {
+  return getDailyPuzzleView(
+    todayUtc(),
+    typeof guessCount === "number" ? guessCount : 0,
+    isOver === true,
+  );
+}
+
+/**
+ * Check one guess.
+ *
+ * Only ever answers yes or no – the film itself comes back through
+ * `getDailyPuzzle` once the browser reports the board as finished. A player
+ * determined to cheat can claim to be finished, which spoils their own puzzle and
+ * nobody else's; that is a fair trade for keeping the whole thing stateless.
+ */
+export async function checkDailyGuess(movieId: unknown): Promise<boolean> {
+  if (typeof movieId !== "number" || !Number.isInteger(movieId) || movieId <= 0) {
+    return false;
+  }
+
+  return isCorrectGuess(todayUtc(), movieId);
+}
+
+// Profile settings live in httpOnly cookies, which browser JavaScript cannot
+// read or write – so a backup that is meant to move someone to a new device has
+// to go through the server for these two round trips.
+export async function getPortableSettings(): Promise<PortableSettings> {
+  const [region, watchProviderFilter, selectedProviderIds] = await Promise.all([
+    getRegion(),
+    getWatchProviderFilter(),
+    getSelectedProviderIds(),
+  ]);
+
+  return { region, watchProviderFilter, selectedProviderIds };
+}
+
+export async function applyPortableSettings(settings: unknown): Promise<void> {
+  const { region, watchProviderFilter, selectedProviderIds } =
+    sanitizePortableSettings(settings);
+
+  // A backup written before these were configured carries nulls, and restoring
+  // a null must leave the current setting alone rather than reset it.
+  if (region) await setRegion(region);
+
+  const cookieStore = await cookies();
+
+  if (watchProviderFilter) {
+    cookieStore.set(
+      getWatchProviderFilterCookieName(),
+      watchProviderFilter,
+      SETTINGS_COOKIE_OPTIONS,
+    );
+  }
+
+  if (selectedProviderIds.length > 0) {
+    cookieStore.set(
+      getSelectedProvidersCookieName(),
+      providerIdsToCookieValue(selectedProviderIds),
+      SETTINGS_COOKIE_OPTIONS,
+    );
+  }
+
+  if (region || watchProviderFilter || selectedProviderIds.length > 0) {
+    await markUserHasSettings();
+    refresh();
+  }
+}
+
+// Upcoming episodes and cinema releases for everything the visitor follows.
+// "Today" is decided here rather than accepted from the payload: it bounds the
+// window, and a device with a wrong clock would otherwise move it.
+export async function getReleaseCalendar(
+  seeds: unknown,
+): Promise<ReleaseCalendar> {
+  const today = new Date().toISOString().slice(0, 10);
+
+  try {
+    return await getReleaseCalendarFor(sanitizeCalendarSeeds(seeds), today);
+  } catch (error) {
+    console.error("Error building release calendar:", error);
+    return { events: [], awaiting: [], today };
+  }
 }
 
 // Both ids are interpolated into the TMDB *path*, where nothing escapes them –

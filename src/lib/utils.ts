@@ -28,6 +28,21 @@ export function clsx(...inputs: ClassValue[]): string {
 }
 
 /**
+ * Identity of a title across both media types.
+ *
+ * TMDB numbers films and shows separately, so an id alone is ambiguous – 550 is
+ * both Fight Club and a television series. Lives here rather than beside either
+ * caller because the server builds these keys and the browser looks them up, and
+ * the two have to agree exactly.
+ */
+export function mediaItemKey(
+  id: number,
+  mediaType: "movie" | "tv" | string,
+): string {
+  return `${mediaType}-${id}`;
+}
+
+/**
  * Creates a slug from title and ID
  * Format: "movie-title-123" or "tv-show-title-456"
  */

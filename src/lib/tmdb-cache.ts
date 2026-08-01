@@ -4,7 +4,12 @@
 // and then answers every request with a 401.
 import "server-only";
 
-import type { WatchProvidersResponse } from "@/types/tmdb";
+import type {
+  MovieDetails,
+  SeasonDetails,
+  TVShowDetails,
+  WatchProvidersResponse,
+} from "@/types/tmdb";
 
 const RETRYABLE_CODES = new Set([
   "ECONNRESET",
@@ -139,6 +144,93 @@ export const getCachedTVWatchProviders = async (
         `tv-${tvId}-${region}`,
         `region-${region}`,
       ],
+    },
+  });
+};
+
+/**
+ * Guard for a value interpolated into a TMDB *path* rather than a query string.
+ * `URLSearchParams` escapes parameters; a template literal in a path escapes
+ * nothing – so an id carrying "/../" would walk the request to a different TMDB
+ * endpoint with our bearer token attached.
+ */
+function pathId(value: number, name: string, min = 1): string {
+  const id = Number(value);
+  if (!Number.isInteger(id) || id < min) {
+    throw new Error(`Invalid ${name}: ${String(value)}`);
+  }
+
+  return String(id);
+}
+
+/**
+ * TV details, cached – unlike `tmdbApi.getTVShowDetails`, which is `no-store`
+ * because a detail page is rendered once per visit. These reads back the
+ * "Continue Watching" row and the release calendar, where the same handful of
+ * shows is asked for on every single page view.
+ */
+export const getCachedTVShowDetails = async (
+  tvId: number,
+): Promise<TVShowDetails> => {
+  const url = `${TMDB_CONFIG.BASE_URL}/tv/${pathId(tvId, "tvId")}`;
+  return tmdbFetchJson<TVShowDetails>(url, {
+    headers: TMDB_CONFIG.headers,
+    next: {
+      // Six hours: long enough to collapse repeat visits, short enough that an
+      // episode airing today shows up the same day.
+      revalidate: 21600,
+      tags: ["tmdb", "tv-details", `tv-${tvId}`],
+    },
+  });
+};
+
+/**
+ * Movie details, cached – the counterpart to the TV read above, used by the
+ * release calendar to confirm a date the watchlist may have stored months ago.
+ */
+export const getCachedMovieDetails = async (
+  movieId: number,
+  appendToResponse?: string,
+): Promise<MovieDetails> => {
+  const query = appendToResponse
+    ? // Bounded and filtered: it reaches the TMDB query string and the cache tag,
+      // and an unbounded set of tag values is an unbounded set of cache entries.
+      `?append_to_response=${encodeURIComponent(
+        appendToResponse.replace(/[^a-z_,]/gi, "").slice(0, 100),
+      )}`
+    : "";
+
+  const url = `${TMDB_CONFIG.BASE_URL}/movie/${pathId(movieId, "movieId")}${query}`;
+  return tmdbFetchJson<MovieDetails>(url, {
+    headers: TMDB_CONFIG.headers,
+    next: {
+      revalidate: 21600,
+      tags: [
+        "tmdb",
+        "movie-details",
+        // The appended sections change the payload, so they have to change the
+        // tag as well or one shape would be served for the other.
+        appendToResponse ? `movie-${movieId}-${query}` : `movie-${movieId}`,
+      ],
+    },
+  });
+};
+
+export const getCachedSeasonDetails = async (
+  tvId: number,
+  seasonNumber: number,
+): Promise<SeasonDetails> => {
+  // Season 0 exists on TMDB – it holds the specials.
+  const url = `${TMDB_CONFIG.BASE_URL}/tv/${pathId(tvId, "tvId")}/season/${pathId(
+    seasonNumber,
+    "seasonNumber",
+    0,
+  )}`;
+  return tmdbFetchJson<SeasonDetails>(url, {
+    headers: TMDB_CONFIG.headers,
+    next: {
+      revalidate: 21600,
+      tags: ["tmdb", "season-details", `tv-${tvId}-season-${seasonNumber}`],
     },
   });
 };

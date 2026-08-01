@@ -1,6 +1,7 @@
 import { User } from "lucide-react";
 import type { Metadata } from "next";
 import { ProfileContent } from "@/components/ProfileContent";
+import { DataPortability } from "@/components/DataPortability";
 
 export const metadata: Metadata = {
   title: "Profile",
@@ -56,7 +57,10 @@ export default function ProfilePage() {
         <p className="text-gray-400">Manage your preferences and settings</p>
       </div>
 
-      <ProfileContent />
+      <div className="space-y-6">
+        <ProfileContent />
+        <DataPortability />
+      </div>
     </div>
   );
 }

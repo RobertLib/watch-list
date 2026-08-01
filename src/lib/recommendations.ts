@@ -21,6 +21,13 @@ export interface RecommendationSeed {
   id: number;
   mediaType: MediaType;
   title: string;
+  /**
+   * The viewer's own score out of ten, when they have given one.
+   *
+   * The only signal here about what someone actually *liked*, as opposed to what
+   * they saved or finished – TMDB's average only says what everyone else thought.
+   */
+  rating?: number;
 }
 
 export interface RecommendationsResult {
@@ -51,6 +58,9 @@ const MIN_RESULTS_BEFORE_TOPPING_UP = 10;
 // Two genres combined ("sci-fi thriller") still describe a taste; a single one
 // degenerates into whatever is popular in it right now.
 const MAX_TOP_UP_GENRES = 2;
+// Below this the viewer has said they did not like it, so it stops being a seed.
+// Five rather than six: a middling score is indifference, not a verdict.
+const MIN_SEED_RATING = 5;
 
 /**
  * Server actions are reachable directly, so the watchlist payload is never
@@ -73,10 +83,19 @@ export function sanitizeSeeds(input: unknown): RecommendationSeed[] {
     if (seen.has(key)) continue;
     seen.add(key);
 
+    const { rating } = entry as Record<string, unknown>;
+
     seeds.push({
       id: id as number,
       mediaType,
       title: typeof title === "string" ? title.slice(0, MAX_TITLE_LENGTH) : "",
+      // Out of range, fractional or missing all mean the same thing here: no
+      // opinion on record.
+      ...(Number.isInteger(rating) &&
+      (rating as number) >= 1 &&
+      (rating as number) <= 10
+        ? { rating: rating as number }
+        : {}),
     });
   }
 
@@ -113,7 +132,14 @@ export async function getRecommendationsFromWatchlist(
     combined.push(entry);
   }
 
-  const seeds = combined.slice(0, MAX_SEEDS);
+  // A title someone scored badly is dropped as a seed – "more like the thing I
+  // disliked" is the one recommendation nobody wants. It still counts as saved, so
+  // it stays out of the results either way.
+  const seeds = combined
+    .filter((entry) => entry.rating === undefined || entry.rating >= MIN_SEED_RATING)
+    .slice(0, MAX_SEEDS);
+
+  if (seeds.length === 0) return EMPTY_RESULT;
 
   const responses = await Promise.allSettled(
     seeds.map((seed) =>
@@ -146,7 +172,9 @@ export async function getRecommendationsFromWatchlist(
       if (alreadySaved.has(key)) return;
 
       const contribution =
-        seedWeight(seedIndex) * rankWeight(rank, results.length);
+        seedWeight(seedIndex) *
+        ratingWeight(seed.rating) *
+        rankWeight(rank, results.length);
       const existing = candidates.get(key);
 
       if (existing) {
@@ -205,6 +233,20 @@ function itemKey(id: number, mediaType: MediaType): string {
 // saved yesterday describes the current mood better than one saved a year ago.
 function seedWeight(index: number): number {
   return 1 - index * 0.1;
+}
+
+/**
+ * How much a seed counts for, given what the viewer thought of it.
+ *
+ * An unrated seed keeps its full weight – no opinion is not a bad opinion, and
+ * most titles will never be scored. Among the rated ones a five barely pulls and
+ * a ten pulls half again as hard, so a handful of favourites shape the row more
+ * than a long tail of things someone merely finished.
+ */
+function ratingWeight(rating?: number): number {
+  if (rating === undefined) return 1;
+
+  return 0.8 + ((rating - MIN_SEED_RATING) / 5) * 0.7;
 }
 
 // TMDB returns recommendations best-match-first, so respect that ordering.

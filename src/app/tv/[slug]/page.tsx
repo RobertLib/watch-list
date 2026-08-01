@@ -28,6 +28,7 @@ import { resolveRegionProviders } from "@/lib/media-converters";
 import { getRegion } from "@/lib/region-server";
 import { getRegionCode } from "@/lib/region";
 import { ShareButton } from "@/components/ShareButton";
+import { UserRating } from "@/components/UserRating";
 
 // Using Node.js runtime due to Edge Function size limitations
 // export const runtime = "edge";
@@ -486,7 +487,12 @@ export default async function TVPage({ params }: TVPageProps) {
               title={details.name}
             />
             {details.seasons && details.seasons.length > 0 && (
-              <TVSeasons seasons={details.seasons} tvId={id} />
+              <TVSeasons
+                seasons={details.seasons}
+                tvId={id}
+                showName={details.name}
+                posterPath={details.poster_path}
+              />
             )}
             <SimilarTVShows similar={similar} />
           </div>
@@ -498,6 +504,24 @@ export default async function TVPage({ params }: TVPageProps) {
               voteCount={details.vote_count}
               reviews={details.reviews}
             />
+            {/* Directly under the audience score, so "what everyone thought" and
+                "what I thought" read as one thing. */}
+            <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-5">
+              <UserRating
+                item={{
+                  id,
+                  title: details.name,
+                  poster_path: details.poster_path,
+                  backdrop_path: details.backdrop_path,
+                  overview: details.overview,
+                  release_date: details.first_air_date,
+                  vote_average: details.vote_average,
+                  vote_count: details.vote_count,
+                  genre_ids: details.genres?.map((genre) => genre.id) ?? [],
+                  media_type: "tv",
+                }}
+              />
+            </div>
             <TVWatchProviders providers={watchProviders} title={details.name} />
             <LanguageSupport translations={translations} />
             <TVDetails details={details} certification={certification} />

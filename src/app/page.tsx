@@ -1,6 +1,8 @@
 import { HeroSection } from "@/components/HeroSection";
 import { WelcomePanelContent } from "@/components/WelcomePanelContent";
 import { HomeWatchlistPanel } from "@/components/HomeWatchlistPanel";
+import { ContinueWatching } from "@/components/ContinueWatching";
+import { DailyGameTeaser } from "@/components/DailyGameTeaser";
 import { RecommendedForYou } from "@/components/RecommendedForYou";
 import { GenreQuickNav } from "@/components/GenreQuickNav";
 import { StructuredData } from "@/components/StructuredData";
@@ -83,6 +85,12 @@ export default async function Home() {
 
       <div className="container mx-auto px-6 lg:px-8 py-8 space-y-12">
         <WelcomePanelContent />
+
+        <DailyGameTeaser />
+
+        {/* Above the watchlist on purpose: a half-finished series is the most
+            actionable thing on the page for a returning visitor. */}
+        <ContinueWatching />
 
         <HomeWatchlistPanel />
 

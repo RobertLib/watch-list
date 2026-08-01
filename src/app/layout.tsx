@@ -3,6 +3,7 @@ import { Geist } from "next/font/google";
 import { GenresProvider } from "@/contexts/GenresContext";
 import { WatchlistProvider } from "@/contexts/WatchlistContext";
 import { WatchedProvider } from "@/contexts/WatchedContext";
+import { EpisodeProgressProvider } from "@/contexts/EpisodeProgressContext";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { ToastContainer } from "@/components/Toast";
@@ -106,14 +107,16 @@ export default function RootLayout({
         <GenresProvider>
           <WatchlistProvider>
             <WatchedProvider>
-              <div className="font-sans min-h-screen bg-black text-white">
-                <Navigation />
-                <div className="pt-16">
-                  <main id="main-content">{children}</main>
+              <EpisodeProgressProvider>
+                <div className="font-sans min-h-screen bg-black text-white">
+                  <Navigation />
+                  <div className="pt-16">
+                    <main id="main-content">{children}</main>
+                  </div>
+                  <Footer />
+                  <ToastContainer />
                 </div>
-                <Footer />
-                <ToastContainer />
-              </div>
+              </EpisodeProgressProvider>
             </WatchedProvider>
           </WatchlistProvider>
         </GenresProvider>

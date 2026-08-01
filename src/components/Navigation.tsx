@@ -1,18 +1,20 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Search, Menu, X, User, Heart } from "lucide-react";
+import { Search, Menu, X, User, Heart, CalendarDays } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { MediaCarousel } from "./MediaCarousel";
 import { LoadingSpinner } from "./LoadingSpinner";
 import { WatchlistCounter } from "./WatchlistCounter";
+import { PersonGrid } from "./PersonGrid";
 import { MediaItem, Person } from "@/types/tmdb";
 import { searchMulti, searchPerson } from "@/app/actions";
 
 export function Navigation() {
   const pathname = usePathname();
+  const router = useRouter();
   const [searchResults, setSearchResults] = useState<MediaItem[]>([]);
   const [personResults, setPersonResults] = useState<Person[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -42,6 +44,9 @@ export function Navigation() {
     }
     if (href === "/watchlist") {
       return pathname === "/watchlist";
+    }
+    if (href === "/calendar") {
+      return pathname === "/calendar";
     }
     if (href === "/people") {
       return pathname.startsWith("/people") || pathname.startsWith("/person");
@@ -101,9 +106,20 @@ export function Navigation() {
     }
   };
 
+  // Submitting leaves the overlay for the search page. The overlay is a preview –
+  // it holds one screenful and its results cannot be linked to or returned to
+  // with the Back button, which is what someone pressing Enter is asking for.
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    handleSearch(searchQuery);
+    goToSearchPage(searchQuery);
+  };
+
+  const goToSearchPage = (query: string) => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+
+    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+    clearSearch();
   };
 
   const clearSearch = () => {
@@ -138,16 +154,53 @@ export function Navigation() {
     }, 100);
   };
 
-  // Handle Escape key to close search
+  // Keyboard: Escape closes, "/" and Cmd/Ctrl+K open. The shortcuts are what make
+  // search reachable without going for the mouse, which is how it gets used at
+  // all on a site whose whole job is looking things up.
   useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
+    const isTypingTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+
+      // "/" is a legitimate character in a search box or a comment field, so the
+      // shortcut has to stand down wherever text is being entered.
+      return (
+        target.isContentEditable ||
+        ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
+      );
+    };
+
+    const openSearch = () => {
+      setIsSearchOpen(true);
+      setIsMobileMenuOpen(false);
+      // After the panel has been given a frame to expand, or the focus lands on
+      // an element that is still collapsed and gets skipped.
+      requestAnimationFrame(() => searchInputRef.current?.focus());
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && isSearching) {
         clearSearch();
+        return;
+      }
+
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        openSearch();
+        return;
+      }
+
+      if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (isTypingTarget(e.target)) return;
+
+        // Prevented so the character does not land in the box that just took
+        // focus – Firefox's quick-find would also open on it.
+        e.preventDefault();
+        openSearch();
       }
     };
 
-    document.addEventListener("keydown", handleEscape);
-    return () => document.removeEventListener("keydown", handleEscape);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isSearching]);
 
   // Block body scroll when searching
@@ -270,6 +323,22 @@ export function Navigation() {
                 People
               </Link>
               <Link
+                href="/calendar"
+                prefetch={false}
+                onClick={clearSearch}
+                className={cn(
+                  "transition-colors hidden lg:flex items-center gap-1",
+                  isActiveLink("/calendar")
+                    ? "text-white border-b-2 border-blue-500 pb-1"
+                    : "text-gray-300 hover:text-white",
+                )}
+                aria-current={isActiveLink("/calendar") ? "page" : undefined}
+                aria-label="Release calendar"
+              >
+                <CalendarDays className="w-4 h-4" aria-hidden="true" />
+                Calendar
+              </Link>
+              <Link
                 href="/watchlist"
                 prefetch={false}
                 onClick={clearSearch}
@@ -329,18 +398,27 @@ export function Navigation() {
             </div>
           </div>
 
-          {/* Search Bar */}
+          {/* Search bar.
+
+              Floats below the bar rather than growing it. In the flow it made the
+              fixed header 131px tall while the content wrapper still reserved 64,
+              so opening search hid the top of whatever page was underneath – easy
+              to hit now that "/" opens it from anywhere. As an overlay the header
+              keeps its height and nothing below shifts. */}
           <div
             id="search-container"
             className={cn(
-              "transition-all duration-300 ease-in-out",
-              isSearchOpen ? "max-h-20 pb-4" : "max-h-0 overflow-hidden",
+              "absolute left-0 right-0 top-16 z-10 px-6 lg:px-8",
+              "bg-black/95 backdrop-blur-sm transition-all duration-300 ease-in-out",
+              isSearchOpen
+                ? "max-h-24 pb-4 border-b border-gray-800"
+                : "max-h-0 overflow-hidden",
             )}
             aria-hidden={!isSearchOpen}
           >
             <form
               onSubmit={handleSearchSubmit}
-              className="relative"
+              className="relative container mx-auto"
               role="search"
             >
               <label htmlFor="search-input" className="sr-only">
@@ -350,7 +428,7 @@ export function Navigation() {
                 id="search-input"
                 ref={searchInputRef}
                 type="text"
-                placeholder="Search movies, TV shows, people..."
+                placeholder="Search movies, TV shows, people…  (press / anywhere)"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full px-4 py-3 pl-12 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors"
@@ -383,7 +461,9 @@ export function Navigation() {
             id="mobile-menu"
             className={cn(
               "md:hidden overflow-hidden transition-all duration-300 ease-in-out",
-              isMobileMenuOpen ? "max-h-80 pb-6" : "max-h-0",
+              // Tall enough for every entry: the animated max-height clips the
+              // last link the moment the menu outgrows it.
+              isMobileMenuOpen ? "max-h-96 pb-6" : "max-h-0",
             )}
             aria-hidden={!isMobileMenuOpen}
           >
@@ -461,6 +541,22 @@ export function Navigation() {
                 aria-current={isActiveLink("/people") ? "page" : undefined}
               >
                 People
+              </Link>
+              <Link
+                href="/calendar"
+                prefetch={false}
+                onClick={handleMobileLinkClick}
+                className={cn(
+                  "flex items-center gap-2 transition-colors",
+                  isActiveLink("/calendar")
+                    ? "text-white font-semibold"
+                    : "text-gray-300 hover:text-white",
+                )}
+                aria-current={isActiveLink("/calendar") ? "page" : undefined}
+                aria-label="Release calendar"
+              >
+                <CalendarDays className="w-4 h-4" aria-hidden="true" />
+                Calendar
               </Link>
               <Link
                 href="/watchlist"
@@ -565,45 +661,24 @@ export function Navigation() {
                         <h3 className="text-lg font-semibold text-white mb-4">
                           People
                         </h3>
-                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
-                          {personResults.map((person) => (
-                            <Link
-                              key={person.id}
-                              href={`/person/${person.name
-                                .toLowerCase()
-                                .replace(/[^a-z0-9]+/g, "-")
-                                .replace(/^-|-$/g, "")}-${person.id}`}
-                              onClick={clearSearch}
-                              className="group block text-center"
-                            >
-                              <div className="relative aspect-2/3 mb-2 overflow-hidden rounded-lg bg-gray-800">
-                                {person.profile_path ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={`https://image.tmdb.org/t/p/w185${person.profile_path}`}
-                                    alt={person.name}
-                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                                    loading="lazy"
-                                  />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center text-gray-600 text-3xl">
-                                    👤
-                                  </div>
-                                )}
-                              </div>
-                              <p className="text-xs font-medium text-white group-hover:text-blue-400 transition-colors line-clamp-2 leading-tight">
-                                {person.name}
-                              </p>
-                              {person.known_for_department && (
-                                <p className="text-xs text-gray-500">
-                                  {person.known_for_department}
-                                </p>
-                              )}
-                            </Link>
-                          ))}
-                        </div>
+                        <PersonGrid
+                          people={personResults}
+                          onSelect={clearSearch}
+                        />
                       </div>
                     )}
+
+                    {/* The overlay only ever holds a screenful; everything past
+                        that lives on the search page. */}
+                    <div className="mt-10 text-center">
+                      <button
+                        onClick={() => goToSearchPage(searchQuery)}
+                        className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                      >
+                        <Search size={16} aria-hidden="true" />
+                        See all results for “{searchQuery.trim()}”
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div

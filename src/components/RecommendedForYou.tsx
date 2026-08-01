@@ -5,6 +5,7 @@ import { MediaCarousel } from "@/components/MediaCarousel";
 import { CarouselSkeleton } from "@/components/skeletons";
 import { useWatchlist } from "@/contexts/WatchlistContext";
 import { useWatched } from "@/contexts/WatchedContext";
+import { useRatings } from "@/hooks/useRatings";
 import { getWatchlistRecommendations } from "@/app/actions";
 import type { RecommendationsResult } from "@/lib/recommendations";
 import type { MediaType } from "@/types/tmdb";
@@ -25,18 +26,19 @@ const EMPTY_RESULT: RecommendationsResult = { items: [], basedOn: [] };
 export function RecommendedForYou() {
   const { watchlist, isLoading: isWatchlistLoading } = useWatchlist();
   const { watched, isLoading: isWatchedLoading } = useWatched();
+  const { ratingFor } = useRatings();
   const [result, setResult] = useState<RecommendationsResult>(EMPTY_RESULT);
   const [isFetching, setIsFetching] = useState(false);
 
   const isLoading = isWatchlistLoading || isWatchedLoading;
 
   const watchlistSeeds = useMemo(
-    () => toSeeds(watchlist, (item) => item.addedAt),
-    [watchlist],
+    () => toSeeds(watchlist, (item) => item.addedAt, ratingFor),
+    [watchlist, ratingFor],
   );
   const watchedSeeds = useMemo(
-    () => toSeeds(watched, (item) => item.watchedAt),
-    [watched],
+    () => toSeeds(watched, (item) => item.watchedAt, ratingFor),
+    [watched, ratingFor],
   );
   const seedCount = watchlistSeeds.length + watchedSeeds.length;
 
@@ -96,17 +98,30 @@ export function RecommendedForYou() {
 function toSeeds<T extends { id: number; mediaType: MediaType; title: string }>(
   items: T[],
   savedAt: (item: T) => string,
-): Array<{ id: number; mediaType: MediaType; title: string }> {
+  ratingFor: (id: number, mediaType: MediaType) => number | null,
+): Array<{
+  id: number;
+  mediaType: MediaType;
+  title: string;
+  rating?: number;
+}> {
   return [...items]
     .sort(
       (a, b) => new Date(savedAt(b)).getTime() - new Date(savedAt(a)).getTime(),
     )
     .slice(0, MAX_ITEMS_SENT)
-    .map((item) => ({
-      id: item.id,
-      mediaType: item.mediaType,
-      title: item.title,
-    }));
+    .map((item) => {
+      const rating = ratingFor(item.id, item.mediaType);
+
+      return {
+        id: item.id,
+        mediaType: item.mediaType,
+        title: item.title,
+        // Omitted rather than sent as null, so the server can tell "no opinion"
+        // from a score it should weigh.
+        ...(rating === null ? {} : { rating }),
+      };
+    });
 }
 
 /** e.g. "Based on Dune and Arrival, plus 3 more from your lists" */

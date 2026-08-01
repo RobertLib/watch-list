@@ -87,3 +87,35 @@ describe("sanitizeSeeds", () => {
     expect(sanitizeSeeds(seeds)).toHaveLength(100);
   });
 });
+
+describe("sanitizeSeeds and the viewer's own score", () => {
+  it("keeps a score it can use", () => {
+    expect(
+      sanitizeSeeds([{ id: 550, mediaType: "movie", title: "Fight Club", rating: 9 }]),
+    ).toEqual([{ id: 550, mediaType: "movie", title: "Fight Club", rating: 9 }]);
+  });
+
+  it("omits the field entirely when there is no opinion on record", () => {
+    const [seed] = sanitizeSeeds([{ id: 550, mediaType: "movie" }]);
+
+    // Absent rather than null, so the recommender can tell "unrated" from a score
+    // it should weigh.
+    expect(seed).not.toHaveProperty("rating");
+  });
+
+  it("discards a score it could not have written", () => {
+    for (const rating of [0, 11, 7.5, "9", null, NaN]) {
+      const [seed] = sanitizeSeeds([{ id: 550, mediaType: "movie", rating }]);
+      expect(seed).not.toHaveProperty("rating");
+    }
+  });
+
+  it("keeps the lowest and highest scores a viewer can give", () => {
+    expect(
+      sanitizeSeeds([
+        { id: 1, mediaType: "movie", rating: 1 },
+        { id: 2, mediaType: "movie", rating: 10 },
+      ]).map((seed) => seed.rating),
+    ).toEqual([1, 10]);
+  });
+});

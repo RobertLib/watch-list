@@ -320,11 +320,17 @@ export function getRegionDataByCode(code: string): RegionData | undefined {
 }
 
 /**
- * Sort regions by name for display purposes
+ * Sort regions by name for display purposes.
+ *
+ * The locale is pinned. `localeCompare` with no locale uses the runtime default,
+ * and Node and the browser do not always agree – which put "Chad" before
+ * "Colombia" on one side and after it on the other, and React reported the whole
+ * region `<select>` as a hydration mismatch. The app renders in English
+ * (`<html lang="en">`), so "en" is the ordering both sides should produce.
  */
 export function getSortedRegions(): RegionData[] {
   return [...REGIONS_DATA].sort((a, b) =>
-    (a.name || "").localeCompare(b.name || ""),
+    (a.name || "").localeCompare(b.name || "", "en"),
   );
 }
 
