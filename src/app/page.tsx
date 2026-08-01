@@ -20,10 +20,23 @@ import {
 } from "@/components/carousels";
 import { tmdbServerApi } from "@/lib/tmdb-server";
 
-// Revalidate page every 24 hours - trending content doesn't change fast enough to justify more frequent ISR writes
+// Trending content does not change fast enough to justify more frequent ISR
+// writes. Note that this only takes effect if the render stops reading cookies:
+// every listing goes through `tmdbServerApi`, which reads the region and
+// streaming-provider cookies, so today the route is rendered per request and the
+// caching that matters is on the TMDB fetches underneath.
 export const revalidate = 86400;
 
+import type { Metadata } from "next";
 import type { TMDBResponse, MediaItem } from "@/types/tmdb";
+
+// The one page that may claim the bare domain as its canonical. It used to come
+// from the root layout, where every page without its own inherited it.
+export const metadata: Metadata = {
+  alternates: {
+    canonical: "https://www.watch-list.me",
+  },
+};
 
 const EMPTY_TRENDING: TMDBResponse<MediaItem> = {
   page: 1,
@@ -45,6 +58,7 @@ export default async function Home() {
     <>
       <StructuredData type="Website" data={{}} />
       <StructuredData type="WebApplication" data={{}} />
+      <StructuredData type="Organization" data={{}} />
       <StructuredData
         type="FAQPage"
         data={{

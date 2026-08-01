@@ -8,8 +8,11 @@ interface MediaPageProps {
   }>;
 }
 
-// Prevent indexing of this redirect route to avoid duplicate content
+// Prevent indexing of this redirect route to avoid duplicate content. The title
+// covers the notFound() branch below: without it the miss renders under the root
+// layout's default, so a URL that does not exist claims to be the home page.
 export const metadata: Metadata = {
+  title: "Page not found",
   robots: {
     index: false,
     follow: false,

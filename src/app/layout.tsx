@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
+import Script from "next/script";
 import { GenresProvider } from "@/contexts/GenresContext";
 import { WatchlistProvider } from "@/contexts/WatchlistContext";
 import { WatchedProvider } from "@/contexts/WatchedContext";
@@ -15,14 +16,18 @@ const geistSans = Geist({
   subsets: ["latin"],
 });
 
+const GA_MEASUREMENT_ID = "G-EGE2R16PX1";
+
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.watch-list.me"),
   title: {
     default: "WatchList – Free Movie & TV Show Watchlist Tracker",
     template: "%s | WatchList",
   },
+  // Kept under ~160 characters: past that, the tail is cut off in results and only
+  // the truncation shows.
   description:
-    "Create your free movie and TV show watchlist. Discover trending films, add them to your personal watch list, and track everything across all streaming platforms. Never forget what to watch next.",
+    "Track every movie and TV show you mean to watch – free, no account. See what's trending and which streaming service each title is on.",
   keywords: [
     "watchlist",
     "movie watchlist",
@@ -71,9 +76,11 @@ export const metadata: Metadata = {
       "Create your free movie and TV show watchlist. Discover trending films and track everything across all streaming platforms.",
     creator: "@RobertLibsansky",
   },
-  alternates: {
-    canonical: "https://www.watch-list.me",
-  },
+  // Deliberately no `alternates.canonical` here. Metadata is inherited, so a
+  // canonical set on the root layout is claimed by every page that does not set
+  // its own – which had /search, the soft-404 responses and the legacy redirect
+  // route all telling crawlers they were the home page. Each indexable route
+  // declares its own; the home page does it in page.tsx.
   category: "entertainment",
 };
 
@@ -84,18 +91,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <head>
-        {/* eslint-disable-next-line @next/next/next-script-for-ga */}
-        <script
-          async
-          src="https://www.googletagmanager.com/gtag/js?id=G-EGE2R16PX1"
-        />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `window.dataLayer = window.dataLayer || []; function gtag(){dataLayer.push(arguments);} gtag('js', new Date()); gtag('config', 'G-EGE2R16PX1');`,
-          }}
-        />
-      </head>
       <body className={`${geistSans.variable} antialiased`}>
         {/* Skip to main content link for keyboard users */}
         <a
@@ -118,6 +113,17 @@ export default function RootLayout({
                   <ToastContainer />
                   <ServiceWorkerRegistrar />
                 </div>
+
+                {/* Analytics loads after the page is interactive rather than from
+                    <head>, so it competes with nothing that the visitor – or a
+                    crawler measuring Core Web Vitals – is waiting for. */}
+                <Script
+                  src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
+                  strategy="afterInteractive"
+                />
+                <Script id="google-analytics" strategy="afterInteractive">
+                  {`window.dataLayer = window.dataLayer || []; function gtag(){dataLayer.push(arguments);} gtag('js', new Date()); gtag('config', '${GA_MEASUREMENT_ID}');`}
+                </Script>
               </EpisodeProgressProvider>
             </WatchedProvider>
           </WatchlistProvider>

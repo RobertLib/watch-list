@@ -89,3 +89,17 @@ export function extractIdFromSlug(slug: string): number | null {
 
   return null;
 }
+
+/**
+ * " (2026)" for a release date, "" for one that is missing or unparseable.
+ *
+ * Detail-page titles used to interpolate the year unconditionally, so a title TMDB
+ * has no date for came out as "Some Film (N/A)" – in the tab, in the search result
+ * and in every share preview.
+ */
+export function releaseYearSuffix(date: string | null | undefined): string {
+  if (!date) return "";
+
+  const year = new Date(date).getFullYear();
+  return Number.isFinite(year) ? ` (${year})` : "";
+}

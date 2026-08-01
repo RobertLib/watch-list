@@ -43,6 +43,7 @@ interface ProductionCountry {
 interface StructuredDataProps {
   type:
     | "Website"
+    | "Organization"
     | "Movie"
     | "TVSeries"
     | "WebApplication"
@@ -91,10 +92,41 @@ export function StructuredData({ type, data }: StructuredDataProps) {
       structuredData = {
         "@context": "https://schema.org",
         "@type": "WebSite",
+        "@id": "https://www.watch-list.me/#website",
         name: "WatchList",
         description:
           "Create your free movie and TV show watchlist. Discover trending films and track everything across all streaming platforms.",
         url: "https://www.watch-list.me",
+        publisher: { "@id": "https://www.watch-list.me/#organization" },
+        // Declares the site's own search so results can offer a search box for it.
+        // `/search?q=` is the real endpoint; the parameter name has to match.
+        potentialAction: {
+          "@type": "SearchAction",
+          target: {
+            "@type": "EntryPoint",
+            urlTemplate:
+              "https://www.watch-list.me/search?q={search_term_string}",
+          },
+          "query-input": "required name=search_term_string",
+        },
+        ...data,
+      };
+      break;
+
+    case "Organization":
+      structuredData = {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "@id": "https://www.watch-list.me/#organization",
+        name: "WatchList",
+        url: "https://www.watch-list.me",
+        logo: {
+          "@type": "ImageObject",
+          url: "https://www.watch-list.me/icon-512.png",
+          width: 512,
+          height: 512,
+        },
+        sameAs: ["https://github.com/RobertLib/watch-list"],
         ...data,
       };
       break;

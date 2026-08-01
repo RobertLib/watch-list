@@ -5,7 +5,7 @@ import { TonightPicker } from "@/components/TonightPicker";
 export const metadata: Metadata = {
   title: "What Should I Watch Tonight?",
   description:
-    "Pick something from your own watchlist for the evening you actually have – by how long it is, whether it is streaming on your platforms right now, and what you are in the mood for.",
+    "One pick from your own watchlist for tonight – filtered by how long you have, what is streaming on your platforms, and the mood you are in.",
   openGraph: {
     title: "What Should I Watch Tonight? – WatchList",
     description:

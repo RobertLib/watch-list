@@ -10,6 +10,9 @@ import {
 } from "@/lib/media-converters";
 import { findMood, MOODS } from "@/lib/moods";
 
+// Only takes effect once the render stops reading cookies: the listings come from
+// `tmdbServerApi`, which reads the region and provider cookies, so the route is
+// currently rendered per request and the caching sits on the TMDB fetches.
 export const revalidate = 86400;
 
 // Crawlable depth. The value of these pages is the first screenful, not page 40.
@@ -20,6 +23,10 @@ interface PageProps {
   searchParams: Promise<{ page?: string }>;
 }
 
+function parsePage(raw: string | undefined) {
+  return Math.max(1, Math.min(parseInt(raw ?? "1", 10) || 1, MAX_PAGE));
+}
+
 /** One page per mood, known at build time. */
 export function generateStaticParams() {
   return MOODS.map((mood) => ({ slug: mood.slug }));
@@ -27,18 +34,38 @@ export function generateStaticParams() {
 
 export async function generateMetadata({
   params,
+  searchParams,
 }: PageProps): Promise<Metadata> {
   const { slug } = await params;
+  const page = parsePage((await searchParams).page);
   const mood = findMood(slug);
 
-  if (!mood) return { title: "Mood not found" };
+  // Explicit noindex on the miss: this response is already committed to 200 by the
+  // time the page body calls notFound(), so without it the soft 404 would inherit
+  // an indexable default.
+  if (!mood) {
+    return { title: "Mood not found", robots: { index: false, follow: false } };
+  }
 
-  const canonical = `https://www.watch-list.me/mood/${mood.slug}`;
-  const title = `${mood.label} – What to Watch`;
+  // Page 2+ points at itself, not at page 1. A paginated listing canonicalised
+  // onto its own first page is a page Google consolidates away – it is crawled and
+  // then dropped, and the titles only reachable from it never surface.
+  const canonical =
+    page === 1
+      ? `https://www.watch-list.me/mood/${mood.slug}`
+      : `https://www.watch-list.me/mood/${mood.slug}?page=${page}`;
+  const title =
+    page === 1
+      ? `${mood.label} – What to Watch`
+      : `${mood.label} – What to Watch – Page ${page}`;
+  const description =
+    page === 1
+      ? mood.description
+      : `${mood.description} Page ${page} of what to watch for this mood.`;
 
   return {
     title,
-    description: mood.description,
+    description,
     keywords: [
       `${mood.label.toLowerCase()} movies`,
       "what to watch",
@@ -47,7 +74,7 @@ export async function generateMetadata({
     ],
     openGraph: {
       title: `${title} – WatchList`,
-      description: mood.description,
+      description,
       type: "website",
       url: canonical,
       siteName: "WatchList",
@@ -63,7 +90,7 @@ export async function generateMetadata({
     twitter: {
       card: "summary_large_image",
       title: `${title} – WatchList`,
-      description: mood.description,
+      description,
       images: ["/opengraph-image.png"],
     },
     alternates: { canonical },
@@ -76,10 +103,7 @@ export default async function MoodPage({ params, searchParams }: PageProps) {
 
   if (!mood) notFound();
 
-  const page = Math.max(
-    1,
-    Math.min(parseInt(query.page ?? "1", 10) || 1, MAX_PAGE),
-  );
+  const page = parsePage(query.page);
 
   // Both halves are fetched together where the mood has a television side; a
   // failure in either drops that section rather than the page.

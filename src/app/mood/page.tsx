@@ -9,7 +9,7 @@ export const revalidate = 86400;
 export const metadata: Metadata = {
   title: "What to Watch, by Mood",
   description:
-    "Pick by how you feel rather than by genre: something easy, something mind-bending, something under ninety minutes. Curated lists of films and series for the evening you are actually having.",
+    "Pick by how you feel, not by genre: something easy, something mind-bending, something under ninety minutes. Curated films and series for tonight.",
   keywords: [
     "what to watch",
     "movies by mood",

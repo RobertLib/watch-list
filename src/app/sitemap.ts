@@ -1,8 +1,17 @@
 import { MetadataRoute } from "next";
 import { createSlug } from "@/lib/utils";
 import { TMDB_CONFIG } from "@/lib/tmdb-cache";
-import { STREAMING_LANDING_PLATFORMS } from "@/lib/streaming-landing";
+import {
+  MIN_RESULTS_TO_INDEX,
+  STREAMING_LANDING_PLATFORMS,
+  type StreamingPlatform,
+} from "@/lib/streaming-landing";
 import { MOODS } from "@/lib/moods";
+
+// The region a visitor gets when they have no cookie yet (DEFAULT_REGION in
+// region-server.ts). A build-time sitemap has no cookies, so every count below is
+// measured against this one region.
+const SITEMAP_REGION = "US";
 
 // Types for sitemap generation
 interface Genre {
@@ -30,6 +39,28 @@ interface TrendingItem {
 interface Person {
   id: number;
   name: string;
+  profile_path?: string | null;
+  known_for?: { vote_count?: number }[];
+}
+
+/**
+ * Whether a popular-people entry is worth submitting.
+ *
+ * `/person/popular` returns whoever is trending today, which includes profiles with
+ * no photo whose only credits are unrated bit parts – thin pages that the person
+ * route answers with `noindex`, and submitting a noindex URL is a Search Console
+ * error. This approximates that route's own bar (a few credits at
+ * vote_count >= 50) from the list payload, which carries up to three `known_for`
+ * titles and their vote counts, without a request per person.
+ */
+function isSubmittablePerson(person: Person): boolean {
+  if (!person.profile_path) return false;
+
+  const notable = (person.known_for ?? []).filter(
+    (title) => (title.vote_count ?? 0) >= 50,
+  ).length;
+
+  return notable >= 2;
 }
 
 async function fetchTmdb<T>(endpoint: string): Promise<T> {
@@ -63,6 +94,87 @@ async function fetchPages<T>(endpoint: string, pages: number): Promise<T[]> {
   );
   const results = await Promise.all(requests);
   return results.flatMap((r) => r.results || []);
+}
+
+/**
+ * Run `fn` over `items` a few at a time.
+ *
+ * The genre x platform grid below is 245 requests. `Promise.all` over all of them
+ * at once is what trips TMDB's rate limit, and a plain sequential loop would take
+ * a minute; a small pool is the middle ground.
+ */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+
+  const workers = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (cursor < items.length) {
+        const index = cursor++;
+        results[index] = await fn(items[index]);
+      }
+    },
+  );
+
+  await Promise.all(workers);
+  return results;
+}
+
+function isoDay(date: Date): string {
+  return date.toISOString().split("T")[0];
+}
+
+/**
+ * How many titles a genre x platform landing would list, for the default region.
+ *
+ * The query mirrors `tmdbServerApi.discoverMoviesByGenre` /
+ * `discoverTVShowsByGenre` as the landing page calls them, date bounds included –
+ * a count taken from a different query would decide indexability for a page that
+ * shows something else. On failure it answers `Infinity`, so a TMDB hiccup leaves
+ * the URL in the sitemap rather than silently dropping a real landing page.
+ */
+async function countGenreOnPlatform(
+  type: "movie" | "tv",
+  genreId: number,
+  platform: StreamingPlatform,
+): Promise<number> {
+  const today = new Date();
+  const params = new URLSearchParams({
+    page: "1",
+    sort_by: "popularity.desc",
+    with_genres: String(genreId),
+    with_watch_providers: String(platform.id),
+    watch_region: SITEMAP_REGION,
+    region: SITEMAP_REGION,
+  });
+
+  if (type === "movie") {
+    params.set("primary_release_date.lte", isoDay(today));
+  } else {
+    params.set(
+      "first_air_date.gte",
+      isoDay(new Date(today.getTime() - 10 * 365 * 24 * 60 * 60 * 1000)),
+    );
+    params.set("first_air_date.lte", isoDay(today));
+  }
+
+  try {
+    const data = await fetchTmdb<{ total_results?: number }>(
+      `/discover/${type}?${params.toString()}`,
+    );
+    return data.total_results ?? 0;
+  } catch (error) {
+    console.error(
+      `Sitemap: count failed for ${type} genre ${genreId} on ${platform.slug}:`,
+      error,
+    );
+    return Infinity;
+  }
 }
 
 // Fetch details for top popular movies and extract unique collections
@@ -285,7 +397,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     getTVGenres(),
     getLinkedMovies(),
     getLinkedTVShows(),
-    fetchPages<Person>("/person/popular", 1),
+    fetchPages<Person>("/person/popular", 5),
     getPopularCollections(),
   ]);
 
@@ -325,11 +437,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         }))
       : [];
 
+  // No `lastModified` on the detail groups below. The only value this file could
+  // put there is its own generation time, which – identical across every URL and
+  // moving every day – tells a crawler nothing it does not already know and
+  // teaches it to distrust the field. The listing pages above are different: they
+  // really are rebuilt from trending data daily.
   const moviePages =
     linkedMoviesResult.status === "fulfilled"
       ? (linkedMoviesResult.value.results ?? []).map((movie: Movie) => ({
           url: `${baseUrl}/movie/${createSlug(movie.title, movie.id)}`,
-          lastModified: now,
           changeFrequency: "weekly" as const,
           priority: 0.7,
         }))
@@ -339,27 +455,35 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     linkedTVShowsResult.status === "fulfilled"
       ? (linkedTVShowsResult.value.results ?? []).map((show: TVShow) => ({
           url: `${baseUrl}/tv/${createSlug(show.name, show.id)}`,
-          lastModified: now,
           changeFrequency: "weekly" as const,
           priority: 0.7,
         }))
       : [];
 
+  // Five pages of popular people rather than one, minus the thin profiles – see
+  // `isSubmittablePerson`. The de-duplication matters because the five pages are
+  // fetched from a list that reorders as it is read.
   const personPages =
     popularPeopleResult.status === "fulfilled"
-      ? (popularPeopleResult.value ?? []).map((person: Person) => ({
+      ? Array.from(
+          new Map(
+            (popularPeopleResult.value ?? [])
+              .filter(isSubmittablePerson)
+              .map((person: Person) => [person.id, person]),
+          ).values(),
+        ).map((person: Person) => ({
           url: `${baseUrl}/person/${createSlug(person.name, person.id)}`,
-          lastModified: now,
           changeFrequency: "monthly" as const,
           priority: 0.6,
         }))
       : [];
 
-  // Curated genre x platform landings. Listed unconditionally: whether a given
-  // combination has enough titles to be worth indexing depends on the visitor's
-  // region, which this build-time sitemap has no access to, so the page itself
-  // decides via MIN_RESULTS_TO_INDEX.
-  const platformLandingPages = (
+  // Curated genre x platform landings. A combination too thin to index is one the
+  // page itself answers with `noindex` (MIN_RESULTS_TO_INDEX), and submitting a
+  // noindex URL is a Search Console error, so the count is checked here too rather
+  // than listing the whole grid and hoping. The check is per default region; a
+  // visitor elsewhere can still see a thin listing, and the page still handles it.
+  const landingCandidates = (
     [
       ["movie", movieGenresResult],
       ["tv", tvGenresResult],
@@ -368,21 +492,47 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     result.status === "fulfilled"
       ? (result.value.genres ?? []).flatMap((genre: Genre) =>
           STREAMING_LANDING_PLATFORMS.map((platform) => ({
-            url: `${baseUrl}/genres/${type}/${createSlug(genre.name, genre.id)}/${platform.slug}`,
-            lastModified: now,
-            changeFrequency: "weekly" as const,
-            priority: 0.75,
+            type,
+            genre,
+            platform,
           })),
         )
       : [],
   );
+
+  const landingCounts = await mapWithConcurrency(
+    landingCandidates,
+    8,
+    (candidate) =>
+      countGenreOnPlatform(
+        candidate.type,
+        candidate.genre.id,
+        candidate.platform,
+      ),
+  );
+
+  const platformLandingPages = landingCandidates
+    .filter((_, index) => landingCounts[index] >= MIN_RESULTS_TO_INDEX)
+    .map(({ type, genre, platform }) => ({
+      url: `${baseUrl}/genres/${type}/${createSlug(genre.name, genre.id)}/${platform.slug}`,
+      lastModified: now,
+      changeFrequency: "weekly" as const,
+      priority: 0.75,
+    }));
+
+  const droppedLandings =
+    landingCandidates.length - platformLandingPages.length;
+  if (droppedLandings > 0) {
+    console.info(
+      `Sitemap: ${droppedLandings} of ${landingCandidates.length} genre x platform landings left out (under ${MIN_RESULTS_TO_INDEX} titles in ${SITEMAP_REGION}).`,
+    );
+  }
 
   const collectionPages =
     popularCollectionsResult.status === "fulfilled"
       ? (popularCollectionsResult.value ?? []).map(
           (col: { id: number; name: string }) => ({
             url: `${baseUrl}/collection/${createSlug(col.name, col.id)}`,
-            lastModified: now,
             changeFrequency: "monthly" as const,
             priority: 0.65,
           }),

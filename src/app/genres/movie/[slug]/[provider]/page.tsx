@@ -52,6 +52,14 @@ function parsePage(raw: string | undefined) {
   return Math.max(1, Math.min(parseInt(raw ?? "1", 10) || 1, MAX_PAGE));
 }
 
+// The page body calls notFound() for these too, but the response is already
+// committed to 200 by then, so without an explicit noindex the soft 404 inherits
+// an indexable default and only the not-found boundary's own tag contradicts it.
+const NOT_FOUND_METADATA: Metadata = {
+  title: "Not found",
+  robots: { index: false, follow: false },
+};
+
 export async function generateMetadata({
   params,
   searchParams,
@@ -62,12 +70,12 @@ export async function generateMetadata({
   const platform = findStreamingPlatform(provider);
 
   if (!genreId || !platform) {
-    return { title: "Not found" };
+    return NOT_FOUND_METADATA;
   }
 
   const genre = await getMovieGenre(genreId);
   if (!genre) {
-    return { title: "Not found" };
+    return NOT_FOUND_METADATA;
   }
 
   const listing = await getListing(genreId, platform, page);

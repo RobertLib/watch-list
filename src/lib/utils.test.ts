@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cn, createSlug, extractIdFromSlug } from "./utils";
+import { cn, createSlug, extractIdFromSlug, releaseYearSuffix } from "./utils";
 
 describe("createSlug", () => {
   it("lowercases and dash-joins a title", () => {
@@ -69,6 +69,22 @@ describe("extractIdFromSlug", () => {
     ] as const) {
       expect(extractIdFromSlug(createSlug(title, id))).toBe(id);
     }
+  });
+});
+
+describe("releaseYearSuffix", () => {
+  it("wraps the year of a release date", () => {
+    expect(releaseYearSuffix("2026-07-28")).toBe(" (2026)");
+  });
+
+  it("is empty for a missing date rather than yielding (N/A)", () => {
+    expect(releaseYearSuffix(null)).toBe("");
+    expect(releaseYearSuffix(undefined)).toBe("");
+    expect(releaseYearSuffix("")).toBe("");
+  });
+
+  it("is empty for a date TMDB sent in a shape Date cannot read", () => {
+    expect(releaseYearSuffix("coming soon")).toBe("");
   });
 });
 

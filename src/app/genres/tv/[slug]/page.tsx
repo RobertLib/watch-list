@@ -19,6 +19,9 @@ import {
   type DiscoverSearchParams,
 } from "@/lib/discover-filters";
 
+// Only takes effect once the render stops reading cookies: the listing comes from
+// `tmdbServerApi`, which reads the region and provider cookies, so the route is
+// currently rendered per request and the caching sits on the TMDB fetches.
 export const revalidate = 86400;
 
 const MAX_PAGE = 20; // Limit crawlable depth
@@ -70,6 +73,11 @@ async function getGenreTVShowsData(
   }
 }
 
+const NOT_FOUND_METADATA: Metadata = {
+  title: "Genre not found",
+  robots: { index: false, follow: false },
+};
+
 export async function generateMetadata({
   params,
   searchParams,
@@ -88,19 +96,18 @@ export async function generateMetadata({
   );
   const isFiltered = hasActiveDiscoverFilters(filters);
 
+  // The page body calls notFound() for these too, but the response is already
+  // committed to 200 by then, so without an explicit noindex the soft 404 inherits
+  // an indexable default and only the not-found boundary's own tag contradicts it.
   if (!id) {
-    return {
-      title: "Genre not found",
-    };
+    return NOT_FOUND_METADATA;
   }
 
   const genres = await getTVGenres();
   const genre = genres?.find((g) => g.id === id);
 
   if (!genre) {
-    return {
-      title: "Genre not found",
-    };
+    return NOT_FOUND_METADATA;
   }
 
   // Filtered views are user-facing refinements of the same listing – they point

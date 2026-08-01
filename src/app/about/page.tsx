@@ -35,7 +35,10 @@ export const metadata: Metadata = {
 
 export default function AboutPage() {
   return (
-    <main className="container mx-auto px-6 lg:px-8 py-16 max-w-3xl">
+    // A <div>, not a <main>: the root layout already provides the one <main> the
+    // document is allowed, and a nested one leaves assistive tech with two
+    // candidates for "the main content".
+    <div className="container mx-auto px-6 lg:px-8 py-16 max-w-3xl">
       <h1 className="text-4xl font-extrabold text-white mb-4 tracking-tight">
         About WatchList
       </h1>
@@ -116,6 +119,6 @@ export default function AboutPage() {
           Browse TV Shows
         </Link>
       </div>
-    </main>
+    </div>
   );
 }

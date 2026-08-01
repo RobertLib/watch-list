@@ -24,7 +24,7 @@ import { getMovieWikipediaContent } from "@/lib/wikipedia";
 import { MediaRatingPanel } from "@/components/MediaRatingPanel";
 import { MediaGallery } from "@/components/MediaGallery";
 import { MediaVideos } from "@/components/MediaVideos";
-import { extractIdFromSlug, createSlug } from "@/lib/utils";
+import { extractIdFromSlug, createSlug, releaseYearSuffix } from "@/lib/utils";
 import { resolveRegionProviders } from "@/lib/media-converters";
 import { getRegion } from "@/lib/region-server";
 import { getRegionCode } from "@/lib/region";
@@ -171,16 +171,14 @@ export async function generateMetadata({
     ...(details.keywords?.keywords?.map((k) => k.name) ?? []),
   ].filter(Boolean) as string[];
 
+  const titleWithYear = `${details.title}${releaseYearSuffix(details.release_date)}`;
+
   return {
-    title: `${details.title} (${
-      new Date(details.release_date).getFullYear() || "N/A"
-    })`,
+    title: titleWithYear,
     description: formattedDescription,
     keywords: keywords.length > 0 ? keywords : undefined,
     openGraph: {
-      title: `${details.title} (${
-        new Date(details.release_date).getFullYear() || "N/A"
-      })`,
+      title: titleWithYear,
       description: formattedDescription,
       type: "video.movie",
       url: `https://www.watch-list.me/movie/${createSlug(details.title, details.id)}`,
@@ -199,7 +197,7 @@ export async function generateMetadata({
     },
     twitter: {
       card: "summary_large_image",
-      title: `${details.title} (${new Date(details.release_date).getFullYear() || "N/A"})`,
+      title: titleWithYear,
       description: formattedDescription,
       images: ogImageUrl ? [ogImageUrl] : [],
     },

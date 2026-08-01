@@ -24,7 +24,7 @@ import { getTVWikipediaContent } from "@/lib/wikipedia";
 import { MediaRatingPanel } from "@/components/MediaRatingPanel";
 import { MediaGallery } from "@/components/MediaGallery";
 import { MediaVideos } from "@/components/MediaVideos";
-import { extractIdFromSlug, createSlug } from "@/lib/utils";
+import { extractIdFromSlug, createSlug, releaseYearSuffix } from "@/lib/utils";
 import { resolveRegionProviders } from "@/lib/media-converters";
 import { getRegion } from "@/lib/region-server";
 import { getRegionCode } from "@/lib/region";
@@ -160,16 +160,14 @@ export async function generateMetadata({
     ...(details.keywords?.results?.map((k) => k.name) ?? []),
   ].filter(Boolean) as string[];
 
+  const titleWithYear = `${details.name}${releaseYearSuffix(details.first_air_date)}`;
+
   return {
-    title: `${details.name} (${
-      new Date(details.first_air_date).getFullYear() || "N/A"
-    })`,
+    title: titleWithYear,
     description: formattedDescription,
     keywords: keywords.length > 0 ? keywords : undefined,
     openGraph: {
-      title: `${details.name} (${
-        new Date(details.first_air_date).getFullYear() || "N/A"
-      })`,
+      title: titleWithYear,
       description: formattedDescription,
       type: "video.tv_show",
       url: `https://www.watch-list.me/tv/${createSlug(details.name, details.id)}`,
@@ -188,7 +186,7 @@ export async function generateMetadata({
     },
     twitter: {
       card: "summary_large_image",
-      title: `${details.name} (${new Date(details.first_air_date).getFullYear() || "N/A"})`,
+      title: titleWithYear,
       description: formattedDescription,
       images: ogImageUrl ? [ogImageUrl] : [],
     },

@@ -74,6 +74,33 @@ const NOT_FOUND_METADATA: Metadata = {
   robots: { index: false, follow: false },
 };
 
+/**
+ * TMDB carries millions of profiles, plenty of them a name, a job title and one
+ * bit-part credit. Those pages have nothing to rank for and, submitted in bulk,
+ * say something about the quality of the whole site – so a profile earns indexing
+ * by having either a biography or a few notable credits to show. `follow` stays on
+ * regardless: whatever credits do exist link to titles worth crawling.
+ *
+ * "Notable" is the same bar the "Known For" section renders at (vote_count >= 50).
+ * A raw credit count is not the same thing: an uncredited walk-on in three
+ * unreleased shorts leaves the page as empty as no credits at all.
+ */
+const MIN_NOTABLE_CREDITS_TO_INDEX = 3;
+const NOTABLE_VOTE_COUNT = 50;
+
+function hasIndexableSubstance(
+  biography: string | null,
+  credits: readonly { vote_count: number }[],
+): boolean {
+  if (biography?.trim()) return true;
+
+  const notable = credits.filter(
+    (credit) => credit.vote_count >= NOTABLE_VOTE_COUNT,
+  ).length;
+
+  return notable >= MIN_NOTABLE_CREDITS_TO_INDEX;
+}
+
 export async function generateMetadata({
   params,
 }: PersonPageProps): Promise<Metadata> {
@@ -160,7 +187,12 @@ export async function generateMetadata({
       canonical: canonicalUrl,
     },
     robots: {
-      index: isCanonicalSlug,
+      index:
+        isCanonicalSlug &&
+        hasIndexableSubstance(details.biography, [
+          ...movieCredits.cast,
+          ...tvCredits.cast,
+        ]),
       follow: true,
     },
   };
