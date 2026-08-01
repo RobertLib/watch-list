@@ -12,7 +12,7 @@ export default function robots(): MetadataRoute.Robots {
           "/genres/tv/*?page=*",
         ],
         disallow: [
-          "/api/",
+          // "/api/",
           "/profile/",
           "/watchlist/",
           // Block parameterised filter URLs — endless combinations waste crawl budget
