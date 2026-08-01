@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   EMPTY_STATE,
+  archiveBoardFor,
+  archiveSolvedCount,
   buildShareText,
   effectiveStreak,
+  outcomeForDay,
+  recordArchiveGuess,
   recordGuess,
   recordResult,
   sanitizeGameState,
@@ -282,5 +286,155 @@ describe("buildShareText", () => {
     const text = buildShareText(12, [wrong(1)], "lost", "https://x.test");
 
     expect(text).toContain("#12 X/6");
+  });
+});
+
+describe("history", () => {
+  it("records how each finished day went", () => {
+    const state = recordResult(playing(), DAY, true, 3);
+
+    expect(state.history).toEqual({ [DAY]: "won" });
+  });
+
+  it("records a loss as a loss, not as an absence", () => {
+    expect(recordResult(playing(), DAY, false, 6).history[DAY]).toBe("lost");
+  });
+
+  it("keeps earlier days as the run goes on", () => {
+    const first = recordResult(playing(), DAY, true, 2);
+    const second = recordResult(first, NEXT_DAY, false, 6);
+
+    expect(second.history).toEqual({ [DAY]: "won", [NEXT_DAY]: "lost" });
+  });
+
+  it("survives a stored state written before history existed", () => {
+    const legacy = sanitizeGameState({ played: 4, won: 2 });
+
+    expect(legacy.history).toEqual({});
+    expect(legacy.archive).toEqual({});
+    expect(legacy.played).toBe(4);
+  });
+
+  it("drops entries that are not a finished result", () => {
+    const state = sanitizeGameState({
+      history: { [DAY]: "playing", "not-a-day": "won", [NEXT_DAY]: "won" },
+    });
+
+    expect(state.history).toEqual({ [NEXT_DAY]: "won" });
+  });
+});
+
+describe("the archive", () => {
+  const OLD_DAY = "2026-07-20";
+
+  it("hands back a fresh board for a day never opened", () => {
+    expect(archiveBoardFor(playing(), OLD_DAY)).toEqual({
+      day: OLD_DAY,
+      guesses: [],
+      status: "playing",
+    });
+  });
+
+  it("records a guess against the day it was made", () => {
+    const state = recordArchiveGuess(playing(), OLD_DAY, wrong(1));
+
+    expect(state.archive[OLD_DAY].guesses).toHaveLength(1);
+    expect(state.archive[OLD_DAY].status).toBe("playing");
+  });
+
+  it("finishes the board on a correct guess", () => {
+    const state = recordArchiveGuess(playing(), OLD_DAY, right(1));
+
+    expect(state.archive[OLD_DAY].status).toBe("won");
+  });
+
+  it("loses the board once the guesses run out", () => {
+    let state = playing();
+    for (let id = 1; id <= MAX_GUESSES; id++) {
+      state = recordArchiveGuess(state, OLD_DAY, wrong(id));
+    }
+
+    expect(state.archive[OLD_DAY].status).toBe("lost");
+  });
+
+  it("never touches the streak or the totals", () => {
+    const before = playing({ currentStreak: 4, played: 9, won: 7 });
+    const after = recordArchiveGuess(before, OLD_DAY, right(1));
+
+    expect(after.currentStreak).toBe(4);
+    expect(after.played).toBe(9);
+    expect(after.won).toBe(7);
+    expect(after.distribution).toEqual(before.distribution);
+    expect(after.history).toEqual({});
+  });
+
+  it("leaves a board in progress for today alone", () => {
+    const before = playing({
+      today: { day: DAY, guesses: [wrong(1)], status: "playing" },
+    });
+
+    expect(recordArchiveGuess(before, OLD_DAY, wrong(2)).today).toEqual(
+      before.today,
+    );
+  });
+
+  it("takes no further guesses once the board is finished", () => {
+    const won = recordArchiveGuess(playing(), OLD_DAY, right(1));
+    const after = recordArchiveGuess(won, OLD_DAY, wrong(2));
+
+    expect(after.archive[OLD_DAY].guesses).toHaveLength(1);
+  });
+
+  it("does not let the same wrong guess cost two lives", () => {
+    const once = recordArchiveGuess(playing(), OLD_DAY, wrong(1));
+    const twice = recordArchiveGuess(once, OLD_DAY, wrong(1));
+
+    expect(twice.archive[OLD_DAY].guesses).toHaveLength(1);
+  });
+
+  it("counts only the archived days that were solved", () => {
+    let state = recordArchiveGuess(playing(), OLD_DAY, right(1));
+    state = recordArchiveGuess(state, "2026-07-21", wrong(1));
+
+    expect(archiveSolvedCount(state)).toBe(1);
+  });
+});
+
+describe("outcomeForDay", () => {
+  it("reports a day played on the day from the history", () => {
+    const state = recordResult(playing(), DAY, true, 2);
+
+    expect(outcomeForDay(state, DAY, NEXT_DAY)).toBe("won");
+  });
+
+  it("tells a day caught up later apart from one played on time", () => {
+    const state = recordArchiveGuess(playing(), DAY, right(1));
+
+    expect(outcomeForDay(state, DAY, NEXT_DAY)).toBe("archived");
+  });
+
+  it("leaves an unfinished archive board as missed", () => {
+    const state = recordArchiveGuess(playing(), DAY, wrong(1));
+
+    expect(outcomeForDay(state, DAY, NEXT_DAY)).toBe("missed");
+  });
+
+  it("marks today as today rather than as missed", () => {
+    expect(outcomeForDay(playing(), DAY, DAY)).toBe("today");
+  });
+
+  it("prefers the real result over an archive board for the same day", () => {
+    const played = recordResult(playing(), DAY, false, 6);
+    const alsoArchived = recordArchiveGuess(played, DAY, right(1));
+
+    expect(outcomeForDay(alsoArchived, DAY, NEXT_DAY)).toBe("lost");
+  });
+});
+
+describe("buildShareText, from the archive", () => {
+  it("says so, so it cannot be mistaken for today's result", () => {
+    const text = buildShareText(3, [right(1)], "won", "https://x.test", true);
+
+    expect(text).toContain("#3 (archive) 1/6");
   });
 });

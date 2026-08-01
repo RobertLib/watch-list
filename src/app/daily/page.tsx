@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { History, Scale } from "lucide-react";
 import { DailyGame } from "@/components/DailyGame";
+import { DailyStreakPanel } from "@/components/DailyStreakPanel";
 
 export const metadata: Metadata = {
   title: "Daily Film Puzzle",
@@ -53,6 +56,44 @@ export default function DailyPage() {
       </div>
 
       <DailyGame />
+
+      <div className="mt-10 space-y-8">
+        <DailyStreakPanel />
+
+        <div className="max-w-2xl mx-auto grid sm:grid-cols-2 gap-4">
+          <Link
+            href="/daily/archive"
+            prefetch={false}
+            className="group rounded-xl border border-gray-800 bg-gray-900/60 p-5 hover:border-gray-700 hover:bg-gray-900 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          >
+            <History
+              className="w-6 h-6 text-blue-400 mb-3"
+              aria-hidden="true"
+            />
+            <h2 className="font-semibold text-white group-hover:text-blue-300 transition-colors">
+              The archive
+            </h2>
+            <p className="text-sm text-gray-400 mt-1 leading-relaxed">
+              Every puzzle that has run so far. A day you missed is still there.
+            </p>
+          </Link>
+
+          <Link
+            href="/daily/higher-lower"
+            prefetch={false}
+            className="group rounded-xl border border-gray-800 bg-gray-900/60 p-5 hover:border-gray-700 hover:bg-gray-900 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          >
+            <Scale className="w-6 h-6 text-purple-400 mb-3" aria-hidden="true" />
+            <h2 className="font-semibold text-white group-hover:text-purple-300 transition-colors">
+              Higher or lower
+            </h2>
+            <p className="text-sm text-gray-400 mt-1 leading-relaxed">
+              Which film scored better? No daily limit – play until you get one
+              wrong.
+            </p>
+          </Link>
+        </div>
+      </div>
 
       {/* Server-rendered so the page says something to a crawler, and to a first
           visitor while the board is still loading. */}

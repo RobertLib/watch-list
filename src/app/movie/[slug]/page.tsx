@@ -12,6 +12,7 @@ import { MovieTrailerButton } from "@/components/movie/MovieTrailerButton";
 import { MovieCollection } from "@/components/movie/MovieCollection";
 import { DetailPageWatchlistButton } from "@/components/DetailPageWatchlistButton";
 import { DetailPageWatchedButton } from "@/components/DetailPageWatchedButton";
+import { AddToListButton } from "@/components/AddToListButton";
 import { LanguageSupport } from "@/components/LanguageSupport";
 import { StructuredData } from "@/components/StructuredData";
 import { MediaBreadcrumbs } from "@/components/Breadcrumbs";
@@ -343,7 +344,7 @@ export default async function MoviePage({ params }: MoviePageProps) {
             title={details.title}
             genres={details.genres}
           />
-          <div className="grid md:grid-cols-3 gap-8 max-w-6xl mt-6">
+          <div className="grid md:grid-cols-3 gap-8 max-w-6xl xl:max-w-7xl mt-6">
             {/* Poster */}
             {details.poster_path && (
               <div className="md:col-span-1">
@@ -435,7 +436,7 @@ export default async function MoviePage({ params }: MoviePageProps) {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-wrap items-center gap-3.5 mt-6">
+              <div className="flex flex-wrap items-center gap-3 mt-6">
                 <MovieTrailerButton movieId={id} trailer={trailer} />
                 <DetailPageWatchlistButton
                   id={id}
@@ -452,6 +453,18 @@ export default async function MoviePage({ params }: MoviePageProps) {
                   releaseDate={details.release_date}
                   voteAverage={details.vote_average}
                   mediaType="movie"
+                />
+                <AddToListButton
+                  // Every other button in this row carries its own `mt-6` on
+                  // top of the row's, so matching it is what puts this on the
+                  // same line rather than 24px above everything else.
+                  className="mt-6"
+                  item={{
+                    id,
+                    mediaType: "movie",
+                    title: details.title,
+                    posterPath: details.poster_path,
+                  }}
                 />
                 <ShareButton
                   title={details.title}

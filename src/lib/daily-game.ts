@@ -14,11 +14,20 @@ export const DAILY_GAME_STORAGE_KEY = "daily-game";
 
 export type DailyStatus = "playing" | "won" | "lost";
 
+/** A day that is over, one way or the other. */
+export type DailyResult = "won" | "lost";
+
 export interface DailyGuess {
   /** TMDB movie id – comparing ids is what makes checking exact. */
   id: number;
   title: string;
   correct: boolean;
+}
+
+export interface DailyBoard {
+  day: string;
+  guesses: DailyGuess[];
+  status: DailyStatus;
 }
 
 export interface DailyGameState {
@@ -31,11 +40,25 @@ export interface DailyGameState {
   /** Wins by number of guesses taken; index 0 is a first-guess win. */
   distribution: number[];
   /** The day in progress. Absent until the player opens the game. */
-  today: {
-    day: string;
-    guesses: DailyGuess[];
-    status: DailyStatus;
-  } | null;
+  today: DailyBoard | null;
+  /**
+   * How each finished day went, keyed by day.
+   *
+   * The totals above say how many; this says which, which is what a streak
+   * calendar draws and what tells the archive apart from a day never opened. Only
+   * days played on the day itself land here – see `archive`.
+   */
+  history: Record<string, DailyResult>;
+  /**
+   * Boards for puzzles played late, out of the archive.
+   *
+   * Kept apart from the run on purpose. Catching up on a missed Tuesday is worth
+   * offering – it is what makes a broken streak recoverable instead of a reason
+   * to stop – but folding it into the streak would turn the streak into a measure
+   * of how much of the archive someone ground through, which is not the thing it
+   * is meant to reward.
+   */
+  archive: Record<string, DailyBoard>;
 }
 
 export const EMPTY_STATE: DailyGameState = {
@@ -46,9 +69,33 @@ export const EMPTY_STATE: DailyGameState = {
   won: 0,
   distribution: Array.from({ length: MAX_GUESSES }, () => 0),
   today: null,
+  history: {},
+  archive: {},
 };
 
 const MAX_TITLE_LENGTH = 200;
+
+// Both maps grow by one a day and are never read past the recent past, so they
+// are pruned oldest-first. `history` covers more than a year, which is further
+// back than any calendar on the page draws; `archive` holds the boards
+// themselves, which are much larger per entry.
+const MAX_HISTORY_DAYS = 400;
+const MAX_ARCHIVE_BOARDS = 90;
+
+/** Day strings sort lexicographically, so "newest" needs no date parsing. */
+function pruneOldest<T>(
+  entries: Record<string, T>,
+  limit: number,
+): Record<string, T> {
+  const keys = Object.keys(entries);
+  if (keys.length <= limit) return entries;
+
+  const kept = keys.sort().slice(-limit);
+  const result: Record<string, T> = {};
+  for (const key of kept) result[key] = entries[key];
+
+  return result;
+}
 
 function sanitizeCount(value: unknown): number {
   const count = Number(value);
@@ -76,6 +123,42 @@ function sanitizeGuesses(input: unknown): DailyGuess[] {
 
 function sanitizeStatus(value: unknown): DailyStatus {
   return value === "won" || value === "lost" ? value : "playing";
+}
+
+function sanitizeHistory(input: unknown): Record<string, DailyResult> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return {};
+
+  const result: Record<string, DailyResult> = {};
+
+  for (const [day, value] of Object.entries(input as Record<string, unknown>)) {
+    if (!isDayString(day)) continue;
+    // "playing" is not a result – a day left unfinished is a day with no entry.
+    if (value !== "won" && value !== "lost") continue;
+
+    result[day] = value;
+  }
+
+  return pruneOldest(result, MAX_HISTORY_DAYS);
+}
+
+function sanitizeArchive(input: unknown): Record<string, DailyBoard> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return {};
+
+  const result: Record<string, DailyBoard> = {};
+
+  for (const [day, value] of Object.entries(input as Record<string, unknown>)) {
+    if (!isDayString(day)) continue;
+    if (!value || typeof value !== "object") continue;
+
+    const board = value as Record<string, unknown>;
+    result[day] = {
+      day,
+      guesses: sanitizeGuesses(board.guesses),
+      status: sanitizeStatus(board.status),
+    };
+  }
+
+  return pruneOldest(result, MAX_ARCHIVE_BOARDS);
 }
 
 /**
@@ -114,6 +197,10 @@ export function sanitizeGameState(input: unknown): DailyGameState {
             status: sanitizeStatus(today.status),
           }
         : null,
+    // Absent from anything written before the archive existed, which is exactly
+    // what an empty map means here.
+    history: sanitizeHistory(record.history),
+    archive: sanitizeArchive(record.archive),
   };
 }
 
@@ -296,7 +383,87 @@ export function recordResult(
     played: state.played + 1,
     won: won ? state.won + 1 : state.won,
     distribution,
+    history: pruneOldest(
+      { ...state.history, [day]: won ? "won" : "lost" },
+      MAX_HISTORY_DAYS,
+    ),
   };
+}
+
+// ── The archive ──────────────────────────────────────────────────────────────
+
+/** The board for a past day, or a fresh one if it has never been opened. */
+export function archiveBoardFor(
+  state: DailyGameState,
+  day: string,
+): DailyBoard {
+  return state.archive[day] ?? { day, guesses: [], status: "playing" };
+}
+
+/**
+ * Record a guess against a past puzzle.
+ *
+ * Deliberately touches nothing but `archive`: no streak, no totals, no
+ * distribution. See the note on the field – the streak has to keep meaning
+ * "showed up on the day".
+ */
+export function recordArchiveGuess(
+  state: DailyGameState,
+  day: string,
+  guess: DailyGuess,
+): DailyGameState {
+  const board = archiveBoardFor(state, day);
+
+  // Same two guards as the live board: a finished puzzle takes no more guesses,
+  // and repeating one must not cost a life.
+  if (board.status !== "playing") return state;
+  if (board.guesses.some((existing) => existing.id === guess.id)) return state;
+
+  const guesses = [...board.guesses, guess];
+  const status: DailyStatus = guess.correct
+    ? "won"
+    : guesses.length >= MAX_GUESSES
+      ? "lost"
+      : "playing";
+
+  return {
+    ...state,
+    archive: pruneOldest(
+      { ...state.archive, [day]: { day, guesses, status } },
+      MAX_ARCHIVE_BOARDS,
+    ),
+  };
+}
+
+export type DayOutcome = "won" | "lost" | "archived" | "missed" | "today";
+
+/**
+ * How a given day stands, for the calendar grid.
+ *
+ * "archived" is its own outcome rather than being folded into a win: a day
+ * caught up on later did happen, and showing it is the reward for catching up –
+ * but it should not look like the run was never broken.
+ */
+export function outcomeForDay(
+  state: DailyGameState,
+  day: string,
+  today: string,
+): DayOutcome {
+  const recorded = state.history[day];
+  if (recorded) return recorded;
+
+  const archived = state.archive[day];
+  if (archived && archived.status !== "playing") return "archived";
+
+  if (day === today) return "today";
+
+  return "missed";
+}
+
+/** Past puzzles finished from the archive, for the badge that counts them. */
+export function archiveSolvedCount(state: DailyGameState): number {
+  return Object.values(state.archive).filter((board) => board.status === "won")
+    .length;
 }
 
 /**
@@ -321,11 +488,15 @@ export function buildShareText(
   guesses: DailyGuess[],
   status: DailyStatus,
   url: string,
+  isArchive = false,
 ): string {
   const squares = guesses
     .map((guess) => (guess.correct ? "🟩" : "🟥"))
     .join("");
   const score = status === "won" ? `${guesses.length}/${MAX_GUESSES}` : `X/${MAX_GUESSES}`;
+  // Said outright, because a shared archive result posted next to today's would
+  // otherwise read as a claim about today.
+  const suffix = isArchive ? " (archive)" : "";
 
-  return `🎬 WatchList Daily #${puzzleNumber} ${score}\n${squares}\n${url}`;
+  return `🎬 WatchList Daily #${puzzleNumber}${suffix} ${score}\n${squares}\n${url}`;
 }

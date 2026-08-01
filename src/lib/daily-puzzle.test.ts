@@ -9,7 +9,10 @@ import {
   daysBetween,
   imageStepForGuessCount,
   isDayString,
+  isPlayableDay,
+  msUntilNextPuzzle,
   puzzleNumberForDay,
+  recentDays,
   todayUtc,
   unlockedHints,
 } from "./daily-puzzle";
@@ -154,5 +157,68 @@ describe("imageStepForGuessCount", () => {
   it("clamps to the sizes that exist", () => {
     expect(imageStepForGuessCount(99)).toBe(IMAGE_STEPS.length - 1);
     expect(imageStepForGuessCount(-1)).toBe(0);
+  });
+});
+
+describe("isPlayableDay", () => {
+  const TODAY = "2026-09-01";
+
+  it("allows today", () => {
+    expect(isPlayableDay(TODAY, TODAY)).toBe(true);
+  });
+
+  it("allows a day already played out", () => {
+    expect(isPlayableDay("2026-08-15", TODAY)).toBe(true);
+  });
+
+  it("allows the very first puzzle", () => {
+    expect(isPlayableDay(PUZZLE_EPOCH, TODAY)).toBe(true);
+  });
+
+  it("refuses tomorrow, which would hand out an unearned answer", () => {
+    expect(isPlayableDay("2026-09-02", TODAY)).toBe(false);
+  });
+
+  it("refuses a day before the game existed", () => {
+    expect(isPlayableDay("2020-01-01", TODAY)).toBe(false);
+  });
+
+  it("refuses anything that is not a day", () => {
+    expect(isPlayableDay("", TODAY)).toBe(false);
+    expect(isPlayableDay("2026-13-45", TODAY)).toBe(false);
+    expect(isPlayableDay(null, TODAY)).toBe(false);
+    expect(isPlayableDay("../../etc", TODAY)).toBe(false);
+  });
+});
+
+describe("recentDays", () => {
+  it("counts backwards from today, newest first", () => {
+    expect(recentDays("2026-08-05", 3)).toEqual([
+      "2026-08-05",
+      "2026-08-04",
+      "2026-08-03",
+    ]);
+  });
+
+  it("stops at the epoch rather than inventing puzzles", () => {
+    expect(recentDays("2026-08-02", 10)).toEqual(["2026-08-02", PUZZLE_EPOCH]);
+  });
+
+  it("crosses a month boundary", () => {
+    expect(recentDays("2026-09-01", 2)).toEqual(["2026-09-01", "2026-08-31"]);
+  });
+});
+
+describe("msUntilNextPuzzle", () => {
+  it("counts down to the next UTC midnight", () => {
+    const ms = msUntilNextPuzzle(new Date("2026-08-01T23:00:00.000Z"));
+
+    expect(ms).toBe(3_600_000);
+  });
+
+  it("is a whole day at the moment one turns over", () => {
+    expect(msUntilNextPuzzle(new Date("2026-08-01T00:00:00.000Z"))).toBe(
+      86_400_000,
+    );
   });
 });

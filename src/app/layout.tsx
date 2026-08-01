@@ -7,6 +7,7 @@ import { EpisodeProgressProvider } from "@/contexts/EpisodeProgressContext";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { ToastContainer } from "@/components/Toast";
+import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -115,6 +116,7 @@ export default function RootLayout({
                   </div>
                   <Footer />
                   <ToastContainer />
+                  <ServiceWorkerRegistrar />
                 </div>
               </EpisodeProgressProvider>
             </WatchedProvider>

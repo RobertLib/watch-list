@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDailyImagePath } from "@/lib/daily-puzzle-server";
-import { IMAGE_STEPS, todayUtc } from "@/lib/daily-puzzle";
+import { IMAGE_STEPS, isPlayableDay, todayUtc } from "@/lib/daily-puzzle";
 
 /**
  * The daily puzzle's image, proxied.
@@ -18,9 +18,10 @@ export async function GET(request: NextRequest) {
   const day = request.nextUrl.searchParams.get("day") ?? "";
   const rawStep = request.nextUrl.searchParams.get("step") ?? "0";
 
-  // Only today's image is served. Any other day would hand out tomorrow's puzzle
-  // to anyone willing to edit a query string.
-  if (day !== todayUtc()) {
+  // Today or any day already played out. Serving a future day would hand out
+  // tomorrow's puzzle to anyone willing to edit a query string; serving a past
+  // one is what the archive is.
+  if (!isPlayableDay(day, todayUtc())) {
     return NextResponse.json({ error: "Not available" }, { status: 404 });
   }
 

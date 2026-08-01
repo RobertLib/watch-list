@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ListChecks } from "lucide-react";
 import { MediaGrid } from "@/components/MediaGrid";
 import { SaveSharedListButton } from "@/components/SaveSharedListButton";
+import { CompareWithMineButton } from "@/components/CompareWithMineButton";
 import { getSharedListItems } from "@/lib/shared-list-server";
 import {
   decodeSharedList,
@@ -111,8 +112,9 @@ export default async function SharedListPage({
             ` · ${refs.length - listItems.length} could not be loaded`}
         </p>
 
-        <div className="mt-5">
+        <div className="mt-5 flex flex-wrap items-center gap-3">
           <SaveSharedListButton items={listItems} />
+          <CompareWithMineButton items={refs} />
         </div>
       </div>
 

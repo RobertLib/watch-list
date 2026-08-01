@@ -99,7 +99,33 @@ export interface IcsOptions {
   baseUrl: string;
   /** `DTSTAMP`, passed in rather than read from the clock so this stays pure. */
   now: Date;
+  /** Name the calendar app shows for the whole feed. */
+  calendarName?: string;
+  /**
+   * Attach a `VALARM` to every event.
+   *
+   * This is the closest thing to a push notification the app can offer: the
+   * reminder is delivered by the visitor's own phone, which needs no account
+   * here and no subscription record on our side.
+   */
+  alarms?: boolean;
+  /**
+   * How often a subscribed client should re-fetch, in hours.
+   *
+   * Only meaningful for the hosted feed – a downloaded file is a snapshot and
+   * has nothing to refresh from. Advisory in both directions: clients treat it
+   * as a hint and most poll on their own schedule anyway.
+   */
+  refreshHours?: number;
 }
+
+// Half a day. An episode air date is known well in advance, so there is nothing
+// to gain from polling harder – and every subscriber does it forever.
+export const DEFAULT_REFRESH_HOURS = 12;
+
+// 09:00 on the day, expressed as an offset from the start of an all-day event.
+// A reminder at midnight is one nobody reads.
+const ALARM_TRIGGER = "PT9H";
 
 function toIcsTimestamp(now: Date): string {
   return `${now.toISOString().slice(0, 19).replace(/[-:]/g, "")}Z`;
@@ -107,7 +133,13 @@ function toIcsTimestamp(now: Date): string {
 
 export function buildCalendarIcs(
   events: CalendarEvent[],
-  { baseUrl, now }: IcsOptions,
+  {
+    baseUrl,
+    now,
+    calendarName = "WatchList releases",
+    alarms = false,
+    refreshHours,
+  }: IcsOptions,
 ): string {
   const dtstamp = toIcsTimestamp(now);
 
@@ -117,8 +149,18 @@ export function buildCalendarIcs(
     `PRODID:${PRODUCT_ID}`,
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
-    "X-WR-CALNAME:WatchList releases",
+    `X-WR-CALNAME:${escapeText(calendarName)}`,
   ];
+
+  if (refreshHours && refreshHours > 0) {
+    const duration = `PT${Math.round(refreshHours)}H`;
+    // Two spellings of the same request: `REFRESH-INTERVAL` is the standard one
+    // (RFC 7986), `X-PUBLISHED-TTL` is what Outlook has always read.
+    lines.push(
+      `REFRESH-INTERVAL;VALUE=DURATION:${duration}`,
+      `X-PUBLISHED-TTL:${duration}`,
+    );
+  }
 
   for (const event of events) {
     const url = `${baseUrl}/${event.mediaType}/${event.slug}`;
@@ -137,8 +179,19 @@ export function buildCalendarIcs(
       `DESCRIPTION:${escapeText(url)}`,
       `URL:${escapeText(url)}`,
       "TRANSP:TRANSPARENT",
-      "END:VEVENT",
     );
+
+    if (alarms) {
+      lines.push(
+        "BEGIN:VALARM",
+        "ACTION:DISPLAY",
+        `DESCRIPTION:${escapeText(summaryFor(event))}`,
+        `TRIGGER:${ALARM_TRIGGER}`,
+        "END:VALARM",
+      );
+    }
+
+    lines.push("END:VEVENT");
   }
 
   lines.push("END:VCALENDAR");

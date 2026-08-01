@@ -2,6 +2,7 @@ import { User } from "lucide-react";
 import type { Metadata } from "next";
 import { ProfileContent } from "@/components/ProfileContent";
 import { DataPortability } from "@/components/DataPortability";
+import { ProfileSwitcher } from "@/components/ProfileSwitcher";
 
 export const metadata: Metadata = {
   title: "Profile",
@@ -58,6 +59,7 @@ export default function ProfilePage() {
       </div>
 
       <div className="space-y-6">
+        <ProfileSwitcher />
         <ProfileContent />
         <DataPortability />
       </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Layers, Search, X } from "lucide-react";
+import { Layers, Search, Star, X } from "lucide-react";
 import { ViewModeToggle } from "@/components/ViewModeToggle";
 import { cn } from "@/lib/utils";
 import {
@@ -120,6 +120,29 @@ export function WatchlistControls({
               aria-hidden="true"
             />
           )}
+        </button>
+
+        {/* Only what has been scored. Rating a title marks it watched, so
+            without this the scores sit mixed in with everything else finished
+            and there is no way to see the list as a list. */}
+        <button
+          onClick={() =>
+            onChange({ ...preferences, ratedOnly: !preferences.ratedOnly })
+          }
+          aria-pressed={preferences.ratedOnly}
+          className={cn(
+            "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
+            preferences.ratedOnly
+              ? "border-yellow-500 bg-yellow-500/15 text-yellow-200"
+              : "border-gray-800 bg-gray-900/60 text-gray-300 hover:text-white",
+          )}
+        >
+          <Star
+            className="w-4 h-4"
+            fill={preferences.ratedOnly ? "currentColor" : "none"}
+            aria-hidden="true"
+          />
+          Only what I rated
         </button>
 
         <div className="ml-auto">

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { CalendarDays, CalendarClock, Clapperboard, Tv } from "lucide-react";
 import { getReleaseCalendar } from "@/app/actions";
 import { AddToCalendarButton } from "@/components/AddToCalendarButton";
+import { SubscribeToCalendarButton } from "@/components/SubscribeToCalendarButton";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useWatchlist } from "@/contexts/WatchlistContext";
 import { useEpisodeProgress } from "@/contexts/EpisodeProgressContext";
@@ -118,13 +119,20 @@ export function CalendarContent() {
   return (
     <div className="space-y-12">
       {calendar.events.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <p className="text-gray-400">
-            {calendar.events.length} release
-            {calendar.events.length === 1 ? "" : "s"} coming up across{" "}
-            {seeds.length} title{seeds.length === 1 ? "" : "s"} you follow.
-          </p>
-          <AddToCalendarButton events={calendar.events} />
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <p className="text-gray-400">
+              {calendar.events.length} release
+              {calendar.events.length === 1 ? "" : "s"} coming up across{" "}
+              {seeds.length} title{seeds.length === 1 ? "" : "s"} you follow.
+            </p>
+            <AddToCalendarButton events={calendar.events} />
+          </div>
+
+          {/* Below the row rather than in it: the panel it opens is full width,
+              and the two buttons answer different questions – one takes the
+              dates away now, the other keeps taking them. */}
+          <SubscribeToCalendarButton seeds={seeds} today={calendar.today} />
         </div>
       )}
 

@@ -2,6 +2,7 @@ import { MetadataRoute } from "next";
 import { createSlug } from "@/lib/utils";
 import { TMDB_CONFIG } from "@/lib/tmdb-cache";
 import { STREAMING_LANDING_PLATFORMS } from "@/lib/streaming-landing";
+import { MOODS } from "@/lib/moods";
 
 // Types for sitemap generation
 interface Genre {
@@ -229,6 +230,52 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "monthly" as const,
       priority: 0.5,
     },
+    // The pages that answer "what should I watch" rather than "what exists" –
+    // the phrasing people actually search for, and the reason they come back.
+    {
+      url: `${baseUrl}/tonight`,
+      lastModified: now,
+      changeFrequency: "weekly" as const,
+      priority: 0.8,
+    },
+    {
+      url: `${baseUrl}/mood`,
+      lastModified: now,
+      changeFrequency: "weekly" as const,
+      priority: 0.8,
+    },
+    {
+      url: `${baseUrl}/match`,
+      lastModified: now,
+      changeFrequency: "monthly" as const,
+      priority: 0.6,
+    },
+    {
+      url: `${baseUrl}/daily`,
+      lastModified: now,
+      // A new puzzle every day at midnight UTC, so this is literal.
+      changeFrequency: "daily" as const,
+      priority: 0.7,
+    },
+    {
+      url: `${baseUrl}/daily/archive`,
+      lastModified: now,
+      changeFrequency: "daily" as const,
+      priority: 0.5,
+    },
+    {
+      url: `${baseUrl}/daily/higher-lower`,
+      lastModified: now,
+      changeFrequency: "monthly" as const,
+      priority: 0.6,
+    },
+    // One page per mood, all known at build time.
+    ...MOODS.map((mood) => ({
+      url: `${baseUrl}/mood/${mood.slug}`,
+      lastModified: now,
+      changeFrequency: "weekly" as const,
+      priority: 0.7,
+    })),
   ];
 
   // Fetch each group independently so a single TMDB failure doesn't wipe

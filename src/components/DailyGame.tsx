@@ -15,6 +15,7 @@ import {
   Clock,
   Film,
   Flame,
+  History,
   Search,
   Share2,
   Trophy,
@@ -24,10 +25,12 @@ import { checkDailyGuess, getDailyPuzzle, searchMulti } from "@/app/actions";
 import { toast } from "@/components/Toast";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import {
+  archiveBoardFor,
   buildShareText,
   effectiveStreak,
   getGameStateSnapshot,
   getServerGameStateSnapshot,
+  recordArchiveGuess,
   recordGuess,
   saveGameState,
   stateForDay,
@@ -35,7 +38,8 @@ import {
   type DailyGameState,
   type DailyGuess,
 } from "@/lib/daily-game";
-import { MAX_GUESSES, todayUtc } from "@/lib/daily-puzzle";
+import { MAX_GUESSES, puzzleNumberForDay, todayUtc } from "@/lib/daily-puzzle";
+import { NextPuzzleCountdown } from "@/components/NextPuzzleCountdown";
 import { getImageUrl } from "@/lib/tmdb-image";
 import { cn } from "@/lib/utils";
 import type { DailyPuzzleView } from "@/lib/daily-puzzle-server";
@@ -52,9 +56,17 @@ const MAX_SUGGESTIONS = 6;
  * protecting. Guesses are picked from a search box rather than typed free-hand, so
  * a guess is a TMDB id and checking it is exact – no arguing about whether
  * "Star Wars" counts as "Episode IV".
+ *
+ * The same board plays an archived day when one is passed in. Only the bookkeeping
+ * differs: an archive result is kept apart from the streak, because a streak has
+ * to keep meaning "turned up on the day" rather than "worked through the back
+ * catalogue".
  */
-export function DailyGame() {
-  const day = todayUtc();
+export function DailyGame({ day: requestedDay }: { day?: string } = {}) {
+  const today = todayUtc();
+  const day = requestedDay ?? today;
+  const isArchive = day !== today;
+
   const [puzzle, setPuzzle] = useState<DailyPuzzleView | null>(null);
   const [isChecking, setIsChecking] = useState(false);
 
@@ -68,10 +80,14 @@ export function DailyGame() {
   );
 
   // Rolling the board onto today is a derivation, not a write: opening the page
-  // must not count as having played.
-  const state = useMemo(() => stateForDay(stored, day), [stored, day]);
+  // must not count as having played. An archived day leaves `today` alone – it
+  // may well be a board still in progress.
+  const state = useMemo(
+    () => (isArchive ? stored : stateForDay(stored, day)),
+    [stored, day, isArchive],
+  );
 
-  const board = state.today;
+  const board = isArchive ? archiveBoardFor(state, day) : state.today;
   const guessCount = board?.guesses.length ?? 0;
   const isOver = board ? board.status !== "playing" : false;
 
@@ -82,7 +98,7 @@ export function DailyGame() {
 
     (async () => {
       try {
-        const view = await getDailyPuzzle(guessCount, isOver);
+        const view = await getDailyPuzzle(day, guessCount, isOver);
         if (isCurrent) setPuzzle(view);
       } catch (error) {
         console.error("Error loading the daily puzzle:", error);
@@ -92,7 +108,7 @@ export function DailyGame() {
     return () => {
       isCurrent = false;
     };
-  }, [guessCount, isOver]);
+  }, [day, guessCount, isOver]);
 
   const submitGuess = useCallback(
     async (item: MediaItem) => {
@@ -100,7 +116,7 @@ export function DailyGame() {
 
       setIsChecking(true);
       try {
-        const correct = await checkDailyGuess(item.id);
+        const correct = await checkDailyGuess(day, item.id);
         const guess: DailyGuess = {
           id: item.id,
           title: item.title,
@@ -109,7 +125,11 @@ export function DailyGame() {
 
         // Written straight to storage; the store notifies and the board re-reads,
         // so there is no local copy that could disagree with what was saved.
-        saveGameState(recordGuess(state, day, guess));
+        saveGameState(
+          isArchive
+            ? recordArchiveGuess(state, day, guess)
+            : recordGuess(state, day, guess),
+        );
       } catch (error) {
         console.error("Error checking the guess:", error);
         toast.showToast("Could not check that guess – try again", "error");
@@ -117,7 +137,7 @@ export function DailyGame() {
         setIsChecking(false);
       }
     },
-    [state, isOver, isChecking, day],
+    [state, isOver, isChecking, day, isArchive],
   );
 
   if (!puzzle) {
@@ -138,20 +158,37 @@ export function DailyGame() {
           Puzzle #{puzzle.number} · {day}
         </p>
         <div className="flex items-center gap-4 text-sm">
-          {streak > 0 && (
-            <span className="flex items-center gap-1.5 text-orange-300">
-              <Flame className="w-4 h-4" aria-hidden="true" />
-              {streak} day streak
-            </span>
-          )}
-          {state.bestStreak > 0 && (
+          {isArchive ? (
             <span className="flex items-center gap-1.5 text-gray-400">
-              <Trophy className="w-4 h-4" aria-hidden="true" />
-              best {state.bestStreak}
+              <History className="w-4 h-4" aria-hidden="true" />
+              From the archive
             </span>
+          ) : (
+            <>
+              {streak > 0 && (
+                <span className="flex items-center gap-1.5 text-orange-300">
+                  <Flame className="w-4 h-4" aria-hidden="true" />
+                  {streak} day streak
+                </span>
+              )}
+              {state.bestStreak > 0 && (
+                <span className="flex items-center gap-1.5 text-gray-400">
+                  <Trophy className="w-4 h-4" aria-hidden="true" />
+                  best {state.bestStreak}
+                </span>
+              )}
+            </>
           )}
         </div>
       </div>
+
+      {isArchive && (
+        <p className="text-sm text-gray-500 rounded-lg border border-gray-800 bg-gray-900/40 px-4 py-3">
+          Puzzle #{puzzleNumberForDay(day)} originally ran on {day}. It counts
+          towards your archive badge, but not towards the streak – that one is
+          for turning up on the day.
+        </p>
+      )}
 
       <PuzzleImage
         day={day}
@@ -211,6 +248,7 @@ export function DailyGame() {
           guesses={board.guesses}
           status={board.status}
           state={state}
+          isArchive={isArchive}
         />
       )}
     </div>
@@ -435,21 +473,25 @@ function Result({
   guesses,
   status,
   state,
+  isArchive,
 }: {
   answer: NonNullable<DailyPuzzleView["answer"]>;
   puzzleNumber: number;
   guesses: DailyGuess[];
   status: "won" | "lost";
   state: DailyGameState;
+  isArchive: boolean;
 }) {
   const [copied, setCopied] = useState(false);
 
   async function share() {
+    // Always the front door, never the archived day – a link to the exact puzzle
+    // would spoil it for whoever follows it.
     const url =
       typeof window === "undefined"
         ? "https://www.watch-list.me/daily"
         : `${window.location.origin}/daily`;
-    const text = buildShareText(puzzleNumber, guesses, status, url);
+    const text = buildShareText(puzzleNumber, guesses, status, url, isArchive);
 
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
@@ -521,11 +563,13 @@ function Result({
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-400">
-        <span>Played {state.played}</span>
-        <span>Won {winRate}%</span>
-        {state.bestStreak > 0 && <span>Best streak {state.bestStreak}</span>}
-      </div>
+      {!isArchive && (
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-400">
+          <span>Played {state.played}</span>
+          <span>Won {winRate}%</span>
+          {state.bestStreak > 0 && <span>Best streak {state.bestStreak}</span>}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-3">
         <button
@@ -547,12 +591,24 @@ function Result({
           <Film className="w-4 h-4" aria-hidden="true" />
           About this film
         </Link>
+        <Link
+          href="/daily/archive"
+          prefetch={false}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-semibold text-white transition-colors"
+        >
+          <History className="w-4 h-4" aria-hidden="true" />
+          {isArchive ? "Back to the archive" : "Play an older one"}
+        </Link>
       </div>
 
-      <p className="flex items-center gap-2 text-xs text-gray-500">
-        <Clock className="w-3.5 h-3.5" aria-hidden="true" />
-        A new puzzle every day at midnight UTC.
-      </p>
+      {/* The one moment a countdown is worth showing: the board is finished, and
+          the honest answer to "what now" is a time. */}
+      {!isArchive && (
+        <p className="flex items-center gap-2 text-xs text-gray-500">
+          <Clock className="w-3.5 h-3.5" aria-hidden="true" />
+          Next puzzle in <NextPuzzleCountdown />
+        </p>
+      )}
     </div>
   );
 }

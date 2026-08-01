@@ -49,6 +49,19 @@ function fullBackup() {
     watched: [watchedItem],
     episodeProgress: progress,
     ratings: { "movie-550": { rating: 9, ratedAt: EXPORTED_AT } },
+    collections: [
+      {
+        id: "list-1",
+        name: "October horror",
+        items: [
+          { id: 550, mediaType: "movie" as const, title: "Fight Club", posterPath: null },
+        ],
+        createdAt: EXPORTED_AT,
+        updatedAt: EXPORTED_AT,
+      },
+    ],
+    ranking: { "movie-550": { rating: 1600, matches: 4 } },
+    goal: { year: "2026", target: 52 },
     settings: {
       region: "CZ",
       watchProviderFilter: "streaming-only",
@@ -231,6 +244,9 @@ describe("parseBackup", () => {
       watched: [],
       episodeProgress: {},
       ratings: {},
+      collections: [],
+      ranking: {},
+      goal: null,
       settings: {
         region: null,
         watchProviderFilter: null,
@@ -259,6 +275,8 @@ describe("summarizeBackup", () => {
       showsInProgress: 1,
       episodes: 3,
       ratings: 1,
+      collections: 1,
+      rankedTitles: 1,
       hasSettings: true,
     });
   });
@@ -269,6 +287,9 @@ describe("summarizeBackup", () => {
       watched: [],
       episodeProgress: {},
       ratings: {},
+      collections: [],
+      ranking: {},
+      goal: null,
       settings: {
         region: null,
         watchProviderFilter: null,
@@ -278,6 +299,8 @@ describe("summarizeBackup", () => {
     });
 
     expect(summarizeBackup(empty)).toEqual({
+      collections: 0,
+      rankedTitles: 0,
       watchlist: 0,
       watched: 0,
       showsInProgress: 0,
@@ -295,5 +318,43 @@ describe("backupFilename", () => {
 
   it("stays a valid filename without a usable date", () => {
     expect(backupFilename("")).toBe("watchlist-backup-export.json");
+  });
+});
+
+describe("version 1 files", () => {
+  it("restores without the stores that did not exist yet", () => {
+    const legacy = parseBackup({
+      format: BACKUP_FORMAT,
+      version: 1,
+      exportedAt: EXPORTED_AT,
+      watchlist: [watchlistItem],
+      watched: [],
+      episodeProgress: {},
+      ratings: {},
+      settings: { region: "CZ" },
+    });
+
+    expect(legacy).not.toBeNull();
+    expect(legacy!.watchlist).toHaveLength(1);
+    expect(legacy!.collections).toEqual([]);
+    expect(legacy!.ranking).toEqual({});
+    expect(legacy!.goal).toBeNull();
+  });
+
+  it("keeps the newer stores when they are present", () => {
+    const restored = parseBackup(fullBackup());
+
+    expect(restored!.collections).toHaveLength(1);
+    expect(restored!.ranking["movie-550"].matches).toBe(4);
+    expect(restored!.goal).toEqual({ year: "2026", target: 52 });
+  });
+
+  it("drops a goal that was tampered with rather than restoring nonsense", () => {
+    const restored = parseBackup({
+      ...fullBackup(),
+      goal: { year: "2026", target: -5 },
+    });
+
+    expect(restored!.goal).toBeNull();
   });
 });

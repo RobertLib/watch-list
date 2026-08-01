@@ -188,6 +188,12 @@ const MAX_GENRE_IDS = 5;
 const MAX_VOTE_COUNT = 10_000_000;
 const MAX_POPULARITY = 1_000_000;
 
+/** Same reasoning as the genre cap: past a handful the query returns nothing. */
+const MAX_KEYWORD_IDS = 8;
+
+/** Longer than any film anyone is browsing for; a bound, not a judgement. */
+const MAX_RUNTIME_MINUTES = 1000;
+
 /** Clamps a page number that is about to become part of a cache tag. */
 export function sanitizePage(value: unknown): number {
   const page = typeof value === "number" ? value : Number(value);
@@ -206,6 +212,28 @@ function sanitizeGenreIds(value: unknown): string | undefined {
     .slice(0, MAX_GENRE_IDS);
 
   return ids.length > 0 ? ids.join(",") : undefined;
+}
+
+/**
+ * TMDB keyword IDs, joined the way they arrived.
+ *
+ * `,` means every keyword has to match and `|` means any of them, and the two
+ * mean genuinely different queries – so the separator is preserved rather than
+ * normalised. Anything that is not a positive integer is dropped.
+ */
+function sanitizeKeywordIds(value: unknown): string | undefined {
+  if (typeof value !== "string" && typeof value !== "number") return undefined;
+
+  const raw = String(value);
+  const separator = raw.includes("|") ? "|" : ",";
+
+  const ids = raw
+    .split(/[,|]/)
+    .map((id) => Number(id.trim()))
+    .filter((id) => Number.isInteger(id) && id > 0)
+    .slice(0, MAX_KEYWORD_IDS);
+
+  return ids.length > 0 ? ids.join(separator) : undefined;
 }
 
 function sanitizeIsoDate(value: unknown): string | undefined {
@@ -299,6 +327,22 @@ export function sanitizeFilterOptions(
   const providers = sanitizeWatchProvidersFilter(raw.watchProviders);
   if (providers) {
     options.watchProviders = providers;
+  }
+
+  // Runtime and keywords reach TMDB from curated mood definitions rather than
+  // from the filter bar, but they pass through the same sanitizer: a server
+  // action is a public endpoint whatever the intended caller was.
+  const runtimeFields = ["withRuntimeGte", "withRuntimeLte"] as const;
+  for (const field of runtimeFields) {
+    const parsed = sanitizeNumber(raw[field], 0, MAX_RUNTIME_MINUTES);
+    if (parsed !== undefined) {
+      options[field] = parsed;
+    }
+  }
+
+  const keywords = sanitizeKeywordIds(raw.withKeywords);
+  if (keywords) {
+    options.withKeywords = keywords;
   }
 
   return options;

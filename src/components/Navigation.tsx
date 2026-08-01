@@ -1,7 +1,16 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Search, Menu, X, User, Heart, CalendarDays } from "lucide-react";
+import {
+  Search,
+  Menu,
+  X,
+  User,
+  Heart,
+  CalendarDays,
+  Dices,
+  Sparkles,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -47,6 +56,12 @@ export function Navigation() {
     }
     if (href === "/calendar") {
       return pathname === "/calendar";
+    }
+    if (href === "/tonight") {
+      return pathname === "/tonight";
+    }
+    if (href === "/mood") {
+      return pathname.startsWith("/mood");
     }
     if (href === "/people") {
       return pathname.startsWith("/people") || pathname.startsWith("/person");
@@ -225,7 +240,7 @@ export function Navigation() {
         aria-label="Main navigation"
       >
         <div className="container mx-auto px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
+          <div className="flex items-center justify-between gap-4 h-16">
             {/* Logo */}
             <div className="flex items-center">
               <Link
@@ -248,7 +263,7 @@ export function Navigation() {
 
             {/* Desktop Navigation */}
             <div
-              className="hidden md:flex items-center space-x-8"
+              className="hidden md:flex items-center gap-5 lg:gap-6 xl:gap-8"
               role="navigation"
               aria-label="Main menu"
             >
@@ -257,7 +272,7 @@ export function Navigation() {
                 prefetch={false}
                 onClick={clearSearch}
                 className={cn(
-                  "transition-colors",
+                  "transition-colors whitespace-nowrap",
                   isActiveLink("/")
                     ? "text-white border-b-2 border-blue-500 pb-1"
                     : "text-gray-300 hover:text-white",
@@ -271,7 +286,7 @@ export function Navigation() {
                 prefetch={false}
                 onClick={clearSearch}
                 className={cn(
-                  "transition-colors",
+                  "transition-colors whitespace-nowrap",
                   isActiveLink("/movies")
                     ? "text-white border-b-2 border-blue-500 pb-1"
                     : "text-gray-300 hover:text-white",
@@ -285,7 +300,7 @@ export function Navigation() {
                 prefetch={false}
                 onClick={clearSearch}
                 className={cn(
-                  "transition-colors",
+                  "transition-colors whitespace-nowrap",
                   isActiveLink("/tv-shows")
                     ? "text-white border-b-2 border-blue-500 pb-1"
                     : "text-gray-300 hover:text-white",
@@ -299,7 +314,7 @@ export function Navigation() {
                 prefetch={false}
                 onClick={clearSearch}
                 className={cn(
-                  "transition-colors",
+                  "transition-colors whitespace-nowrap",
                   isActiveLink("/genres")
                     ? "text-white border-b-2 border-blue-500 pb-1"
                     : "text-gray-300 hover:text-white",
@@ -313,7 +328,7 @@ export function Navigation() {
                 prefetch={false}
                 onClick={clearSearch}
                 className={cn(
-                  "transition-colors hidden lg:block",
+                  "transition-colors hidden xl:block whitespace-nowrap",
                   isActiveLink("/people")
                     ? "text-white border-b-2 border-blue-500 pb-1"
                     : "text-gray-300 hover:text-white",
@@ -323,11 +338,27 @@ export function Navigation() {
                 People
               </Link>
               <Link
+                href="/tonight"
+                prefetch={false}
+                onClick={clearSearch}
+                className={cn(
+                  "transition-colors hidden lg:flex items-center gap-1 whitespace-nowrap",
+                  isActiveLink("/tonight")
+                    ? "text-white border-b-2 border-blue-500 pb-1"
+                    : "text-gray-300 hover:text-white",
+                )}
+                aria-current={isActiveLink("/tonight") ? "page" : undefined}
+                aria-label="What to watch tonight"
+              >
+                <Dices className="w-4 h-4" aria-hidden="true" />
+                Tonight
+              </Link>
+              <Link
                 href="/calendar"
                 prefetch={false}
                 onClick={clearSearch}
                 className={cn(
-                  "transition-colors hidden lg:flex items-center gap-1",
+                  "transition-colors hidden xl:flex items-center gap-1 whitespace-nowrap",
                   isActiveLink("/calendar")
                     ? "text-white border-b-2 border-blue-500 pb-1"
                     : "text-gray-300 hover:text-white",
@@ -343,7 +374,7 @@ export function Navigation() {
                 prefetch={false}
                 onClick={clearSearch}
                 className={cn(
-                  "transition-colors flex items-center gap-1 relative",
+                  "transition-colors flex items-center gap-1 relative whitespace-nowrap",
                   isActiveLink("/watchlist")
                     ? "text-white border-b-2 border-blue-500 pb-1"
                     : "text-gray-300 hover:text-white",
@@ -463,7 +494,7 @@ export function Navigation() {
               "md:hidden overflow-hidden transition-all duration-300 ease-in-out",
               // Tall enough for every entry: the animated max-height clips the
               // last link the moment the menu outgrows it.
-              isMobileMenuOpen ? "max-h-96 pb-6" : "max-h-0",
+              isMobileMenuOpen ? "max-h-[32rem] pb-6" : "max-h-0",
             )}
             aria-hidden={!isMobileMenuOpen}
           >
@@ -541,6 +572,36 @@ export function Navigation() {
                 aria-current={isActiveLink("/people") ? "page" : undefined}
               >
                 People
+              </Link>
+              <Link
+                href="/tonight"
+                prefetch={false}
+                onClick={handleMobileLinkClick}
+                className={cn(
+                  "flex items-center gap-2 transition-colors",
+                  isActiveLink("/tonight")
+                    ? "text-white font-semibold"
+                    : "text-gray-300 hover:text-white",
+                )}
+                aria-current={isActiveLink("/tonight") ? "page" : undefined}
+              >
+                <Dices className="w-4 h-4" aria-hidden="true" />
+                Tonight
+              </Link>
+              <Link
+                href="/mood"
+                prefetch={false}
+                onClick={handleMobileLinkClick}
+                className={cn(
+                  "flex items-center gap-2 transition-colors",
+                  isActiveLink("/mood")
+                    ? "text-white font-semibold"
+                    : "text-gray-300 hover:text-white",
+                )}
+                aria-current={isActiveLink("/mood") ? "page" : undefined}
+              >
+                <Sparkles className="w-4 h-4" aria-hidden="true" />
+                Moods
               </Link>
               <Link
                 href="/calendar"

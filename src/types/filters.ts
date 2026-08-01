@@ -17,6 +17,21 @@ export interface FilterOptions {
    * once the request reaches the server – or `|`-separated TMDB provider IDs.
    */
   watchProviders?: string;
+  /**
+   * Runtime bounds in minutes. Not offered in the filter bar – genre and year are
+   * what people filter a listing by – but a mood is often *made* of a runtime
+   * ("something short"), which is where these are used.
+   */
+  withRuntimeGte?: number;
+  withRuntimeLte?: number;
+  /**
+   * `,`-separated TMDB keyword IDs (AND) or `|`-separated (OR).
+   *
+   * Genres are too coarse to describe a mood: "mind-bending" is not a genre and
+   * never will be, but it is a keyword TMDB maintains. Only set from curated
+   * definitions in the codebase, never from a query string.
+   */
+  withKeywords?: string;
 }
 
 export interface MovieSortOptions {

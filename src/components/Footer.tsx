@@ -8,7 +8,7 @@ export function Footer() {
       role="contentinfo"
     >
       <div className="container mx-auto px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           {/* About */}
           <div>
             <h3 className="text-white font-semibold mb-4">About WatchList</h3>
@@ -57,6 +57,69 @@ export function Footer() {
                 className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
               >
                 About WatchList
+              </Link>
+            </nav>
+          </div>
+
+          {/* The things that answer "what now" rather than "what exists". */}
+          <div>
+            <h3 className="text-white font-semibold mb-4">Decide &amp; Play</h3>
+            <nav className="space-y-2" aria-label="Tools and games">
+              <Link
+                href="/tonight"
+                prefetch={false}
+                className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
+              >
+                What to watch tonight
+              </Link>
+              <Link
+                href="/mood"
+                prefetch={false}
+                className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
+              >
+                Browse by mood
+              </Link>
+              <Link
+                href="/match"
+                prefetch={false}
+                className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
+              >
+                What should we watch?
+              </Link>
+              <Link
+                href="/daily"
+                prefetch={false}
+                className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
+              >
+                Daily film puzzle
+              </Link>
+              <Link
+                href="/daily/higher-lower"
+                prefetch={false}
+                className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
+              >
+                Higher or lower
+              </Link>
+              <Link
+                href="/lists"
+                prefetch={false}
+                className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
+              >
+                Your lists
+              </Link>
+              <Link
+                href="/ratings"
+                prefetch={false}
+                className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
+              >
+                Everything you rated
+              </Link>
+              <Link
+                href="/stats"
+                prefetch={false}
+                className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
+              >
+                Your stats
               </Link>
             </nav>
           </div>

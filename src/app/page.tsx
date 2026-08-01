@@ -3,6 +3,8 @@ import { WelcomePanelContent } from "@/components/WelcomePanelContent";
 import { HomeWatchlistPanel } from "@/components/HomeWatchlistPanel";
 import { ContinueWatching } from "@/components/ContinueWatching";
 import { DailyGameTeaser } from "@/components/DailyGameTeaser";
+import { WelcomeBack } from "@/components/WelcomeBack";
+import { KeepYourDataNudge } from "@/components/KeepYourDataNudge";
 import { RecommendedForYou } from "@/components/RecommendedForYou";
 import { GenreQuickNav } from "@/components/GenreQuickNav";
 import { StructuredData } from "@/components/StructuredData";
@@ -86,6 +88,11 @@ export default async function Home() {
       <div className="container mx-auto px-6 lg:px-8 py-8 space-y-12">
         <WelcomePanelContent />
 
+        {/* First, because it is the only thing on the page that is different
+            from how a returning visitor left it. Renders nothing when there is
+            nothing to report, which is most visits. */}
+        <WelcomeBack />
+
         <DailyGameTeaser />
 
         {/* Above the watchlist on purpose: a half-finished series is the most
@@ -119,6 +126,9 @@ export default async function Home() {
         <div className="border-t border-gray-800/60 pt-10">
           <GenreQuickNav />
         </div>
+
+        {/* Raised once, when the list has grown enough to be worth losing. */}
+        <KeepYourDataNudge />
 
         {/* Static feature section – server-rendered, keyword-rich text for SEO */}
         <section

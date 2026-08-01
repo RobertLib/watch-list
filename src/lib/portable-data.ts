@@ -1,5 +1,8 @@
 import { sanitizeProgress, type EpisodeProgress } from "./episode-progress";
 import { sanitizeRatings, type Ratings } from "./ratings";
+import { sanitizeCollections, type Collection } from "./collections";
+import { sanitizeRanking, type Ranking } from "./ranking";
+import { sanitizeGoal, type YearlyGoal } from "./goal";
 import { isValidRegion } from "./region";
 import {
   isWatchProviderFilter,
@@ -20,7 +23,10 @@ import type { WatchedItem } from "./watched";
  */
 
 export const BACKUP_FORMAT = "watch-list-backup";
-export const BACKUP_VERSION = 1;
+// 2 added named lists, the pairwise ranking and the yearly goal. A version 1
+// file still restores: every field is rebuilt by its own sanitizer, and the
+// three new ones simply come back empty.
+export const BACKUP_VERSION = 2;
 
 /** Profile settings live in httpOnly cookies, so the server has to supply them. */
 export interface PortableSettings {
@@ -38,6 +44,12 @@ export interface PortableData {
   episodeProgress: EpisodeProgress;
   /** The viewer's own scores. Absent from files written before ratings existed. */
   ratings: Ratings;
+  /** Named lists. Absent from version 1 files. */
+  collections: Collection[];
+  /** The pairwise ranking of the watchlist. Absent from version 1 files. */
+  ranking: Ranking;
+  /** This year's target, if one was set. */
+  goal: YearlyGoal | null;
   settings: PortableSettings;
 }
 
@@ -47,6 +59,8 @@ export interface BackupSummary {
   showsInProgress: number;
   episodes: number;
   ratings: number;
+  collections: number;
+  rankedTitles: number;
   hasSettings: boolean;
 }
 
@@ -167,6 +181,9 @@ export function buildBackup(parts: {
   watched: WatchedItem[];
   episodeProgress: EpisodeProgress;
   ratings: Ratings;
+  collections: Collection[];
+  ranking: Ranking;
+  goal: YearlyGoal | null;
   settings: PortableSettings;
   exportedAt: string;
 }): PortableData {
@@ -178,6 +195,9 @@ export function buildBackup(parts: {
     watched: parts.watched,
     episodeProgress: parts.episodeProgress,
     ratings: parts.ratings,
+    collections: parts.collections,
+    ranking: parts.ranking,
+    goal: parts.goal,
     settings: parts.settings,
   };
 }
@@ -210,6 +230,10 @@ export function parseBackup(input: unknown): PortableData | null {
     watched: sanitizeWatchedItems(record.watched, fallbackTimestamp),
     episodeProgress: sanitizeProgress(record.episodeProgress),
     ratings: sanitizeRatings(record.ratings),
+    // Absent from a version 1 file, which each sanitizer reads as "nothing".
+    collections: sanitizeCollections(record.collections),
+    ranking: sanitizeRanking(record.ranking),
+    goal: sanitizeGoal(record.goal),
     settings: sanitizePortableSettings(record.settings),
   };
 }
@@ -231,6 +255,8 @@ export function summarizeBackup(data: PortableData): BackupSummary {
       0,
     ),
     ratings: Object.keys(data.ratings).length,
+    collections: data.collections.length,
+    rankedTitles: Object.keys(data.ranking).length,
     hasSettings:
       data.settings.region !== null ||
       data.settings.watchProviderFilter !== null ||

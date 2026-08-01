@@ -167,4 +167,51 @@ describe("buildCalendarIcs", () => {
     expect(output).not.toContain("BEGIN:VEVENT");
     expect(output).toContain("END:VCALENDAR");
   });
+
+  it("adds no alarm unless one is asked for", () => {
+    expect(lines(buildCalendarIcs([event()], OPTIONS))).not.toContain(
+      "BEGIN:VALARM",
+    );
+  });
+
+  it("attaches a morning reminder when alarms are on", () => {
+    const output = lines(
+      buildCalendarIcs([event()], { ...OPTIONS, alarms: true }),
+    );
+
+    expect(output).toContain("BEGIN:VALARM");
+    expect(output).toContain("ACTION:DISPLAY");
+    // Nine hours into an all-day event is 09:00, not the middle of the night.
+    expect(output).toContain("TRIGGER:PT9H");
+    // The alarm belongs to the event, so it has to close before the event does.
+    expect(output.indexOf("END:VALARM")).toBeLessThan(
+      output.indexOf("END:VEVENT"),
+    );
+  });
+
+  it("tells a subscribed client how often to come back", () => {
+    const output = lines(
+      buildCalendarIcs([event()], { ...OPTIONS, refreshHours: 12 }),
+    );
+
+    expect(output).toContain("REFRESH-INTERVAL;VALUE=DURATION:PT12H");
+    // Outlook reads the older spelling and ignores the standard one.
+    expect(output).toContain("X-PUBLISHED-TTL:PT12H");
+  });
+
+  it("omits the refresh hint from a downloaded snapshot", () => {
+    const output = lines(buildCalendarIcs([event()], OPTIONS));
+
+    expect(output.some((line) => line.startsWith("REFRESH-INTERVAL"))).toBe(
+      false,
+    );
+  });
+
+  it("names the calendar, escaping the name like any other text value", () => {
+    const output = lines(
+      buildCalendarIcs([], { ...OPTIONS, calendarName: "Rob; releases" }),
+    );
+
+    expect(output).toContain("X-WR-CALNAME:Rob\\; releases");
+  });
 });

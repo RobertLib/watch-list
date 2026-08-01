@@ -13,7 +13,19 @@ import { WatchlistControls } from "@/components/WatchlistControls";
 import { useViewMode } from "@/hooks/useViewMode";
 import { useRatings } from "@/hooks/useRatings";
 import { getWatchlistAvailabilityFor } from "@/app/actions";
-import { Trash2, Star, Heart, Eye, CalendarDays } from "lucide-react";
+import {
+  Trash2,
+  Star,
+  Heart,
+  Eye,
+  CalendarDays,
+  Dices,
+  Swords,
+  ListPlus,
+  Users,
+  BarChart3,
+  type LucideIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getImageUrl } from "@/lib/tmdb-image";
 import {
@@ -31,6 +43,27 @@ import type { WatchlistAvailability } from "@/lib/watchlist-availability";
 import type { MediaItem } from "@/types/tmdb";
 
 type Tab = "to-watch" | "watched";
+
+function ToolLink({
+  href,
+  icon: Icon,
+  label,
+}: {
+  href: string;
+  icon: LucideIcon;
+  label: string;
+}) {
+  return (
+    <Link
+      href={href}
+      prefetch={false}
+      className="inline-flex items-center gap-2 shrink-0 px-3.5 py-2 rounded-full bg-white/5 hover:bg-white/10 text-sm text-gray-300 hover:text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+    >
+      <Icon className="w-4 h-4" aria-hidden="true" />
+      {label}
+    </Link>
+  );
+}
 
 // The open tab lives in the URL fragment, which makes it linkable from
 // elsewhere in the app and keeps the page statically rendered – unlike a search
@@ -136,10 +169,11 @@ export default function WatchlistPage() {
         filterWatchlistItems(allItems, {
           type: preferences.type,
           query,
+          ratedOnly: preferences.ratedOnly,
         }),
         preferences.sort,
       ),
-    [allItems, preferences.type, preferences.sort, query],
+    [allItems, preferences.type, preferences.sort, preferences.ratedOnly, query],
   );
 
   // Requested only when the grouping asks for it: it is one round trip and a
@@ -358,6 +392,27 @@ export default function WatchlistPage() {
           </div>
         )}
       </div>
+
+      {/* Everything that can be done *with* a watchlist, rather than to it.
+          These pages were otherwise reachable only from the footer, which is
+          not where anyone looks while standing in front of their own list. */}
+      {hasItemsOnTab && (
+        <nav
+          aria-label="Watchlist tools"
+          className="flex gap-2 overflow-x-auto pb-1 mb-6"
+        >
+          <ToolLink href="/tonight" icon={Dices} label="Pick for tonight" />
+          <ToolLink
+            href="/watchlist/ranking"
+            icon={Swords}
+            label="Rank these"
+          />
+          <ToolLink href="/lists" icon={ListPlus} label="Your lists" />
+          <ToolLink href="/ratings" icon={Star} label="What I rated" />
+          <ToolLink href="/match" icon={Users} label="Compare with a friend" />
+          <ToolLink href="/stats" icon={BarChart3} label="Your stats" />
+        </nav>
+      )}
 
       <div
         role="tablist"

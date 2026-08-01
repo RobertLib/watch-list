@@ -39,6 +39,60 @@ export function puzzleNumberForDay(day: string): number {
 }
 
 /**
+ * Whether a day may be played at all.
+ *
+ * The archive exists so a puzzle missed on Tuesday is not gone forever – that is
+ * what makes a broken streak recoverable rather than a reason to stop coming. It
+ * only ever reaches backwards: the schedule is a pure function of the date, so
+ * serving tomorrow would hand out tomorrow's answer to anyone willing to edit a
+ * URL. The check lives here, next to the schedule it protects, and every entry
+ * point runs it.
+ */
+export function isPlayableDay(day: unknown, today: string): day is string {
+  if (!isDayString(day) || !isDayString(today)) return false;
+
+  return day >= PUZZLE_EPOCH && day <= today;
+}
+
+/** `YYYY-MM-DD` shifted by whole days, without leaving the string domain. */
+export function shiftDay(day: string, days: number): string {
+  const shifted = new Date(`${day}T00:00:00.000Z`);
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+  return shifted.toISOString().slice(0, 10);
+}
+
+/**
+ * The days behind `today`, newest first, stopping at the epoch.
+ *
+ * Bounded by the caller rather than by the whole run of the game: the archive
+ * page renders one card per day, and the list grows by one every morning.
+ */
+export function recentDays(today: string, count: number): string[] {
+  if (!isDayString(today)) return [];
+
+  const days: string[] = [];
+
+  for (let offset = 0; offset < count; offset++) {
+    const day = shiftDay(today, -offset);
+    if (day < PUZZLE_EPOCH) break;
+    days.push(day);
+  }
+
+  return days;
+}
+
+/** Milliseconds until the puzzle turns over, for the countdown on a finished board. */
+export function msUntilNextPuzzle(now: Date = new Date()): number {
+  const midnight = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 1,
+  );
+
+  return Math.max(0, midnight - now.getTime());
+}
+
+/**
  * What each wrong guess unlocks.
  *
  * Ordered weakest first, so a run of bad guesses narrows the field gradually

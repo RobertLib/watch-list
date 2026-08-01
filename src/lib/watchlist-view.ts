@@ -38,6 +38,15 @@ export interface WatchlistPreferences {
   sort: WatchlistSort;
   type: WatchlistTypeFilter;
   grouping: WatchlistGrouping;
+  /**
+   * Show only titles the viewer has scored.
+   *
+   * Scores were visible as a badge and sortable, but there was no way to see
+   * *just* them – and rating a title marks it watched, so they sat mixed in with
+   * everything else finished. This is what turns "sorted by my rating" into
+   * "the things I have rated".
+   */
+  ratedOnly: boolean;
 }
 
 export const DEFAULT_PREFERENCES: WatchlistPreferences = {
@@ -45,6 +54,7 @@ export const DEFAULT_PREFERENCES: WatchlistPreferences = {
   sort: "added",
   type: "all",
   grouping: "none",
+  ratedOnly: false,
 };
 
 export const SORT_LABELS: Record<WatchlistSort, string> = {
@@ -88,6 +98,8 @@ export function sanitizePreferences(input: unknown): WatchlistPreferences {
     grouping: isGrouping(record.grouping)
       ? record.grouping
       : DEFAULT_PREFERENCES.grouping,
+    // Absent from anything stored before the filter existed, which reads as off.
+    ratedOnly: record.ratedOnly === true,
   };
 }
 
@@ -171,12 +183,17 @@ function normalise(value: string): string {
 
 export function filterWatchlistItems(
   items: WatchlistViewItem[],
-  { type, query }: { type: WatchlistTypeFilter; query: string },
+  {
+    type,
+    query,
+    ratedOnly = false,
+  }: { type: WatchlistTypeFilter; query: string; ratedOnly?: boolean },
 ): WatchlistViewItem[] {
   const needle = normalise(query.trim());
 
   return items.filter((item) => {
     if (type !== "all" && item.mediaType !== type) return false;
+    if (ratedOnly && item.myRating === null) return false;
     if (needle && !normalise(item.title).includes(needle)) return false;
     return true;
   });

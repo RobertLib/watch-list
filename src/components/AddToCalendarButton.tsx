@@ -9,8 +9,12 @@ import type { CalendarEvent } from "@/lib/release-calendar";
  * Hand the calendar to the visitor's own calendar app as an `.ics` download.
  *
  * Built in the browser rather than served from a route: the events are already
- * on this page, and a server-side file would mean either a subscription URL to
- * store or the whole watchlist smuggled through a query string.
+ * on this page, so a round trip would buy nothing.
+ *
+ * This is a snapshot, and stays one on purpose – it is the option that works
+ * with no link to keep and nothing to trust. `SubscribeToCalendarButton` next to
+ * it hands over a URL instead, for anyone who would rather the calendar kept
+ * itself current.
  */
 export function AddToCalendarButton({ events }: { events: CalendarEvent[] }) {
   const [saved, setSaved] = useState(false);
@@ -21,6 +25,9 @@ export function AddToCalendarButton({ events }: { events: CalendarEvent[] }) {
     const ics = buildCalendarIcs(events, {
       baseUrl: window.location.origin,
       now: new Date(),
+      // A date sitting silently in a calendar is a date nobody sees. The alarm is
+      // what makes the export worth doing.
+      alarms: true,
     });
 
     const url = URL.createObjectURL(

@@ -176,6 +176,18 @@ async function buildFilteredUrl(
     finalParams["first_air_date.lte"] = filters.firstAirDateLte;
   }
 
+  if (filters.withRuntimeGte) {
+    finalParams["with_runtime.gte"] = filters.withRuntimeGte.toString();
+  }
+
+  if (filters.withRuntimeLte) {
+    finalParams["with_runtime.lte"] = filters.withRuntimeLte.toString();
+  }
+
+  if (filters.withKeywords) {
+    finalParams.with_keywords = filters.withKeywords;
+  }
+
   const searchParams = new URLSearchParams(finalParams);
   return `${TMDB_CONFIG.BASE_URL}${endpoint}?${searchParams.toString()}`;
 }

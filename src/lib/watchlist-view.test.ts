@@ -26,7 +26,12 @@ function item(
 
 describe("sanitizePreferences", () => {
   it("keeps a valid set", () => {
-    const prefs = { sort: "rating", type: "tv", grouping: "availability" };
+    const prefs = {
+      sort: "rating",
+      type: "tv",
+      grouping: "availability",
+      ratedOnly: true,
+    };
 
     expect(sanitizePreferences(prefs)).toEqual(prefs);
   });
@@ -38,6 +43,7 @@ describe("sanitizePreferences", () => {
       sort: DEFAULT_PREFERENCES.sort,
       type: "tv",
       grouping: DEFAULT_PREFERENCES.grouping,
+      ratedOnly: DEFAULT_PREFERENCES.ratedOnly,
     });
   });
 
@@ -287,5 +293,61 @@ describe("sorting by the viewer's own score", () => {
 
   it("accepts the sort as a stored preference", () => {
     expect(sanitizePreferences({ sort: "my-rating" }).sort).toBe("my-rating");
+  });
+});
+
+describe("the rated-only filter", () => {
+  const items = [
+    item({ id: 1, myRating: 9 }),
+    item({ id: 2, myRating: null }),
+    item({ id: 3, myRating: 1 }),
+  ];
+
+  it("keeps only what has a score", () => {
+    expect(
+      filterWatchlistItems(items, {
+        type: "all",
+        query: "",
+        ratedOnly: true,
+      }).map((entry) => entry.id),
+    ).toEqual([1, 3]);
+  });
+
+  it("keeps a score of one, which is still a score", () => {
+    expect(
+      filterWatchlistItems([item({ id: 3, myRating: 1 })], {
+        type: "all",
+        query: "",
+        ratedOnly: true,
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("is off unless asked for", () => {
+    expect(
+      filterWatchlistItems(items, { type: "all", query: "" }),
+    ).toHaveLength(3);
+  });
+
+  it("combines with the other filters rather than replacing them", () => {
+    const mixed = [
+      item({ id: 1, myRating: 8, mediaType: "movie" }),
+      item({ id: 2, myRating: 8, mediaType: "tv" }),
+    ];
+
+    expect(
+      filterWatchlistItems(mixed, {
+        type: "tv",
+        query: "",
+        ratedOnly: true,
+      }).map((entry) => entry.id),
+    ).toEqual([2]);
+  });
+
+  it("reads a preference stored before the filter existed as off", () => {
+    expect(
+      sanitizePreferences({ sort: "added", type: "all", grouping: "none" })
+        .ratedOnly,
+    ).toBe(false);
   });
 });

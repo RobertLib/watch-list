@@ -37,20 +37,41 @@ import {
   isCorrectGuess,
   type DailyPuzzleView,
 } from "@/lib/daily-puzzle-server";
-import { todayUtc } from "@/lib/daily-puzzle";
+import {
+  pickRatingDuel,
+  sanitizeSeenIds,
+  settleRatingDuel,
+  type RatingDuel,
+  type RatingDuelResult,
+} from "@/lib/rating-duel-server";
+import { isPlayableDay, todayUtc } from "@/lib/daily-puzzle";
 import {
   getWatchlistAvailability,
   sanitizeAvailabilityRefs,
   type WatchlistAvailability,
 } from "@/lib/watchlist-availability";
+import {
+  getTonightCandidates,
+  sanitizeTonightRefs,
+} from "@/lib/tonight-server";
+import type { TonightCandidate } from "@/lib/tonight";
+import { getTitleFacts, sanitizeFactRefs } from "@/lib/stats-server";
+import { getSharedListItems } from "@/lib/shared-list-server";
+import type { TitleFacts } from "@/lib/stats";
 import { getReleaseCalendarFor } from "@/lib/release-calendar-server";
 import {
+  isDateOnly,
   sanitizeCalendarSeeds,
+  shiftDate,
   type ReleaseCalendar,
 } from "@/lib/release-calendar";
+import {
+  getReleasesSince,
+  type MissedRelease,
+} from "@/lib/since-last-visit-server";
 import { sanitizeFilterOptions, sanitizePage } from "@/lib/discover-filters";
 import type { FilterOptions } from "@/types/filters";
-import type { SeasonDetails } from "@/types/tmdb";
+import type { MediaItem, SeasonDetails } from "@/types/tmdb";
 
 const SETTINGS_COOKIE_OPTIONS = {
   maxAge: 60 * 60 * 24 * 365, // 1 year
@@ -283,15 +304,30 @@ export async function getWatchlistAvailabilityFor(
   return getWatchlistAvailability(sanitizeAvailabilityRefs(refs));
 }
 
-// The daily puzzle. The day is decided here rather than accepted from the client:
-// it is what selects the film, so taking it from a payload would let anyone ask
-// for tomorrow's answer.
+/**
+ * Which day a puzzle request is allowed to be about.
+ *
+ * The archive lets a player go back, so the day can no longer be pinned to today
+ * – but it still decides which film is served, and the schedule is a pure
+ * function of it. Anything that is not a past day collapses to today rather than
+ * erroring: a stale tab that asks for "yesterday" after midnight should get a
+ * puzzle, and nobody should be able to ask for tomorrow's.
+ */
+function resolvePuzzleDay(day: unknown): string {
+  const today = todayUtc();
+  return isPlayableDay(day, today) ? day : today;
+}
+
+// The daily puzzle. `day` is validated rather than trusted: it is what selects
+// the film, so an unchecked value would hand out tomorrow's answer to anyone
+// willing to edit a payload.
 export async function getDailyPuzzle(
+  day: unknown,
   guessCount: unknown,
   isOver: unknown,
 ): Promise<DailyPuzzleView | null> {
   return getDailyPuzzleView(
-    todayUtc(),
+    resolvePuzzleDay(day),
     typeof guessCount === "number" ? guessCount : 0,
     isOver === true,
   );
@@ -305,12 +341,48 @@ export async function getDailyPuzzle(
  * determined to cheat can claim to be finished, which spoils their own puzzle and
  * nobody else's; that is a fair trade for keeping the whole thing stateless.
  */
-export async function checkDailyGuess(movieId: unknown): Promise<boolean> {
+export async function checkDailyGuess(
+  day: unknown,
+  movieId: unknown,
+): Promise<boolean> {
   if (typeof movieId !== "number" || !Number.isInteger(movieId) || movieId <= 0) {
     return false;
   }
 
-  return isCorrectGuess(todayUtc(), movieId);
+  return isCorrectGuess(resolvePuzzleDay(day), movieId);
+}
+
+/**
+ * Two films to rank by rating, for the endless side game.
+ *
+ * The second film's score is withheld – it is the answer. Returning both and
+ * filtering in the browser would put it in the network tab, which is the same
+ * mistake the daily puzzle avoids by proxying its image.
+ */
+export async function getRatingDuel(
+  seenIds: unknown,
+  withChampion: unknown,
+): Promise<RatingDuel | null> {
+  try {
+    return await pickRatingDuel(sanitizeSeenIds(seenIds), withChampion === true);
+  } catch (error) {
+    console.error("Error building a rating duel:", error);
+    return null;
+  }
+}
+
+/** Settle one round, and hand back the score that was being withheld. */
+export async function resolveRatingDuel(
+  championId: unknown,
+  challengerId: unknown,
+  guess: unknown,
+): Promise<RatingDuelResult | null> {
+  try {
+    return await settleRatingDuel(championId, challengerId, guess);
+  } catch (error) {
+    console.error("Error resolving a rating duel:", error);
+    return null;
+  }
 }
 
 // Profile settings live in httpOnly cookies, which browser JavaScript cannot
@@ -371,6 +443,79 @@ export async function getReleaseCalendar(
   } catch (error) {
     console.error("Error building release calendar:", error);
     return { events: [], awaiting: [], today };
+  }
+}
+
+// Saved titles resolved into what a "what should I watch tonight" decision needs:
+// runtime, genre and where it can be played. The watchlist stores none of those,
+// and the browser asking title by title would be sixty requests.
+export async function getTonightShortlist(
+  refs: unknown,
+): Promise<TonightCandidate[]> {
+  try {
+    return await getTonightCandidates(sanitizeTonightRefs(refs));
+  } catch (error) {
+    console.error("Error building the tonight shortlist:", error);
+    return [];
+  }
+}
+
+/**
+ * Episodes and releases that landed while the visitor was away.
+ *
+ * `since` comes from the browser because only the browser knows when it was last
+ * here – but it is bounded rather than trusted: an unbounded window would turn
+ * one page view into a scan of every followed title's whole history, and a date
+ * in the future would quietly return nothing.
+ */
+export async function getReleasesSinceLastVisit(
+  seeds: unknown,
+  since: unknown,
+): Promise<MissedRelease[]> {
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (!isDateOnly(since)) return [];
+
+  // Ninety days back at most. Past that "since you were last here" is not the
+  // question anyone is asking.
+  const earliest = shiftDate(today, -90);
+  const from = since < earliest ? earliest : since;
+  if (from > today) return [];
+
+  try {
+    return await getReleasesSince(sanitizeCalendarSeeds(seeds), from, today);
+  } catch (error) {
+    console.error("Error loading releases since the last visit:", error);
+    return [];
+  }
+}
+
+/**
+ * Resolve rated titles into renderable cards.
+ *
+ * The ratings store holds a score and a date keyed by id – no title, no poster,
+ * because a score outlives being on any list. So the page that lists them has to
+ * look them up, exactly as a shared list does with the ids in its URL.
+ */
+export async function getTitlesByRefs(refs: unknown): Promise<MediaItem[]> {
+  try {
+    return await getSharedListItems(sanitizeFactRefs(refs));
+  } catch (error) {
+    console.error("Error resolving titles:", error);
+    return [];
+  }
+}
+
+// Runtime, genre and year for everything on the watched list – none of which the
+// browser stores, and all of which the totals on the stats page are built from.
+export async function getWatchStatsFacts(
+  refs: unknown,
+): Promise<Record<string, TitleFacts>> {
+  try {
+    return await getTitleFacts(sanitizeFactRefs(refs));
+  } catch (error) {
+    console.error("Error loading title facts for stats:", error);
+    return {};
   }
 }
 

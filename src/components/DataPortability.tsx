@@ -11,6 +11,9 @@ import { saveWatchlist } from "@/lib/watchlist";
 import { saveWatched } from "@/lib/watched";
 import { saveEpisodeProgress } from "@/lib/episode-progress";
 import { getRatingsSnapshot, saveRatings } from "@/lib/ratings";
+import { getCollectionsSnapshot, saveCollections } from "@/lib/collections";
+import { getRanking, saveRanking } from "@/lib/ranking";
+import { getGoal, saveGoal } from "@/lib/goal";
 import {
   backupFilename,
   buildBackup,
@@ -50,6 +53,9 @@ export function DataPortability() {
         watched,
         episodeProgress: progress,
         ratings: getRatingsSnapshot(),
+        collections: getCollectionsSnapshot(),
+        ranking: getRanking(),
+        goal: getGoal(),
         // The only part that is not already in this component's hands.
         settings: await getPortableSettings(),
         exportedAt,
@@ -106,6 +112,9 @@ export function DataPortability() {
       saveWatched(pending.watched);
       saveEpisodeProgress(pending.episodeProgress);
       saveRatings(pending.ratings);
+      saveCollections(pending.collections);
+      saveRanking(pending.ranking);
+      saveGoal(pending.goal);
       await applyPortableSettings(pending.settings);
 
       // The contexts hold their own copies, so they have to be told to re-read.
@@ -132,6 +141,9 @@ export function DataPortability() {
       watched,
       episodeProgress: progress,
       ratings: getRatingsSnapshot(),
+      collections: getCollectionsSnapshot(),
+      ranking: getRanking(),
+      goal: getGoal(),
       settings: {
         region: null,
         watchProviderFilter: null,
@@ -172,7 +184,10 @@ export function DataPortability() {
             In this browser: {current.watchlist} to watch, {current.watched}{" "}
             watched, {current.showsInProgress} series in progress (
             {current.episodes} episode{current.episodes === 1 ? "" : "s"}{" "}
-            ticked), {current.ratings} rated.
+            ticked), {current.ratings} rated
+            {current.collections > 0 &&
+              `, ${current.collections} list${current.collections === 1 ? "" : "s"}`}
+            .
           </>
         )}
       </p>
@@ -254,6 +269,8 @@ function RestoreConfirmation({
         <strong>{summary.showsInProgress}</strong> series in progress (
         {summary.episodes} episode{summary.episodes === 1 ? "" : "s"} ticked) and{" "}
         <strong>{summary.ratings}</strong> rated
+        {summary.collections > 0 &&
+          `, ${summary.collections} named list${summary.collections === 1 ? "" : "s"}`}
         {summary.hasSettings && ", plus your region and platform settings"}.
         {exportedAt && ` Exported ${exportedAt.slice(0, 10)}.`}
       </p>
