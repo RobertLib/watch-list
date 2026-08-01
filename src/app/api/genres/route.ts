@@ -1,30 +1,17 @@
 import { NextResponse } from "next/server";
+import { TMDB_CONFIG } from "@/lib/tmdb-cache";
 
 export const revalidate = 31536000; // 1 year — genre lists almost never change
 
-const TMDB_BASE_URL = "https://api.themoviedb.org/3";
-
-function getTmdbHeaders() {
-  const token = process.env.TMDB_API_TOKEN;
-  if (!token) {
-    throw new Error("TMDB_API_TOKEN is not configured");
-  }
-
-  return {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
-}
-
 export async function GET() {
   try {
-    const headers = getTmdbHeaders();
+    const headers = TMDB_CONFIG.headers;
     const [movieGenresResponse, tvGenresResponse] = await Promise.all([
-      fetch(`${TMDB_BASE_URL}/genre/movie/list`, {
+      fetch(`${TMDB_CONFIG.BASE_URL}/genre/movie/list`, {
         headers,
         next: { revalidate: 31536000 }, // Cache for 1 year
       }),
-      fetch(`${TMDB_BASE_URL}/genre/tv/list`, {
+      fetch(`${TMDB_CONFIG.BASE_URL}/genre/tv/list`, {
         headers,
         next: { revalidate: 31536000 }, // Cache for 1 year
       }),

@@ -1,7 +1,26 @@
 type ClassValue = string | number | boolean | undefined | null | ClassValue[];
 
+/**
+ * `ClassValue` nests arbitrarily deep, so the flatten has to as well. `.flat()`
+ * only goes one level, which left any deeper array to be stringified by `join` –
+ * turning ["c", false] into the class name "c,false". Recursion rather than
+ * `.flat(Infinity)`: the latter sends the recursive type into an infinitely deep
+ * instantiation.
+ */
+function flattenClasses(inputs: ClassValue[], out: string[] = []): string[] {
+  for (const input of inputs) {
+    if (Array.isArray(input)) {
+      flattenClasses(input, out);
+    } else if (input) {
+      out.push(String(input));
+    }
+  }
+
+  return out;
+}
+
 export function cn(...inputs: ClassValue[]): string {
-  return inputs.flat().filter(Boolean).join(" ").trim();
+  return flattenClasses(inputs).join(" ").trim();
 }
 
 export function clsx(...inputs: ClassValue[]): string {

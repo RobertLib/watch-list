@@ -23,42 +23,50 @@ import type { FilterOptions } from "@/types/filters";
 // IMPORTANT: Watch providers are now loaded lazily on the client side via /api/watch-providers
 // This significantly reduces server-side rendering time, API calls, and memory usage
 
-// Optimized discovery request helper with React cache for deduplication
-const makeDiscoveryRequest = cache(
-  async (
-    endpoint: string,
-    params: Record<string, string | number>,
-    cacheKey: string,
-    filters: FilterOptions = {},
-  ): Promise<TMDBResponse<Movie> | TMDBResponse<TVShow>> => {
-    // Include provider filter info in cache key for proper cache invalidation
-    const watchProviderFilter = await getWatchProviderFilter();
-    const selectedProviders = await getSelectedProviderIdsString();
-    const region = await getRegion();
-    const regionCode = getRegionCode(region);
-
-    // A platform picked in the filter bar produces a different result set than
-    // the profile-wide setting, so it has to be part of the cache key too.
-    const providerFilter = sanitizeWatchProvidersFilter(filters.watchProviders);
-    const usesSavedProviders =
-      providerFilter === MY_PROVIDERS ||
-      (!providerFilter && watchProviderFilter === "streaming-only");
-
-    const providerScope =
-      providerFilter && !usesSavedProviders
-        ? `providers-${providerFilter}`
-        : usesSavedProviders && selectedProviders
-          ? `providers-${selectedProviders}`
-          : "all";
-
-    const fullCacheKey = `${cacheKey}-${regionCode}-${providerScope}`;
-
-    const url = await buildFilteredUrl(endpoint, params, filters);
-    return (await getCachedDiscoveryRequest(url, fullCacheKey)) as
-      | TMDBResponse<Movie>
-      | TMDBResponse<TVShow>;
-  },
+// Deduplicated per render pass on the *resolved* URL and tag rather than on the
+// arguments that produced them. React `cache()` compares arguments with
+// `Object.is`, and every call site below builds a fresh `params`/`filters`
+// literal, so memoising on those objects deduplicated nothing – these two
+// primitives are what actually identify the request.
+const cachedDiscoveryRequest = cache(
+  async (url: string, cacheKey: string): Promise<unknown> =>
+    getCachedDiscoveryRequest(url, cacheKey),
 );
+
+// Optimized discovery request helper
+async function makeDiscoveryRequest(
+  endpoint: string,
+  params: Record<string, string | number>,
+  cacheKey: string,
+  filters: FilterOptions = {},
+): Promise<TMDBResponse<Movie> | TMDBResponse<TVShow>> {
+  // Include provider filter info in cache key for proper cache invalidation
+  const watchProviderFilter = await getWatchProviderFilter();
+  const selectedProviders = await getSelectedProviderIdsString();
+  const region = await getRegion();
+  const regionCode = getRegionCode(region);
+
+  // A platform picked in the filter bar produces a different result set than
+  // the profile-wide setting, so it has to be part of the cache key too.
+  const providerFilter = sanitizeWatchProvidersFilter(filters.watchProviders);
+  const usesSavedProviders =
+    providerFilter === MY_PROVIDERS ||
+    (!providerFilter && watchProviderFilter === "streaming-only");
+
+  const providerScope =
+    providerFilter && !usesSavedProviders
+      ? `providers-${providerFilter}`
+      : usesSavedProviders && selectedProviders
+        ? `providers-${selectedProviders}`
+        : "all";
+
+  const fullCacheKey = `${cacheKey}-${regionCode}-${providerScope}`;
+
+  const url = await buildFilteredUrl(endpoint, params, filters);
+  return (await cachedDiscoveryRequest(url, fullCacheKey)) as
+    | TMDBResponse<Movie>
+    | TMDBResponse<TVShow>;
+}
 
 // Stable cache-key suffix for a set of filters (keys sorted so the same filters
 // always map to the same key regardless of insertion order).
@@ -605,25 +613,21 @@ export const tmdbServerApi = {
     return data;
   },
 
-  // Discover movies with advanced filters
+  // Discover movies with advanced filters.
+  // Routed through `makeDiscoveryRequest` like every other listing so the cache
+  // tag carries the region and provider scope, and so the filter part of the key
+  // comes from `buildFilterCacheKey` – which sorts, making the same filters map
+  // to one tag regardless of the order they were assembled in.
   discoverMovies: async (
     page: number = 1,
     filters: FilterOptions = {},
   ): Promise<TMDBResponse<Movie>> => {
-    // Create cache key based on filters
-    const filterKey = Object.entries(filters)
-      .map(([key, value]) => `${key}-${value}`)
-      .join("_");
-    const cacheKey = `discover-movies-${page}-${filterKey}`;
-
-    const url = await buildFilteredUrl("/discover/movie", { page }, filters);
-    const data = (await getCachedDiscoveryRequest(
-      url,
-      cacheKey,
+    return (await makeDiscoveryRequest(
+      "/discover/movie",
+      { page },
+      `discover-movies-${page}${buildFilterCacheKey(filters)}`,
+      filters,
     )) as TMDBResponse<Movie>;
-
-    // Watch providers are now loaded lazily on client side
-    return data;
   },
 
   // Discover TV shows with advanced filters
@@ -631,20 +635,12 @@ export const tmdbServerApi = {
     page: number = 1,
     filters: FilterOptions = {},
   ): Promise<TMDBResponse<TVShow>> => {
-    // Create cache key based on filters
-    const filterKey = Object.entries(filters)
-      .map(([key, value]) => `${key}-${value}`)
-      .join("_");
-    const cacheKey = `discover-tv-${page}-${filterKey}`;
-
-    const url = await buildFilteredUrl("/discover/tv", { page }, filters);
-    const data = (await getCachedDiscoveryRequest(
-      url,
-      cacheKey,
+    return (await makeDiscoveryRequest(
+      "/discover/tv",
+      { page },
+      `discover-tv-${page}${buildFilterCacheKey(filters)}`,
+      filters,
     )) as TMDBResponse<TVShow>;
-
-    // Watch providers are now loaded lazily on client side
-    return data;
   },
 
   // Search for movies and TV shows

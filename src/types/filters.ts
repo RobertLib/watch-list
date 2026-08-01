@@ -3,7 +3,6 @@ export interface FilterOptions {
   year?: string;
   genre?: string;
   minRating?: number;
-  includeAdult?: boolean;
   primaryReleaseDateGte?: string;
   primaryReleaseDateLte?: string;
   voteCountGte?: number;

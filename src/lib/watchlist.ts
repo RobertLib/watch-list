@@ -15,7 +15,7 @@ export interface WatchlistItem {
 // dozen titles – and a browser rejects an oversized cookie silently, so every
 // further save would look like it worked while nothing was stored. Nothing on
 // the server reads this either: the recommender is handed it by the client.
-const WATCHLIST_STORAGE_KEY = "watchlist";
+export const WATCHLIST_STORAGE_KEY = "watchlist";
 
 // Where the list used to live. Read once so existing visitors keep their titles.
 const WATCHLIST_COOKIE_NAME = "watchlist";

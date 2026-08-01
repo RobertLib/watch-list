@@ -16,7 +16,7 @@ export interface WatchedItem {
 // watched history only grows, and a cookie that outgrows the ~4KB browser limit
 // is rejected in full – the whole history would silently disappear. Nothing on
 // the server reads it either: the recommender is handed it by the client.
-const WATCHED_STORAGE_KEY = "watched";
+export const WATCHED_STORAGE_KEY = "watched";
 
 export function getWatched(): WatchedItem[] {
   if (typeof window === "undefined") return [];

@@ -1,15 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { TMDB_CONFIG } from "@/lib/tmdb-cache";
 
 export const revalidate = 2592000; // 1 month — video metadata rarely changes
-
-// Server-side TMDB config (bez NEXT_PUBLIC_)
-const TMDB_CONFIG = {
-  BASE_URL: "https://api.themoviedb.org/3",
-  headers: {
-    Authorization: `Bearer ${process.env.TMDB_API_TOKEN}`,
-    "Content-Type": "application/json",
-  },
-};
 
 export async function GET(
   request: NextRequest,

@@ -4,6 +4,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useState,
   ReactNode,
 } from "react";
@@ -47,8 +48,10 @@ export function GenresProvider({ children }: GenresProviderProps) {
         }
 
         const data = await response.json();
-        setMovieGenres(data.movieGenres);
-        setTvGenres(data.tvGenres);
+        // A 200 carrying an unexpected body would otherwise put `undefined` into
+        // state, and every consumer maps over these lists.
+        setMovieGenres(Array.isArray(data?.movieGenres) ? data.movieGenres : []);
+        setTvGenres(Array.isArray(data?.tvGenres) ? data.tvGenres : []);
       } catch (error) {
         console.error("Error fetching genres:", error);
         // Set empty arrays on error
@@ -62,9 +65,12 @@ export function GenresProvider({ children }: GenresProviderProps) {
     fetchGenres();
   }, []);
 
+  const value = useMemo(
+    () => ({ movieGenres, tvGenres, loading }),
+    [movieGenres, tvGenres, loading],
+  );
+
   return (
-    <GenresContext.Provider value={{ movieGenres, tvGenres, loading }}>
-      {children}
-    </GenresContext.Provider>
+    <GenresContext.Provider value={value}>{children}</GenresContext.Provider>
   );
 }

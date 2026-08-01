@@ -40,6 +40,39 @@ async function buildUrl(
   return `${TMDB_CONFIG.BASE_URL}${endpoint}?${queryString}`;
 }
 
+/**
+ * Guard for a value that is about to be interpolated into a TMDB *path* rather
+ * than into a query string. `URLSearchParams` escapes parameters for us, a
+ * template literal in a path escapes nothing – so an id carrying "/../" would
+ * walk the request to a different TMDB endpoint, taking our bearer token along.
+ */
+function pathId(value: number, name: string, min = 1): string {
+  const id = Number(value);
+  if (!Number.isInteger(id) || id < min) {
+    throw new Error(`Invalid ${name}: ${String(value)}`);
+  }
+
+  return String(id);
+}
+
+/**
+ * Free text that ends up in a cache tag has to be bounded: Next drops tags over
+ * 256 characters, and an unbounded set of tag values is an unbounded set of
+ * cache entries. The full query still reaches TMDB – only the tag is trimmed.
+ */
+const MAX_CACHE_TAG_QUERY_LENGTH = 80;
+
+function queryCacheTag(prefix: string, query: string, page: number): string {
+  const normalised = query
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .slice(0, MAX_CACHE_TAG_QUERY_LENGTH);
+
+  return `${prefix}-${normalised}-${page}`;
+}
+
 // URL builder for detail pages – no region/cookies so the route stays static.
 function buildDetailUrl(
   endpoint: string,
@@ -211,7 +244,7 @@ export const tmdbApi = {
       query,
       page,
     });
-    const cacheKey = `search-multi-${query}-${page}`;
+    const cacheKey = queryCacheTag("search-multi", query, page);
     const data = (await cachedFetch(url, cacheKey, 3600)) as TMDBResponse<
       (Movie | TVShow) & { media_type: string }
     >;
@@ -406,7 +439,7 @@ export const tmdbApi = {
       query,
       page,
     });
-    const cacheKey = `search-person-${query}-${page}`;
+    const cacheKey = queryCacheTag("search-person", query, page);
     return cachedFetch(url, cacheKey, 3600) as Promise<TMDBResponse<Person>>; // 1 hour cache
   },
 
@@ -423,7 +456,10 @@ export const tmdbApi = {
     tvId: number,
     seasonNumber: number,
   ): Promise<SeasonDetails> => {
-    const url = await buildUrl(`/tv/${tvId}/season/${seasonNumber}`);
+    // Season 0 exists on TMDB – it holds the specials.
+    const url = await buildUrl(
+      `/tv/${pathId(tvId, "tvId")}/season/${pathId(seasonNumber, "seasonNumber", 0)}`,
+    );
     return detailFetch(url) as Promise<SeasonDetails>;
   },
 };

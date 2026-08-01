@@ -1,3 +1,9 @@
+// This module holds the TMDB bearer token. Importing it from a Client Component
+// is a build error rather than a bundle that quietly ships `Bearer ` with an
+// empty token (Next replaces non-NEXT_PUBLIC_ env vars with "" on the client)
+// and then answers every request with a 401.
+import "server-only";
+
 import type { WatchProvidersResponse } from "@/types/tmdb";
 
 const RETRYABLE_CODES = new Set([
@@ -69,12 +75,32 @@ export async function tmdbFetchJson<T>(
   return response.json() as Promise<T>;
 }
 
+/**
+ * Missing configuration used to fall back to an empty token, which turned into a
+ * 401 on every TMDB call – a failure that reads like an outage rather than like
+ * the one-line environment problem it is. A getter rather than a module-level
+ * check on purpose: throwing while the module evaluates would take down the
+ * build itself, including the parts that never touch TMDB.
+ */
+function tmdbAuthorizationHeader(): string {
+  const token = process.env.TMDB_API_TOKEN;
+  if (!token) {
+    throw new Error(
+      "TMDB_API_TOKEN is not configured – every TMDB request would answer 401.",
+    );
+  }
+
+  return `Bearer ${token}`;
+}
+
 // Shared TMDB API configuration
 export const TMDB_CONFIG = {
   BASE_URL: "https://api.themoviedb.org/3",
-  headers: {
-    Authorization: `Bearer ${process.env.TMDB_API_TOKEN || ""}`,
-    "Content-Type": "application/json",
+  get headers() {
+    return {
+      Authorization: tmdbAuthorizationHeader(),
+      "Content-Type": "application/json",
+    };
   },
 } as const;
 

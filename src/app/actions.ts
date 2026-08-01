@@ -19,6 +19,7 @@ import {
   sanitizeSeeds,
   type RecommendationsResult,
 } from "@/lib/recommendations";
+import { sanitizeFilterOptions, sanitizePage } from "@/lib/discover-filters";
 import type { FilterOptions } from "@/types/filters";
 import type { SeasonDetails } from "@/types/tmdb";
 
@@ -77,71 +78,116 @@ export async function changeSelectedProviders(providerIds: number[]) {
 }
 
 // Server actions for pagination
+//
+// Every argument below crosses a public HTTP boundary: a server action is an
+// endpoint anyone can POST to, and the declared TypeScript types say nothing
+// about what actually arrives. Each one also ends up in a Data Cache tag, so an
+// unvalidated value buys an unbounded number of cache entries on top of the
+// TMDB error it would trigger. `sanitizePage` clamps to the 1–500 TMDB accepts.
+
+/** A genre the app links to is always a positive TMDB integer id. */
+function sanitizeGenreId(genreId: unknown): number {
+  const id = Number(genreId);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error("Invalid genre id");
+  }
+
+  return id;
+}
+
+/** Long enough for any real title, short enough to stay out of trouble. */
+const MAX_QUERY_LENGTH = 200;
+
+function sanitizeQuery(query: unknown): string {
+  return typeof query === "string" ? query.slice(0, MAX_QUERY_LENGTH) : "";
+}
+
 export async function getPopularMovies(page: number) {
-  return await tmdbServerApi.getPopularMovies(page);
+  return await tmdbServerApi.getPopularMovies(sanitizePage(page));
 }
 
 export async function getTopRatedMovies(page: number) {
-  return await tmdbServerApi.getTopRatedMovies(page);
+  return await tmdbServerApi.getTopRatedMovies(sanitizePage(page));
 }
 
 export async function getNowPlayingMovies(page: number) {
-  return await tmdbServerApi.getNowPlayingMovies(page);
+  return await tmdbServerApi.getNowPlayingMovies(sanitizePage(page));
 }
 
 export async function getPopularTVShows(page: number) {
-  return await tmdbServerApi.getPopularTVShows(page);
+  return await tmdbServerApi.getPopularTVShows(sanitizePage(page));
 }
 
 export async function getTopRatedTVShows(page: number) {
-  return await tmdbServerApi.getTopRatedTVShows(page);
+  return await tmdbServerApi.getTopRatedTVShows(sanitizePage(page));
 }
 
 export async function getAiringTodayTVShows(page: number) {
-  return await tmdbServerApi.getAiringTodayTVShows(page);
+  return await tmdbServerApi.getAiringTodayTVShows(sanitizePage(page));
 }
 
 export async function getUpcomingMovies(page: number) {
-  return await tmdbServerApi.getUpcomingMovies(page);
+  return await tmdbServerApi.getUpcomingMovies(sanitizePage(page));
 }
 
 export async function getTrendingMoviesWeekly(page: number) {
-  return await tmdbServerApi.getTrendingMoviesWeekly(page);
+  return await tmdbServerApi.getTrendingMoviesWeekly(sanitizePage(page));
 }
 
 export async function getTrendingTVShowsWeekly(page: number) {
-  return await tmdbServerApi.getTrendingTVShowsWeekly(page);
+  return await tmdbServerApi.getTrendingTVShowsWeekly(sanitizePage(page));
 }
 
 export async function discoverMoviesByGenre(genreId: number, page: number) {
-  return await tmdbServerApi.discoverMoviesByGenre(genreId, page);
+  return await tmdbServerApi.discoverMoviesByGenre(
+    sanitizeGenreId(genreId),
+    sanitizePage(page),
+  );
 }
 
 export async function searchMulti(query: string, page: number = 1) {
-  return await tmdbServerApi.searchMulti(query, page);
+  return await tmdbServerApi.searchMulti(
+    sanitizeQuery(query),
+    sanitizePage(page),
+  );
 }
 
 export async function searchPerson(query: string, page: number = 1) {
-  return await tmdbServerApi.searchPerson(query, page);
+  return await tmdbServerApi.searchPerson(
+    sanitizeQuery(query),
+    sanitizePage(page),
+  );
 }
 
 export async function discoverTVShowsByGenre(genreId: number, page: number) {
-  return await tmdbServerApi.discoverTVShowsByGenre(genreId, page);
+  return await tmdbServerApi.discoverTVShowsByGenre(
+    sanitizeGenreId(genreId),
+    sanitizePage(page),
+  );
 }
 
-// New filtered discovery actions
+// New filtered discovery actions. The filter payload is rebuilt from scratch
+// rather than trusted: it feeds both the TMDB query and the cache tag. The
+// parameter stays typed so a typo at a legitimate call site is still a compile
+// error – the sanitizer would otherwise drop the unknown field in silence.
 export async function discoverMoviesWithFilters(
   page: number,
   filters: FilterOptions,
 ) {
-  return await tmdbServerApi.discoverMovies(page, filters);
+  return await tmdbServerApi.discoverMovies(
+    sanitizePage(page),
+    sanitizeFilterOptions(filters, "movie"),
+  );
 }
 
 export async function discoverTVShowsWithFilters(
   page: number,
   filters: FilterOptions,
 ) {
-  return await tmdbServerApi.discoverTVShows(page, filters);
+  return await tmdbServerApi.discoverTVShows(
+    sanitizePage(page),
+    sanitizeFilterOptions(filters, "tv"),
+  );
 }
 
 // Check if user has custom settings
@@ -181,12 +227,23 @@ export async function getWatchlistRecommendations(
   );
 }
 
+// Both ids are interpolated into the TMDB *path*, where nothing escapes them –
+// so they are checked here rather than left to `getSeasonDetails`. An id of
+// "1/../../account" would otherwise walk the request to a different endpoint
+// with our bearer token attached.
 export async function fetchSeasonDetails(
   tvId: number,
   seasonNumber: number,
 ): Promise<SeasonDetails | null> {
+  const id = Number(tvId);
+  const season = Number(seasonNumber);
+
+  // Season 0 is where TMDB keeps the specials, so it has to stay allowed.
+  if (!Number.isInteger(id) || id <= 0) return null;
+  if (!Number.isInteger(season) || season < 0) return null;
+
   try {
-    return await tmdbApi.getSeasonDetails(tvId, seasonNumber);
+    return await tmdbApi.getSeasonDetails(id, season);
   } catch {
     return null;
   }

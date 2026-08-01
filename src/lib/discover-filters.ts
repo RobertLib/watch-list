@@ -13,6 +13,9 @@ export const DEFAULT_SORT = "popularity.desc";
 
 export const MIN_RATING_OPTIONS = [5, 6, 7, 8, 9] as const;
 
+/** TMDB refuses anything outside this range on every paginated endpoint. */
+export const MAX_TMDB_PAGE = 500;
+
 // Rating filters and rating sorts on /discover are dominated by obscure titles
 // rated 10/10 by a handful of people, so both get a vote-count floor.
 const RATING_VOTE_FLOOR = 200;
@@ -159,6 +162,143 @@ export function discoverFiltersToFilterOptions(
     } else {
       options.firstAirDateLte = today;
     }
+  }
+
+  return options;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Server action boundary
+//
+// `parseDiscoverFilters` above covers everything that arrives through the URL,
+// but the paginated listings hand their filters to a server action instead – and
+// a server action is a public HTTP endpoint, so the payload it receives is
+// whatever the caller chose to send. Unvalidated values would reach two places:
+// the TMDB query string, and the Data Cache tag built from them, where an
+// unbounded set of values means an unbounded set of cache entries (and tags over
+// Next's 256-character limit get dropped on the floor). Hence a second pass that
+// re-derives a `FilterOptions` from scratch rather than trusting the shape.
+// ──────────────────────────────────────────────────────────────────────────────
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** TMDB ANDs these, so beyond a handful the result set is empty anyway. */
+const MAX_GENRE_IDS = 5;
+
+const MAX_VOTE_COUNT = 10_000_000;
+const MAX_POPULARITY = 1_000_000;
+
+/** Clamps a page number that is about to become part of a cache tag. */
+export function sanitizePage(value: unknown): number {
+  const page = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(page)) return 1;
+
+  return Math.min(Math.max(Math.trunc(page), 1), MAX_TMDB_PAGE);
+}
+
+function sanitizeGenreIds(value: unknown): string | undefined {
+  if (typeof value !== "string" && typeof value !== "number") return undefined;
+
+  const ids = String(value)
+    .split(",")
+    .map((id) => Number(id.trim()))
+    .filter((id) => Number.isInteger(id) && id > 0)
+    .slice(0, MAX_GENRE_IDS);
+
+  return ids.length > 0 ? ids.join(",") : undefined;
+}
+
+function sanitizeIsoDate(value: unknown): string | undefined {
+  if (typeof value !== "string" || !ISO_DATE.test(value)) return undefined;
+
+  // The shape is right; make sure it is a date that exists. `new Date` happily
+  // accepts "2024-02-31" and rolls it over into March.
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+
+  return parsed.toISOString().split("T")[0] === value ? value : undefined;
+}
+
+function sanitizeNumber(
+  value: unknown,
+  min: number,
+  max: number,
+): number | undefined {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return undefined;
+
+  return Math.min(Math.max(parsed, min), max);
+}
+
+/**
+ * Rebuild a `FilterOptions` out of a payload that cannot be trusted. Anything
+ * unrecognised is dropped rather than corrected, so the result is always a set
+ * of values the app itself could have produced.
+ */
+export function sanitizeFilterOptions(
+  input: unknown,
+  type: DiscoverMediaType,
+): FilterOptions {
+  if (!input || typeof input !== "object") return {};
+
+  const raw = input as Record<string, unknown>;
+  const options: FilterOptions = {};
+
+  if (getSortOptions(type).some((option) => option.value === raw.sortBy)) {
+    options.sortBy = raw.sortBy as string;
+  }
+
+  const year = Number(raw.year);
+  if (RELEASE_YEARS.includes(year)) {
+    options.year = String(year);
+  }
+
+  const genre = sanitizeGenreIds(raw.genre);
+  if (genre) {
+    options.genre = genre;
+  }
+
+  const minRating = sanitizeNumber(raw.minRating, 0, 10);
+  if (minRating !== undefined) {
+    options.minRating = minRating;
+  }
+
+  if (LANGUAGES.some((language) => language.code === raw.withOriginalLanguage)) {
+    options.withOriginalLanguage = raw.withOriginalLanguage as string;
+  }
+
+  // Date bounds are not gated by media type: `buildFilteredUrl` only ever sends
+  // the pair that matches the endpoint it is building.
+  const dateFields = [
+    "primaryReleaseDateGte",
+    "primaryReleaseDateLte",
+    "firstAirDateGte",
+    "firstAirDateLte",
+  ] as const;
+
+  for (const field of dateFields) {
+    const date = sanitizeIsoDate(raw[field]);
+    if (date) {
+      options[field] = date;
+    }
+  }
+
+  const numberFields = [
+    ["voteCountGte", MAX_VOTE_COUNT],
+    ["voteCountLte", MAX_VOTE_COUNT],
+    ["popularityLte", MAX_POPULARITY],
+  ] as const;
+
+  for (const [field, max] of numberFields) {
+    const parsed = sanitizeNumber(raw[field], 0, max);
+    if (parsed !== undefined) {
+      options[field] = parsed;
+    }
+  }
+
+  const providers = sanitizeWatchProvidersFilter(raw.watchProviders);
+  if (providers) {
+    options.watchProviders = providers;
   }
 
   return options;

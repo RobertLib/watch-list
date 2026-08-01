@@ -1,5 +1,6 @@
 import { MetadataRoute } from "next";
 import { createSlug } from "@/lib/utils";
+import { TMDB_CONFIG } from "@/lib/tmdb-cache";
 import { STREAMING_LANDING_PLATFORMS } from "@/lib/streaming-landing";
 
 // Types for sitemap generation
@@ -30,23 +31,9 @@ interface Person {
   name: string;
 }
 
-const TMDB_BASE_URL = "https://api.themoviedb.org/3";
-
-function getTmdbHeaders() {
-  const token = process.env.TMDB_API_TOKEN;
-  if (!token) {
-    throw new Error("TMDB_API_TOKEN is not configured");
-  }
-
-  return {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
-}
-
 async function fetchTmdb<T>(endpoint: string): Promise<T> {
-  const response = await fetch(`${TMDB_BASE_URL}${endpoint}`, {
-    headers: getTmdbHeaders(),
+  const response = await fetch(`${TMDB_CONFIG.BASE_URL}${endpoint}`, {
+    headers: TMDB_CONFIG.headers,
     next: { revalidate: 86400 },
   });
 
