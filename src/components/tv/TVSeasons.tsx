@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Image from "next/image";
 import { ChevronDown, ChevronUp, Star, Clock, Calendar } from "lucide-react";
-import { tmdbApi } from "@/lib/tmdb";
+import { getImageUrl } from "@/lib/tmdb-image";
 import { fetchSeasonDetails } from "@/app/actions";
 import type { Season, SeasonDetails, Episode } from "@/types/tmdb";
 
@@ -30,7 +30,7 @@ function EpisodeRow({ episode }: { episode: Episode }) {
       <div className="relative w-28 sm:w-36 shrink-0 rounded overflow-hidden bg-gray-700 aspect-video self-start">
         {episode.still_path ? (
           <Image
-            src={tmdbApi.getImageUrl(episode.still_path, "w500")}
+            src={getImageUrl(episode.still_path, "w500")}
             alt={episode.name}
             fill
             className="object-cover"
@@ -115,7 +115,7 @@ function SeasonRow({ season, tvId }: { season: Season; tvId: number }) {
         <div className="relative w-14 h-20 shrink-0 rounded overflow-hidden">
           {season.poster_path ? (
             <Image
-              src={tmdbApi.getImageUrl(season.poster_path, "w500")}
+              src={getImageUrl(season.poster_path, "w500")}
               alt={season.name}
               fill
               className="object-cover"

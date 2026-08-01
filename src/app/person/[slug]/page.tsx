@@ -69,16 +69,22 @@ function calculateAge(
   return String(age);
 }
 
+const NOT_FOUND_METADATA: Metadata = {
+  title: "Person not found",
+  robots: { index: false, follow: false },
+};
+
 export async function generateMetadata({
   params,
 }: PersonPageProps): Promise<Metadata> {
   const { slug } = await params;
   const id = extractIdFromSlug(slug);
 
-  if (!id) return { title: "Person not found" };
+  // Explicit noindex on the miss – see the note on the movie page.
+  if (!id) return NOT_FOUND_METADATA;
 
   const data = await getPersonData(id);
-  if (!data) return { title: "Person not found" };
+  if (!data) return NOT_FOUND_METADATA;
 
   const { details, movieCredits, tvCredits } = data;
 

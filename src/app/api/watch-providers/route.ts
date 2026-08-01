@@ -19,6 +19,15 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // A non-numeric id used to reach `parseInt` and become NaN, which TMDB
+    // answered with a 404 that surfaced here as a generic 500.
+    if (!/^\d+$/.test(id)) {
+      return NextResponse.json(
+        { error: "Invalid id parameter" },
+        { status: 400 },
+      );
+    }
+
     if (mediaType !== "movie" && mediaType !== "tv") {
       return NextResponse.json(
         { error: "Invalid mediaType. Must be 'movie' or 'tv'" },

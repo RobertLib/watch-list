@@ -25,16 +25,22 @@ const getCollectionData = cache(async (id: number) => {
   }
 });
 
+const NOT_FOUND_METADATA: Metadata = {
+  title: "Collection not found",
+  robots: { index: false, follow: false },
+};
+
 export async function generateMetadata({
   params,
 }: CollectionPageProps): Promise<Metadata> {
   const { slug } = await params;
   const id = extractIdFromSlug(slug);
 
-  if (!id) return { title: "Collection not found" };
+  // Explicit noindex on the miss – see the note on the movie page.
+  if (!id) return NOT_FOUND_METADATA;
 
   const collection = await getCollectionData(id);
-  if (!collection) return { title: "Collection not found" };
+  if (!collection) return NOT_FOUND_METADATA;
 
   const canonicalUrl = `https://www.watch-list.me/collection/${createSlug(collection.name, collection.id)}`;
   const description =

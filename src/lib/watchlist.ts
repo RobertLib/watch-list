@@ -10,10 +10,17 @@ export interface WatchlistItem {
   addedAt: string;
 }
 
-const WATCHLIST_COOKIE_NAME = "watchlist";
-const COOKIE_EXPIRY_DAYS = 365;
+// Kept in localStorage rather than a cookie, for the same reason as the watched
+// list. A cookie caps out at ~4KB, which a watchlist reaches after roughly a
+// dozen titles – and a browser rejects an oversized cookie silently, so every
+// further save would look like it worked while nothing was stored. Nothing on
+// the server reads this either: the recommender is handed it by the client.
+const WATCHLIST_STORAGE_KEY = "watchlist";
 
-export function getCookieValue(name: string): string | null {
+// Where the list used to live. Read once so existing visitors keep their titles.
+const WATCHLIST_COOKIE_NAME = "watchlist";
+
+function readCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
 
   const value = `; ${document.cookie}`;
@@ -24,37 +31,68 @@ export function getCookieValue(name: string): string | null {
   return null;
 }
 
-export function setCookieValue(
-  name: string,
-  value: string,
-  days: number = COOKIE_EXPIRY_DAYS,
-): void {
+function deleteCookie(name: string): void {
   if (typeof document === "undefined") return;
 
-  const expires = new Date();
-  expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
-  document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/`;
+  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+}
+
+function parseList(raw: string): WatchlistItem[] {
+  const parsed = JSON.parse(raw);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+/**
+ * Pull a pre-existing cookie watchlist into localStorage, once. Runs only while
+ * localStorage holds nothing yet, so a list the user emptied on purpose is never
+ * repopulated from the stale cookie.
+ */
+function migrateFromCookie(): WatchlistItem[] {
+  const cookieData = readCookie(WATCHLIST_COOKIE_NAME);
+  if (!cookieData) return [];
+
+  let migrated: WatchlistItem[] = [];
+  try {
+    migrated = parseList(decodeURIComponent(cookieData));
+  } catch (error) {
+    console.error("Error parsing watchlist from cookie:", error);
+  }
+
+  if (migrated.length > 0) {
+    saveWatchlist(migrated);
+  }
+
+  // The cookie rode along on every single request; it has no reason to persist.
+  deleteCookie(WATCHLIST_COOKIE_NAME);
+
+  return migrated;
 }
 
 export function getWatchlist(): WatchlistItem[] {
-  try {
-    const watchlistData = getCookieValue(WATCHLIST_COOKIE_NAME);
-    if (!watchlistData) return [];
+  if (typeof window === "undefined") return [];
 
-    const parsed = JSON.parse(decodeURIComponent(watchlistData));
-    return Array.isArray(parsed) ? parsed : [];
+  try {
+    const stored = window.localStorage.getItem(WATCHLIST_STORAGE_KEY);
+    if (stored === null) return migrateFromCookie();
+
+    return parseList(stored);
   } catch (error) {
-    console.error("Error parsing watchlist from cookies:", error);
+    console.error("Error parsing watchlist from storage:", error);
     return [];
   }
 }
 
 export function saveWatchlist(watchlist: WatchlistItem[]): void {
+  if (typeof window === "undefined") return;
+
   try {
-    const encoded = encodeURIComponent(JSON.stringify(watchlist));
-    setCookieValue(WATCHLIST_COOKIE_NAME, encoded);
+    window.localStorage.setItem(
+      WATCHLIST_STORAGE_KEY,
+      JSON.stringify(watchlist),
+    );
   } catch (error) {
-    console.error("Error saving watchlist to cookies:", error);
+    // Private browsing modes can refuse writes entirely.
+    console.error("Error saving watchlist to storage:", error);
   }
 }
 
@@ -75,8 +113,7 @@ export function addToWatchlist(item: Omit<WatchlistItem, "addedAt">): boolean {
       addedAt: new Date().toISOString(),
     };
 
-    const updatedWatchlist = [newItem, ...currentWatchlist];
-    saveWatchlist(updatedWatchlist);
+    saveWatchlist([newItem, ...currentWatchlist]);
     return true;
   } catch (error) {
     console.error("Error adding to watchlist:", error);
@@ -115,8 +152,11 @@ export function isInWatchlist(id: number, mediaType: "movie" | "tv"): boolean {
 }
 
 export function clearWatchlist(): void {
+  if (typeof window === "undefined") return;
+
   try {
-    setCookieValue(WATCHLIST_COOKIE_NAME, "", -1); // Expire the cookie
+    window.localStorage.removeItem(WATCHLIST_STORAGE_KEY);
+    deleteCookie(WATCHLIST_COOKIE_NAME);
   } catch (error) {
     console.error("Error clearing watchlist:", error);
   }

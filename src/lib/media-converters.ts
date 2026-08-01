@@ -11,8 +11,8 @@ import {
  *
  * Detail pages already request `watch/providers` via append_to_response, so
  * resolving it here costs no extra TMDB call. It has to happen on the server:
- * robots.txt disallows /api/, so the equivalent client-side fetch is invisible
- * to crawlers and the "Where to Watch" section never reaches the rendered HTML.
+ * fetching it from /api/ on the client would leave the "Where to Watch" section
+ * out of the server-rendered HTML that crawlers read.
  */
 export const resolveRegionProviders = (
   response: WatchProvidersResponse | undefined,

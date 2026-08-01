@@ -1,4 +1,4 @@
-import { permanentRedirect } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import { Metadata } from "next";
 
 interface MediaPageProps {
@@ -25,7 +25,9 @@ export default async function MediaPage({ params }: MediaPageProps) {
   } else if (type === "tv") {
     permanentRedirect(`/tv/${slug}`);
   } else {
-    // If type is not recognized, redirect to home page
-    permanentRedirect("/");
+    // Anything else is not a legacy media URL, just a path that does not exist.
+    // Sending it to the home page answered 200 with a full copy of the homepage,
+    // which is a soft 404 – every unknown two-segment URL looked like a real page.
+    notFound();
   }
 }

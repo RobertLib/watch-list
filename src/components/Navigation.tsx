@@ -21,6 +21,10 @@ export function Navigation() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // Each keystroke starts its own request and they can come back out of order –
+  // typing "bat" then "batman" would leave the slower "bat" results on screen.
+  // Only the most recently started search is allowed to write to state.
+  const searchRunId = useRef(0);
 
   // Check if link is active
   const isActiveLink = (href: string) => {
@@ -65,6 +69,9 @@ export function Navigation() {
   }, [searchQuery, debouncedSearch]);
 
   const handleSearch = async (query: string) => {
+    const runId = ++searchRunId.current;
+    const isStale = () => runId !== searchRunId.current;
+
     if (!query.trim()) {
       setSearchResults([]);
       setPersonResults([]);
@@ -82,13 +89,15 @@ export function Navigation() {
         searchMulti(query, 1),
         searchPerson(query, 1),
       ]);
+      if (isStale()) return;
       setSearchResults(mediaResponse.results);
       setPersonResults(peopleResponse.results.slice(0, 8));
     } catch (error) {
+      if (isStale()) return;
       console.error("Error searching:", error);
       setSearchResults([]);
     } finally {
-      setIsLoading(false);
+      if (!isStale()) setIsLoading(false);
     }
   };
 

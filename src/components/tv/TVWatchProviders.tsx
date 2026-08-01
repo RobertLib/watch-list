@@ -58,7 +58,7 @@ function ProviderLinks({
 
 // Server component on purpose: streaming availability is the one thing on a
 // detail page that isn't a copy of TMDB, so it has to be in the HTML rather than
-// fetched from /api/ (which robots.txt disallows).
+// fetched from /api/ after the markup has already been sent.
 export function TVWatchProviders({ providers, title }: TVWatchProvidersProps) {
   const sections = [
     { label: "Streaming", items: providers.streaming },

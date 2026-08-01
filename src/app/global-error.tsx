@@ -2,6 +2,10 @@
 
 import { useEffect } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
+// This replaces the root layout when it renders, so it never inherits the
+// stylesheet that layout.tsx imports and has to pull it in itself – without
+// this the fallback shows up completely unstyled.
+import "./globals.css";
 
 export default function GlobalError({
   error,

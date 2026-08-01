@@ -355,19 +355,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         )
       : [];
 
-  try {
-    return [
-      ...staticPages,
-      ...movieGenrePages,
-      ...tvGenrePages,
-      ...platformLandingPages,
-      ...moviePages,
-      ...tvPages,
-      ...personPages,
-      ...collectionPages,
-    ];
-  } catch (error) {
-    console.error("Error assembling sitemap:", error);
-    return staticPages;
-  }
+  // Every group above already degrades to [] on failure, so assembling the list
+  // cannot throw and needs no guard of its own.
+  return [
+    ...staticPages,
+    ...movieGenrePages,
+    ...tvGenrePages,
+    ...platformLandingPages,
+    ...moviePages,
+    ...tvPages,
+    ...personPages,
+    ...collectionPages,
+  ];
 }

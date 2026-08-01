@@ -107,24 +107,26 @@ const getTVBasicData = cache(async (id: number) => {
   }
 });
 
+const NOT_FOUND_METADATA: Metadata = {
+  title: "TV Show not found",
+  robots: { index: false, follow: false },
+};
+
 export async function generateMetadata({
   params,
 }: TVPageProps): Promise<Metadata> {
   const { slug } = await params;
   const id = extractIdFromSlug(slug);
 
+  // Explicit noindex on the miss – see the note on the movie page.
   if (!id) {
-    return {
-      title: "TV Show not found",
-    };
+    return NOT_FOUND_METADATA;
   }
 
   const data = await getTVBasicData(id);
 
   if (!data) {
-    return {
-      title: "TV Show not found",
-    };
+    return NOT_FOUND_METADATA;
   }
 
   const { details } = data;
@@ -212,8 +214,8 @@ export default async function TVPage({ params }: TVPageProps) {
   const { details, credits, videos, similar, translations } = data;
 
   // Resolved server-side from the already-appended watch/providers payload, so
-  // the "Where to Watch" section lands in the HTML instead of behind an /api/
-  // fetch that robots.txt hides from crawlers.
+  // the "Where to Watch" section lands in the HTML rather than behind an /api/
+  // fetch that crawlers reading the markup never see.
   const watchProviders = resolveRegionProviders(
     details["watch/providers"],
     getRegionCode(await getRegion()),

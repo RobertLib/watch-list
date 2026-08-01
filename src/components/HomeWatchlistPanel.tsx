@@ -5,7 +5,7 @@ import Image from "next/image";
 import { Film, Tv, Eye, ArrowRight } from "lucide-react";
 import { useWatchlist } from "@/contexts/WatchlistContext";
 import { useWatched } from "@/contexts/WatchedContext";
-import { tmdbApi } from "@/lib/tmdb";
+import { getImageUrl } from "@/lib/tmdb-image";
 
 export function HomeWatchlistPanel() {
   const { watchlist, isLoading } = useWatchlist();
@@ -56,7 +56,7 @@ export function HomeWatchlistPanel() {
         <div className="flex -space-x-3" aria-hidden="true">
           {recentItems.map((item) => {
             const posterUrl = item.posterPath
-              ? tmdbApi.getImageUrl(item.posterPath, "w500")
+              ? getImageUrl(item.posterPath, "w500")
               : null;
             return (
               <div

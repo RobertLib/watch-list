@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Star, Tv, Film, ChevronDown } from "lucide-react";
-import { tmdbApi } from "@/lib/tmdb";
+import { getImageUrl } from "@/lib/tmdb-image";
 import { createSlug } from "@/lib/utils";
 import type { PersonMovieCredit, PersonTVCredit } from "@/types/tmdb";
 
@@ -124,7 +124,7 @@ export function PersonFilmography({
                   {/* Poster thumbnail */}
                   <div className="relative w-10 h-15 shrink-0 overflow-hidden rounded">
                     <Image
-                      src={tmdbApi.getImageUrl(movie.poster_path, "w500")}
+                      src={getImageUrl(movie.poster_path, "w500")}
                       alt={movie.title}
                       fill
                       className="object-cover"
@@ -204,7 +204,7 @@ export function PersonFilmography({
                   {/* Poster thumbnail */}
                   <div className="relative w-10 h-15 shrink-0 overflow-hidden rounded">
                     <Image
-                      src={tmdbApi.getImageUrl(show.poster_path, "w500")}
+                      src={getImageUrl(show.poster_path, "w500")}
                       alt={show.name}
                       fill
                       className="object-cover"

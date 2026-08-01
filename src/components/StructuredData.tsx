@@ -1,5 +1,17 @@
-import Script from "next/script";
 import { createSlug } from "@/lib/utils";
+
+/**
+ * Serialise a JSON-LD payload for inlining into a <script> tag.
+ *
+ * `JSON.stringify` leaves `<` untouched, so a `</script>` sitting in any field
+ * would close the tag and let whatever follows be parsed as HTML. The payload is
+ * built from TMDB data – overviews, titles and cast names are community-edited –
+ * so it is treated as untrusted and every `<` is escaped to its unicode form,
+ * which JSON parsers read back as the original character.
+ */
+function serializeJsonLd(data: unknown): string {
+  return JSON.stringify(data).replace(/</g, "\\u003c");
+}
 
 interface Genre {
   id: number;
@@ -343,12 +355,14 @@ export function StructuredData({ type, data }: StructuredDataProps) {
       structuredData = data;
   }
 
+  // A native <script> rather than next/script: JSON-LD is data, not code to
+  // execute, and this keeps it in the server-rendered HTML where crawlers read
+  // it without waiting on hydration.
   return (
-    <Script
-      id={`structured-data-${type.toLowerCase()}`}
+    <script
       type="application/ld+json"
       dangerouslySetInnerHTML={{
-        __html: JSON.stringify(structuredData),
+        __html: serializeJsonLd(structuredData),
       }}
     />
   );

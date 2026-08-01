@@ -1,12 +1,17 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   WatchlistItem,
   getWatchlist,
   addToWatchlist,
   removeFromWatchlist,
-  isInWatchlist,
 } from "@/lib/watchlist";
 import { MediaItem } from "@/types/tmdb";
 
@@ -77,11 +82,21 @@ export function WatchlistProvider({ children }: WatchlistProviderProps) {
     return success;
   };
 
+  // A grid asks this once per card, so the lookup is indexed rather than a fresh
+  // read and parse of the whole stored list for every card on every render.
+  const watchlistKeys = useMemo(
+    () => new Set(watchlist.map((item) => `${item.mediaType}-${item.id}`)),
+    [watchlist],
+  );
+
+  // Answered from state rather than from storage, so a card rendered on the
+  // server and the same card on hydration agree – the list is only read once
+  // the mount effect has run.
   const checkIsInWatchlist = (
     id: number,
     mediaType: "movie" | "tv",
   ): boolean => {
-    return isInWatchlist(id, mediaType);
+    return watchlistKeys.has(`${mediaType}-${id}`);
   };
 
   const value: WatchlistContextType = {

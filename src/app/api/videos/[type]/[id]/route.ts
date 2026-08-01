@@ -18,8 +18,11 @@ export async function GET(
   try {
     const { id, type } = await params;
 
-    // Validate parameters
-    if (!id || !type || !["movie", "tv"].includes(type)) {
+    // Validate parameters. `id` goes straight into the TMDB path, and a route
+    // segment can carry an encoded slash, so anything but digits is rejected –
+    // otherwise "1%2F..%2F..%2Faccount" would walk the request to another
+    // endpoint, carrying our bearer token with it.
+    if (!type || !["movie", "tv"].includes(type) || !/^\d+$/.test(id ?? "")) {
       return NextResponse.json(
         { error: "Invalid parameters" },
         { status: 400 },

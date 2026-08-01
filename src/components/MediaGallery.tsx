@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { X, ChevronLeft, ChevronRight, Images } from "lucide-react";
-import { tmdbApi } from "@/lib/tmdb";
+import { getImageUrl } from "@/lib/tmdb-image";
 import type { TMDBImage } from "@/types/tmdb";
 
 interface MediaGalleryProps {
@@ -76,7 +76,7 @@ function Lightbox({
           style={{ aspectRatio: `${img.width}/${img.height}` }}
         >
           <Image
-            src={tmdbApi.getImageUrl(img.file_path, "original")}
+            src={getImageUrl(img.file_path, "original")}
             alt={`Image ${index + 1}`}
             fill
             className="object-contain"
@@ -176,7 +176,7 @@ export function MediaGallery({ backdrops, posters, title }: MediaGalleryProps) {
             aria-label={`${title} — image ${i + 1}`}
           >
             <Image
-              src={tmdbApi.getImageUrl(img.file_path, "w780")}
+              src={getImageUrl(img.file_path, "w780")}
               alt={`${title} — image ${i + 1}`}
               fill
               className="object-cover group-hover:scale-105 transition-transform duration-200"

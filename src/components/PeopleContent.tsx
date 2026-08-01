@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { tmdbApi } from "@/lib/tmdb";
+import { getImageUrl } from "@/lib/tmdb-image";
 import { createSlug } from "@/lib/utils";
 import type { Person } from "@/types/tmdb";
 
@@ -108,7 +108,7 @@ export function PeopleContent({ people }: PeopleContentProps) {
             >
               <div className="relative aspect-2/3 mb-3 overflow-hidden rounded-lg bg-gray-800">
                 <Image
-                  src={tmdbApi.getImageUrl(person.profile_path, "w500")}
+                  src={getImageUrl(person.profile_path, "w500")}
                   alt={person.name}
                   fill
                   className="object-cover group-hover:scale-105 transition-transform duration-200"

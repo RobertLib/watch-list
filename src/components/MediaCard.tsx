@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Star, Calendar, Play, X } from "lucide-react";
 import { MediaItem, WatchProvider } from "@/types/tmdb";
-import { tmdbApi } from "@/lib/tmdb";
+import { getImageUrl } from "@/lib/tmdb-image";
 import { WatchProviders } from "./WatchProviders";
 import { GenreTags } from "./GenreTags";
 import { VideoOverlay } from "./VideoOverlay";
@@ -54,7 +54,7 @@ export function MediaCard({
     !!(item.providers || providedProviders),
   );
 
-  const imageUrl = tmdbApi.getImageUrl(item.poster_path, "w500");
+  const imageUrl = getImageUrl(item.poster_path, "w500");
   const year = new Date(item.release_date).getFullYear();
   const watched = isWatched(item.id, item.media_type);
 

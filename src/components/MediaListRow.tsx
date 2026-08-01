@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Star, Calendar, Play } from "lucide-react";
 import { MediaItem } from "@/types/tmdb";
-import { tmdbApi } from "@/lib/tmdb";
+import { getImageUrl } from "@/lib/tmdb-image";
 import { GenreTags } from "./GenreTags";
 import { VideoOverlay } from "./VideoOverlay";
 import { WatchlistButton } from "./WatchlistButton";
@@ -30,7 +30,7 @@ export function MediaListRow({ item, className }: MediaListRowProps) {
   const { isOpen, video, isLoading, openVideo, closeVideo } = useVideoOverlay();
   const { isWatched } = useWatched();
 
-  const imageUrl = tmdbApi.getImageUrl(item.poster_path, "w500");
+  const imageUrl = getImageUrl(item.poster_path, "w500");
   const year = item.release_date
     ? new Date(item.release_date).getFullYear()
     : null;

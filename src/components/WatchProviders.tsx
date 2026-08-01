@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { tmdbApi } from "@/lib/tmdb";
+import { getImageUrl } from "@/lib/tmdb-image";
 import { WatchProvider } from "@/types/tmdb";
 import { cn } from "@/lib/utils";
 
@@ -41,7 +41,7 @@ export function WatchProviders({
                 title={provider.provider_name}
               >
                 <Image
-                  src={tmdbApi.getImageUrl(provider.logo_path, "w500")}
+                  src={getImageUrl(provider.logo_path, "w500")}
                   alt={provider.provider_name}
                   width={24}
                   height={24}

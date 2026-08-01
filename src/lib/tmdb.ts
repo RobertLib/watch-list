@@ -19,7 +19,8 @@ import {
 } from "@/types/tmdb";
 import { getRegion } from "@/lib/region-server";
 import { getRegionCode } from "./region";
-import { TMDB_CONFIG } from "./tmdb-cache";
+import { TMDB_CONFIG, tmdbFetchJson } from "./tmdb-cache";
+import { getImageUrl } from "./tmdb-image";
 
 async function buildUrl(
   endpoint: string,
@@ -37,34 +38,6 @@ async function buildUrl(
 
   const queryString = new URLSearchParams(finalParams).toString();
   return `${TMDB_CONFIG.BASE_URL}${endpoint}?${queryString}`;
-}
-
-// Retries on transient socket/network errors (UND_ERR_*) up to `retries` times.
-async function fetchWithRetry(
-  fn: () => Promise<Response>,
-  retries: number = 3,
-): Promise<Response> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error;
-      const causeCode = (error as { cause?: { code?: string } }).cause?.code;
-      const isNetworkError =
-        (error instanceof TypeError &&
-          (causeCode?.startsWith("UND_ERR") ||
-            causeCode === "ETIMEDOUT" ||
-            causeCode === "ECONNRESET" ||
-            causeCode === "ECONNREFUSED")) ||
-        (error instanceof Error && error.name === "TimeoutError");
-      if (!isNetworkError || attempt === retries) throw error;
-      await new Promise((resolve) =>
-        setTimeout(resolve, 300 * Math.pow(2, attempt)),
-      );
-    }
-  }
-  throw lastError;
 }
 
 // URL builder for detail pages – no region/cookies so the route stays static.
@@ -85,33 +58,32 @@ async function cachedFetch(
   cacheKey: string,
   revalidateTime: number = 21600,
 ): Promise<unknown> {
-  const response = await fetchWithRetry(() =>
-    fetch(url, {
-      headers: TMDB_CONFIG.headers,
-      next: {
-        revalidate: revalidateTime,
-        tags: ["tmdb", cacheKey],
-      },
-    }),
-  );
-  return response.json();
+  return tmdbFetchJson<unknown>(url, {
+    headers: TMDB_CONFIG.headers,
+    next: {
+      revalidate: revalidateTime,
+      tags: ["tmdb", cacheKey],
+    },
+  });
 }
 
 // Fetch for detail pages – no HTTP cache (detail queries rarely repeat).
 async function detailFetch(url: string): Promise<unknown> {
-  const response = await fetchWithRetry(() =>
-    fetch(url, {
-      headers: TMDB_CONFIG.headers,
-      cache: "no-store",
-      signal: AbortSignal.timeout(10000),
-    }),
-  );
-  if (!response.ok) {
-    throw new Error(
-      `TMDB API error: ${response.status} ${response.statusText}`,
-    );
-  }
-  return response.json();
+  return tmdbFetchJson<unknown>(url, {
+    headers: TMDB_CONFIG.headers,
+    cache: "no-store",
+  });
+}
+
+// Listing endpoints that are cached but not tagged individually.
+async function listFetch(
+  url: string,
+  revalidateTime: number,
+): Promise<unknown> {
+  return tmdbFetchJson<unknown>(url, {
+    headers: TMDB_CONFIG.headers,
+    next: { revalidate: revalidateTime },
+  });
 }
 
 export const tmdbApi = {
@@ -143,14 +115,7 @@ export const tmdbApi = {
   // Get popular movies
   getPopularMovies: async (page: number = 1): Promise<TMDBResponse<Movie>> => {
     const url = await buildUrl("/movie/popular", { page });
-    const response = await fetchWithRetry(() =>
-      fetch(url, {
-        headers: TMDB_CONFIG.headers,
-        next: { revalidate: 3600 }, // 1 hour
-        signal: AbortSignal.timeout(10000),
-      }),
-    );
-    return response.json();
+    return listFetch(url, 3600) as Promise<TMDBResponse<Movie>>; // 1 hour
   },
 
   // Get popular TV shows
@@ -158,27 +123,14 @@ export const tmdbApi = {
     page: number = 1,
   ): Promise<TMDBResponse<TVShow>> => {
     const url = await buildUrl("/tv/popular", { page });
-    const response = await fetchWithRetry(() =>
-      fetch(url, {
-        headers: TMDB_CONFIG.headers,
-        next: { revalidate: 3600 }, // 1 hour
-        signal: AbortSignal.timeout(10000),
-      }),
-    );
-    return response.json();
+    return listFetch(url, 3600) as Promise<TMDBResponse<TVShow>>; // 1 hour
   },
 
   // Get top rated movies
   getTopRatedMovies: async (page: number = 1): Promise<TMDBResponse<Movie>> => {
     const url = await buildUrl("/movie/top_rated", { page });
-    const response = await fetchWithRetry(() =>
-      fetch(url, {
-        headers: TMDB_CONFIG.headers,
-        next: { revalidate: 86400 }, // 24 hours – top-rated list changes slowly
-        signal: AbortSignal.timeout(10000),
-      }),
-    );
-    return response.json();
+    // 24 hours – top-rated list changes slowly
+    return listFetch(url, 86400) as Promise<TMDBResponse<Movie>>;
   },
 
   // Get top rated TV shows
@@ -186,14 +138,8 @@ export const tmdbApi = {
     page: number = 1,
   ): Promise<TMDBResponse<TVShow>> => {
     const url = await buildUrl("/tv/top_rated", { page });
-    const response = await fetchWithRetry(() =>
-      fetch(url, {
-        headers: TMDB_CONFIG.headers,
-        next: { revalidate: 86400 }, // 24 hours – top-rated list changes slowly
-        signal: AbortSignal.timeout(10000),
-      }),
-    );
-    return response.json();
+    // 24 hours – top-rated list changes slowly
+    return listFetch(url, 86400) as Promise<TMDBResponse<TVShow>>;
   },
 
   // Get now playing movies
@@ -201,14 +147,8 @@ export const tmdbApi = {
     page: number = 1,
   ): Promise<TMDBResponse<Movie>> => {
     const url = await buildUrl("/movie/now_playing", { page });
-    const response = await fetchWithRetry(() =>
-      fetch(url, {
-        headers: TMDB_CONFIG.headers,
-        next: { revalidate: 3600 }, // 1 hour – now-playing changes more often
-        signal: AbortSignal.timeout(10000),
-      }),
-    );
-    return response.json();
+    // 1 hour – now-playing changes more often
+    return listFetch(url, 3600) as Promise<TMDBResponse<Movie>>;
   },
 
   // Get airing today TV shows
@@ -216,27 +156,14 @@ export const tmdbApi = {
     page: number = 1,
   ): Promise<TMDBResponse<TVShow>> => {
     const url = await buildUrl("/tv/airing_today", { page });
-    const response = await fetchWithRetry(() =>
-      fetch(url, {
-        headers: TMDB_CONFIG.headers,
-        next: { revalidate: 3600 }, // 1 hour – airing today changes frequently
-        signal: AbortSignal.timeout(10000),
-      }),
-    );
-    return response.json();
+    // 1 hour – airing today changes frequently
+    return listFetch(url, 3600) as Promise<TMDBResponse<TVShow>>;
   },
 
   // Get upcoming movies
   getUpcomingMovies: async (page: number = 1): Promise<TMDBResponse<Movie>> => {
     const url = await buildUrl("/movie/upcoming", { page });
-    const response = await fetchWithRetry(() =>
-      fetch(url, {
-        headers: TMDB_CONFIG.headers,
-        next: { revalidate: 3600 },
-        signal: AbortSignal.timeout(10000),
-      }),
-    );
-    return response.json();
+    return listFetch(url, 3600) as Promise<TMDBResponse<Movie>>;
   },
 
   // Get trending movies this week (paginated, returns raw Movie objects)
@@ -306,15 +233,9 @@ export const tmdbApi = {
     };
   },
 
-  // Get image URL
-  getImageUrl: (
-    path: string | null,
-    size: "w500" | "w780" | "w1280" | "original" = "w500",
-  ): string => {
-    if (!path)
-      return "data:image/svg+xml,%3Csvg width='300' height='450' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='100%25' height='100%25' fill='%231f2937'/%3E%3Ctext x='50%25' y='50%25' font-family='Arial,sans-serif' font-size='24' fill='%236b7280' text-anchor='middle' dominant-baseline='middle'%3ENo Image%3C/text%3E%3C/svg%3E";
-    return `https://image.tmdb.org/t/p/${size}${path}`;
-  },
+  // Get image URL – lives in tmdb-image.ts so client components can use it
+  // without pulling this server-only module into the browser bundle.
+  getImageUrl,
 
   // Get movie details with optional append_to_response
   getMovieDetails: async (

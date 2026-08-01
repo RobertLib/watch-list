@@ -113,24 +113,31 @@ const getMovieBasicData = cache(async (id: number) => {
   }
 });
 
+const NOT_FOUND_METADATA: Metadata = {
+  title: "Movie not found",
+  robots: { index: false, follow: false },
+};
+
 export async function generateMetadata({
   params,
 }: MoviePageProps): Promise<Metadata> {
   const { slug } = await params;
   const id = extractIdFromSlug(slug);
 
+  // The page body calls notFound() for these too, but by then the response has
+  // streamed and its 200 is locked in – Next.js cannot turn a committed response
+  // into a 404, so the miss renders as a soft 404. Left alone it inherits the
+  // root layout's `index, follow` and becomes indexable, so the noindex is set
+  // here explicitly. `getMovieBasicData` is `cache()`d, so this costs no extra
+  // request.
   if (!id) {
-    return {
-      title: "Movie not found",
-    };
+    return NOT_FOUND_METADATA;
   }
 
   const data = await getMovieBasicData(id);
 
   if (!data) {
-    return {
-      title: "Movie not found",
-    };
+    return NOT_FOUND_METADATA;
   }
 
   const { details } = data;
@@ -218,8 +225,8 @@ export default async function MoviePage({ params }: MoviePageProps) {
   const { details, credits, videos, similar, translations } = data;
 
   // Resolved server-side from the already-appended watch/providers payload, so
-  // the "Where to Watch" section lands in the HTML instead of behind an /api/
-  // fetch that robots.txt hides from crawlers.
+  // the "Where to Watch" section lands in the HTML rather than behind an /api/
+  // fetch that crawlers reading the markup never see.
   const watchProviders = resolveRegionProviders(
     details["watch/providers"],
     getRegionCode(await getRegion()),
