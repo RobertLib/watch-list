@@ -80,6 +80,30 @@ afterEach(() => {
 });
 
 describe("MediaReviews expansion", () => {
+  /**
+   * The toggle used to unmount between "Show less" and the next measurement –
+   * collapsed, but not yet measured as clamped – so the keyboard focus that had
+   * just pressed it fell to the page.
+   */
+  it("keeps keyboard focus on the toggle through Read more and Show less", () => {
+    render(<MediaReviews reviews={reviews()} />);
+    setTextSize(100, 200);
+    flushFrames();
+
+    const toggle = screen.getByRole("button", { name: "Read more" });
+    toggle.focus();
+    fireEvent.click(toggle);
+    flushFrames();
+    expect(screen.getByRole("button", { name: "Show less" })).toBe(toggle);
+
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", { name: "Read more" })).toBe(toggle);
+    expect(document.activeElement).toBe(toggle);
+
+    flushFrames();
+    expect(document.activeElement).toBe(toggle);
+  });
+
   it("offers Read more when a formerly fitting review becomes clipped after resizing", () => {
     render(<MediaReviews reviews={reviews()} />);
     setTextSize(100, 100);

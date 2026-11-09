@@ -12,7 +12,7 @@
 import { getCachedMovieDetails, getCachedTVShowDetails } from "./tmdb-cache";
 import { mediaItemKey } from "./utils";
 import type { TitleFacts } from "./stats";
-import type { MediaType } from "@/types/tmdb";
+import type { MediaType, TVShowDetails } from "@/types/tmdb";
 
 /**
  * Runtime, genre and year for everything the visitor has watched.
@@ -86,9 +86,21 @@ function knownRuntime(runtime: unknown): number | null {
     : null;
 }
 
-/** TMDB gives a list when a show's format changed; the first is the usual one. */
-function episodeRuntime(runtimes: number[] | undefined): number | null {
-  return knownRuntime(runtimes?.[0]);
+/**
+ * How long one episode of a series runs.
+ *
+ * `episode_run_time` first: TMDB gives a list when a show's format changed, and
+ * the first is the usual one. It is often empty for current series, though, and
+ * reading only that counted every ticked episode of them as zero minutes. The
+ * latest aired episode's own runtime is the next best measure, and the next
+ * scheduled one's after that.
+ */
+function episodeRuntime(details: TVShowDetails): number | null {
+  return (
+    knownRuntime(details.episode_run_time?.[0]) ??
+    knownRuntime(details.last_episode_to_air?.runtime) ??
+    knownRuntime(details.next_episode_to_air?.runtime)
+  );
 }
 
 export async function getTitleFacts(
@@ -163,7 +175,7 @@ async function getTitleFactsBatch(
     facts[mediaItemKey(id, "tv")] = {
       id,
       mediaType: "tv",
-      runtime: episodeRuntime(details.episode_run_time),
+      runtime: episodeRuntime(details),
       genres: (details.genres ?? []).map((genre) => genre.name),
       year: details.first_air_date?.slice(0, 4) || null,
     };

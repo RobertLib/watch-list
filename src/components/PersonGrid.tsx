@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { User } from "lucide-react";
 import { createSlug } from "@/lib/utils";
+import { isPlainPrimaryClick } from "@/lib/plain-click";
 import { getImageUrl } from "@/lib/tmdb-image";
 import type { Person } from "@/types/tmdb";
 import { personHref } from "@/lib/routes";
@@ -29,7 +30,15 @@ export function PersonGrid({
           key={person.id}
           href={personHref(createSlug(person.name, person.id))}
           prefetch={false}
-          onClick={onSelect}
+          // Only the click that leaves this page: a person opened in a new tab
+          // must not close the search overlay the grid sits in.
+          onClick={
+            onSelect
+              ? (event) => {
+                  if (isPlainPrimaryClick(event)) onSelect();
+                }
+              : undefined
+          }
           className="group block text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-lg"
         >
           <div className="relative aspect-2/3 mb-2 overflow-hidden rounded-lg bg-gray-800">

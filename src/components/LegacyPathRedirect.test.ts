@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { encodePrerenderedIds } from "@/lib/prerendered-titles";
+import { encodePrerenderedTitles } from "@/lib/prerendered-titles";
 import {
   ambiguousLeadingId,
   legacyPathTarget,
@@ -73,7 +73,11 @@ describe("legacyPathTarget", () => {
     ])("sends %s to the query page, never back to a path", (path, target) => {
       vi.stubEnv(
         "PRERENDERED_TITLE_IDS",
-        encodePrerenderedIds({ movie: [550], tv: [], person: [31] }),
+        encodePrerenderedTitles({
+          movie: [{ id: 550, slug: "fight-club-550" }],
+          tv: [],
+          person: [{ id: 31, slug: "tom-hanks-31" }],
+        }),
       );
       expect(legacyPathTarget(path)).toBe(target);
     });

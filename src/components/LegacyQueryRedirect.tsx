@@ -7,6 +7,7 @@ import { NotFoundNotice } from "@/components/NotFoundNotice";
 import { findGenreById, genreSlug } from "@/lib/genre-catalog";
 import { findStreamingPlatform } from "@/lib/streaming-landing";
 import { findMood } from "@/lib/moods";
+import { sanitizeWatchProvidersFilter } from "@/lib/watch-provider-settings";
 import { genreHref, moodHref } from "@/lib/routes";
 import { extractIdFromSlug } from "@/lib/utils";
 import type { MediaType } from "@/types/tmdb";
@@ -36,11 +37,22 @@ export function legacyGenreQueryTarget(
   );
   if (!genre) return null;
 
-  const platform = findStreamingPlatform(params.get("provider") ?? "");
-  // `genreHref` drops `genre` and `provider` from the rest itself.
+  // `provider` meant two things in the old URLs: a platform slug
+  // (`?provider=netflix`), which is a landing path now, and the filter bar's
+  // own value (`?provider=8`, `?provider=mine`), which is still a filter and
+  // has to survive the move. Anything that is neither is dropped.
+  const rest = new URLSearchParams(params);
+  const platform = findStreamingPlatform(rest.get("provider") ?? "");
+  const providerFilter = platform
+    ? ""
+    : sanitizeWatchProvidersFilter(rest.get("provider"));
+  if (providerFilter) rest.set("provider", providerFilter);
+  else rest.delete("provider");
+
+  // `genreHref` drops `genre` from the rest itself.
   return genreHref(mediaType, genreSlug(genre), {
     provider: platform?.slug,
-    filterQuery: params.toString(),
+    filterQuery: rest.toString(),
   });
 }
 

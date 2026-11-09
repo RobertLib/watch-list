@@ -84,16 +84,24 @@ function ReviewCard({ review }: { review: Review }) {
 
   // The same review can fit on desktop and be clipped after a phone rotates.
   // Measure its current layout again when its width or content changes.
+  //
+  // Only while collapsed: expanded text is never clipped, so a measurement then
+  // says nothing about the clamp. It used to record "not clamped", and the
+  // render that collapsed the review then had neither `expanded` nor
+  // `isClamped` – the toggle unmounted under the keyboard focus that had just
+  // pressed "Show less" and came back a frame later, with focus lost to the
+  // page. Keeping the last collapsed reading keeps the same button mounted;
+  // the measurement after collapsing corrects it if the width changed meanwhile.
   useEffect(() => {
     const el = textRef.current;
-    if (!el) return;
+    if (!el || expanded) return;
 
     let frame: number | null = null;
     const scheduleMeasurement = () => {
       if (frame !== null) return;
       frame = requestAnimationFrame(() => {
         frame = null;
-        setIsClamped(mightBeLong && !expanded && el.scrollHeight > el.clientHeight);
+        setIsClamped(mightBeLong && el.scrollHeight > el.clientHeight);
       });
     };
 

@@ -17,6 +17,10 @@ vi.mock("@/lib/api", () => ({
   getRatingDuel: (...args: unknown[]) => getRatingDuel(...args),
   resolveRatingDuel: (...args: unknown[]) => resolveRatingDuel(...args),
 }));
+const isPoolExhausted = vi.fn();
+vi.mock("@/lib/rating-duel-data", () => ({
+  isPoolExhausted: (...args: unknown[]) => isPoolExhausted(...args),
+}));
 vi.mock("./Toast", () => ({ toast: { showToast: vi.fn() } }));
 vi.mock("next/link", () => ({
   default: (props: React.ComponentProps<"a"> & { prefetch?: boolean }) => {
@@ -633,5 +637,43 @@ describe("playing with a keyboard and a screen reader", () => {
     await act(async () => {});
 
     expect(document.activeElement).toBe(document.body);
+  });
+});
+
+/**
+ * Once every film in the pool has been shown there is no next round to load,
+ * and the run used to stop on "Could not load the next film just now" with a
+ * "Try again" that could never succeed.
+ */
+describe("running out of films", () => {
+  it("ends the run with its final score once the pool is used up", async () => {
+    render(<HigherLowerGame />);
+    await act(async () => {});
+    await click("Higher");
+    getRatingDuel.mockResolvedValueOnce(null);
+    isPoolExhausted.mockReturnValue(true);
+
+    await click("Next round");
+
+    expect(isPoolExhausted).toHaveBeenLastCalledWith([1, 2]);
+    expect(screen.getByText("That was every film in the game.")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toBe(
+      "You have seen every film in the game. Final score 1 – a new best.",
+    );
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Play again" }));
+  });
+
+  it("still offers a retry when the next film fails to load for any other reason", async () => {
+    render(<HigherLowerGame />);
+    await act(async () => {});
+    await click("Higher");
+    getRatingDuel.mockResolvedValueOnce(null);
+    isPoolExhausted.mockReturnValue(false);
+
+    await click("Next round");
+
+    expect(screen.getByText(/Could not load the next film just now/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
 });

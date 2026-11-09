@@ -112,12 +112,32 @@ const NO_AVAILABILITY: WatchlistAvailability = {
 // store themselves. `hashchange` still covers links, typed URLs and Back.
 const fragmentListeners = new Set<() => void>();
 
+/**
+ * The Navigation API's `navigation`, where the browser has one.
+ *
+ * Declared on `window` by the DOM types, but absent at runtime in a browser
+ * that predates it – hence the optional read.
+ */
+function navigationApi(): EventTarget | undefined {
+  return (window as { navigation?: EventTarget }).navigation;
+}
+
 function subscribeToFragment(onChange: () => void) {
   fragmentListeners.add(onChange);
   window.addEventListener("hashchange", onChange);
+  // Next's own navigations write the URL with `history.pushState`, which fires
+  // neither `hashchange` nor anything else. On `/watchlist#watched`, the
+  // header's "Watchlist" link is one: it pushes `/watchlist` – the To Watch tab
+  // by this page's own reading – and the Watched tab stayed selected under a
+  // URL that said otherwise. `currententrychange` fires for every same-document
+  // URL change, `pushState` included. A browser without the API keeps the old
+  // behaviour, and the tab follows the URL again on the next switch or reload.
+  const navigation = navigationApi();
+  navigation?.addEventListener("currententrychange", onChange);
   return () => {
     fragmentListeners.delete(onChange);
     window.removeEventListener("hashchange", onChange);
+    navigation?.removeEventListener("currententrychange", onChange);
   };
 }
 

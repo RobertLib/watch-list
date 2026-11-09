@@ -1,5 +1,6 @@
 import { createSlug } from "@/lib/utils";
 import { SITE_URL, absoluteMediaUrl, absoluteUrl } from "@/lib/routes";
+import { isYouTubeKey } from "@/lib/trailer";
 
 /**
  * JSON-LD, and a word about which of it any search engine reads.
@@ -27,6 +28,26 @@ import { SITE_URL, absoluteMediaUrl, absoluteUrl } from "@/lib/routes";
  */
 function serializeJsonLd(data: unknown): string {
   return JSON.stringify(data).replace(/</g, "\\u003c");
+}
+
+type TrailerData = { key: string; name: string; published_at?: string };
+
+/**
+ * A title's trailer as a schema.org `VideoObject`, or undefined.
+ *
+ * The callers pass what `findYouTubeTrailer` chose, which only picks keys that
+ * are YouTube ids – checked again here because this is where the key becomes
+ * a URL path, and a key with a `/` or `?` of its own would name another URL.
+ */
+function trailerVideoObject(trailer: TrailerData | undefined) {
+  if (!trailer || !isYouTubeKey(trailer.key)) return undefined;
+  return {
+    "@type": "VideoObject",
+    name: trailer.name,
+    embedUrl: `https://www.youtube.com/embed/${trailer.key}`,
+    thumbnailUrl: `https://img.youtube.com/vi/${trailer.key}/hqdefault.jpg`,
+    uploadDate: trailer.published_at || undefined,
+  };
 }
 
 interface Genre {
@@ -151,9 +172,7 @@ export function StructuredData({ type, data }: StructuredDataProps) {
      * about when this page changed.
      */
     case "Movie": {
-      const movieTrailer = data.trailer as
-        | { key: string; name: string; published_at?: string }
-        | undefined;
+      const movieTrailer = data.trailer as TrailerData | undefined;
       structuredData = {
         "@context": "https://schema.org",
         "@type": "Movie",
@@ -170,15 +189,7 @@ export function StructuredData({ type, data }: StructuredDataProps) {
         inLanguage: data.inLanguage || undefined,
         contentRating: data.contentRating || undefined,
         sameAs: data.sameAs || undefined,
-        trailer: movieTrailer
-          ? {
-              "@type": "VideoObject",
-              name: movieTrailer.name,
-              embedUrl: `https://www.youtube.com/embed/${movieTrailer.key}`,
-              thumbnailUrl: `https://img.youtube.com/vi/${movieTrailer.key}/hqdefault.jpg`,
-              uploadDate: movieTrailer.published_at || undefined,
-            }
-          : undefined,
+        trailer: trailerVideoObject(movieTrailer),
         director:
           data.credits?.crew
             ?.filter((person) => person.job === "Director")
@@ -206,9 +217,7 @@ export function StructuredData({ type, data }: StructuredDataProps) {
     }
 
     case "TVSeries": {
-      const tvTrailer = data.trailer as
-        | { key: string; name: string; published_at?: string }
-        | undefined;
+      const tvTrailer = data.trailer as TrailerData | undefined;
       const createdBy = data.created_by as
         | { id: number; name: string }[]
         | undefined;
@@ -236,15 +245,7 @@ export function StructuredData({ type, data }: StructuredDataProps) {
         inLanguage: data.inLanguage || undefined,
         contentRating: data.contentRating || undefined,
         sameAs: data.sameAs || undefined,
-        trailer: tvTrailer
-          ? {
-              "@type": "VideoObject",
-              name: tvTrailer.name,
-              embedUrl: `https://www.youtube.com/embed/${tvTrailer.key}`,
-              thumbnailUrl: `https://img.youtube.com/vi/${tvTrailer.key}/hqdefault.jpg`,
-              uploadDate: tvTrailer.published_at || undefined,
-            }
-          : undefined,
+        trailer: trailerVideoObject(tvTrailer),
         creator:
           createdBy && createdBy.length > 0
             ? createdBy.map((c) => ({ "@type": "Person", name: c.name }))

@@ -17,6 +17,7 @@ import { useVideoOverlay } from "@/hooks/useVideoOverlay";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useSettings } from "@/hooks/useSettings";
 import { cn, createSlug } from "@/lib/utils";
+import { isPlainPrimaryClick } from "@/lib/plain-click";
 import { releaseYear } from "@/lib/dates";
 import { mediaHref } from "@/lib/routes";
 
@@ -131,6 +132,12 @@ export function MediaCard({
 
   const handleCardClick = useCallback(
     (e: React.MouseEvent) => {
+      // Cmd/Ctrl/Shift-click opens the title in a new tab or window and leaves
+      // this page as it is: no overlay to reveal first, and no `onCardClick` –
+      // which in the search overlay throws away the query and its results, the
+      // very thing someone opening results in background tabs comes back to.
+      if (!isPlainPrimaryClick(e)) return;
+
       // On mobile devices, first tap shows overlay, second tap navigates
       if (isMobile && !isMobileOverlayVisible) {
         e.preventDefault();

@@ -19,9 +19,33 @@ import { puzzleNumberForDay, recentDays } from "@/lib/daily-puzzle";
 import { cn } from "@/lib/utils";
 import { dailyHref } from "@/lib/routes";
 
-// Four months back. The archive grows by a day at a time and nobody scrolls
-// further than this; the cap keeps the page from becoming a wall of squares.
-const ARCHIVE_DAYS = 120;
+/** "November 2026" for a `YYYY-MM-DD` day, read as the UTC calendar day it names. */
+const MONTH_FORMAT = new Intl.DateTimeFormat("en", {
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+function monthLabel(month: string): string {
+  const [year, monthNumber] = month.split("-").map(Number);
+  return MONTH_FORMAT.format(Date.UTC(year, monthNumber - 1, 1));
+}
+
+/**
+ * Every day from `today` back to the first puzzle, newest first, in calendar
+ * months – so the archive can hold every puzzle that has run without becoming
+ * one undivided wall of cards.
+ */
+function archiveMonths(today: string): { month: string; days: string[] }[] {
+  const months: { month: string; days: string[] }[] = [];
+  for (const day of recentDays(today, puzzleNumberForDay(today))) {
+    const month = day.slice(0, 7);
+    const current = months[months.length - 1];
+    if (current?.month === month) current.days.push(day);
+    else months.push({ month, days: [day] });
+  }
+  return months;
+}
 
 /**
  * Every puzzle that has run, and how it went.
@@ -39,7 +63,8 @@ export function DailyArchiveGrid() {
   );
 
   const today = useUtcDay();
-  const days = useMemo(() => recentDays(today, ARCHIVE_DAYS), [today]);
+  const months = useMemo(() => archiveMonths(today), [today]);
+  const days = useMemo(() => months.flatMap((group) => group.days), [months]);
 
   const unplayed = days.filter(
     (day) => outcomeForDay(state, day, today) === "missed",
@@ -63,13 +88,23 @@ export function DailyArchiveGrid() {
         streak.
       </p>
 
-      <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-        {days.map((day) => (
-          <li key={day}>
-            <ArchiveCard day={day} today={today} state={state} />
-          </li>
-        ))}
-      </ul>
+      {months.map(({ month, days: monthDays }) => (
+        <section key={month} aria-labelledby={`archive-${month}`}>
+          <h2
+            id={`archive-${month}`}
+            className="text-lg font-semibold text-white mb-3"
+          >
+            {monthLabel(month)}
+          </h2>
+          <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {monthDays.map((day) => (
+              <li key={day}>
+                <ArchiveCard day={day} today={today} state={state} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
     </div>
   );
 }

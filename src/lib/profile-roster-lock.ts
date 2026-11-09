@@ -16,8 +16,11 @@ type SynchronousOperation<T> = (() => T) &
  *
  * Web Locks remain an outer gate where available. Those contexts also acquire
  * the IndexedDB gate, so they coordinate with contexts without Web Locks. If
- * IndexedDB is absent altogether, Web Locks alone still provide coordination.
- * Refused coordination always fails before invoking the operation.
+ * IndexedDB is absent or unusable – `null` where a browser disables it, or a
+ * database that refuses to open – Web Locks alone still provide coordination:
+ * every context of a secure origin has them, so nothing is left uncoordinated.
+ * It used to refuse every edit instead, although the outer gate was already held.
+ * Without Web Locks, refused coordination fails before invoking the operation.
  * Callbacks must stay synchronous; awaiting would outlive the IndexedDB lock.
  */
 export async function withProfileRosterLock<T>(
@@ -26,13 +29,14 @@ export async function withProfileRosterLock<T>(
 ): Promise<T> {
   try {
     if (typeof window === "undefined" || typeof navigator === "undefined") return failure;
-    const coordinated = () => typeof indexedDB === "undefined"
-      ? operation()
-      : withIndexedDbLock(operation);
     if (navigator.locks) {
-      return await navigator.locks.request(PROFILE_ROSTER_LOCK, { mode: "exclusive" }, coordinated);
+      return await navigator.locks.request(
+        PROFILE_ROSTER_LOCK,
+        { mode: "exclusive" },
+        () => withIndexedDbGateUnderWebLock(operation),
+      );
     }
-    if (typeof indexedDB === "undefined") return failure;
+    if (!hasIndexedDb()) return failure;
     return await withIndexedDbLock(operation);
   } catch (error) {
     console.error("Error updating profiles:", error);
@@ -40,7 +44,31 @@ export async function withProfileRosterLock<T>(
   }
 }
 
-function withIndexedDbLock<T>(operation: () => T): Promise<T> {
+function hasIndexedDb(): boolean {
+  return typeof indexedDB !== "undefined" && indexedDB !== null;
+}
+
+/**
+ * The inner IndexedDB gate, taken while the Web Lock is held. Falls back to the
+ * Web Lock alone only when IndexedDB refused before the operation ran: an
+ * operation that started and failed is never run a second time.
+ */
+async function withIndexedDbGateUnderWebLock<T>(operation: () => T): Promise<T> {
+  if (!hasIndexedDb()) return operation();
+  const attempt = { started: false };
+  try {
+    return await withIndexedDbLock(operation, attempt);
+  } catch (error) {
+    if (attempt.started) throw error;
+    console.error("IndexedDB coordination is unavailable; using Web Locks alone:", error);
+    return operation();
+  }
+}
+
+function withIndexedDbLock<T>(
+  operation: () => T,
+  attempt: { started: boolean } = { started: false },
+): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     let settled = false;
     const refuse = (error: unknown) => {
@@ -80,6 +108,7 @@ function withIndexedDbLock<T>(operation: () => T): Promise<T> {
         request.onerror = () => refuse(request.error);
         request.onsuccess = () => {
           if (settled) return;
+          attempt.started = true;
           try {
             const result = operation();
             // localStorage has already committed. An unrelated later IDB abort

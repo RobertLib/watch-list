@@ -40,15 +40,22 @@ function withParams(path: string, params: Record<string, string | undefined>) {
  * the query-string page otherwise.
  *
  * The build prerenders the titles people search for by name
- * (`scripts/prebuild.mjs`), each at `createSlug(name, id)` – so the path is used
- * only for a slug of that shape, ending in its own id. A slug in any other form
- * (a bare id, the old site's id-first order) would name a file that does not
- * exist; it goes to the query page, which reads any form and canonicalises to
- * the path itself.
+ * (`scripts/prebuild.mjs`), each at `createSlug(name, id)` – `fight-club-550`,
+ * or a bare `12345` for a name with no Latin letters in it. So the path is used
+ * only for a slug of one of those shapes that is also the very slug the build
+ * wrote the page under (`hasPrerenderedPage` compares a hash of it). Any other
+ * slug – a title TMDB renamed since it was saved, the old site's id-first
+ * order, a bare id typed into the address bar – would name a file that does
+ * not exist; it goes to the query page, which reads any form and canonicalises
+ * to the path itself.
  */
 function titleHref(kind: PrerenderedKind, slug: string): string {
   const id = extractIdFromSlug(slug);
-  if (id !== null && slug.endsWith(`-${id}`) && hasPrerenderedPage(kind, id)) {
+  if (
+    id !== null &&
+    (slug === String(id) || slug.endsWith(`-${id}`)) &&
+    hasPrerenderedPage(kind, id, slug)
+  ) {
     return `/${kind}/${slug}`;
   }
   return titleQueryHref(kind, slug);
@@ -105,8 +112,15 @@ export function moodHref(slug: string, page?: number): string {
  *
  * `filterQuery` is what `buildDiscoverFilterQuery` returns – a leading "?" and
  * the filter params – so it is merged in rather than appended, or the second
- * question mark would swallow everything after it. A `genre` or `provider` in
- * it is the old query-addressed form and is dropped: the path already says.
+ * question mark would swallow everything after it. A `genre` in it is the old
+ * query-addressed form and is dropped: the path already says.
+ *
+ * A `provider` in it is the filter bar's own key – provider ids, "mine" or
+ * "any" – and is kept, or paging through a genre filtered to one service would
+ * lose the filter at page two. Only a landing drops it: its platform is the
+ * path segment, and it has no filter bar to set one. (The old query-addressed
+ * landing slug, `?provider=netflix`, is turned into a path by
+ * `legacyGenreQueryTarget` before it gets here.)
  */
 export function genreHref(
   mediaType: MediaType,
@@ -115,7 +129,7 @@ export function genreHref(
 ): string {
   const params = new URLSearchParams(options.filterQuery ?? "");
   params.delete("genre");
-  params.delete("provider");
+  if (options.provider) params.delete("provider");
 
   const path = options.provider
     ? `/genres/${mediaType}/${genreSlug}/${options.provider}`

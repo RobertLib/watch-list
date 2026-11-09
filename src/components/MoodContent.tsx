@@ -1,12 +1,13 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { MediaSection } from "@/components/MediaSection";
 import { LoadingSection } from "@/components/LoadingSpinner";
 import { LoadFailureNotice } from "@/components/LoadFailureNotice";
+import { SnapshotRefreshNotice } from "@/components/SnapshotRefreshNotice";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { useSettingsKey } from "@/hooks/useSettings";
 import { MOODS, type Mood } from "@/lib/moods";
@@ -63,7 +64,7 @@ function MoodPicks({ mood, snapshot }: MoodContentProps) {
   const settingsKey = useSettingsKey();
   const page = parsePage(searchParams.get("page"));
 
-  const { data, isLoading, error, reload } = useAsyncData(
+  const { data, isLoading, error, reload, refreshError, isRetrying } = useAsyncData(
     () => loadMoodPicks(mood, page),
     [mood.slug, page, settingsKey],
     page === 1 ? snapshot : null,
@@ -86,7 +87,26 @@ function MoodPicks({ mood, snapshot }: MoodContentProps) {
 
   if (isLoading || !data || correctionHref) return <MoodSkeleton mood={mood} />;
 
-  return <MoodPicksView mood={mood} page={page} picks={data} onRetry={reload} />;
+  return (
+    <MoodPicksView
+      mood={mood}
+      page={page}
+      picks={data}
+      onRetry={reload}
+      notice={
+        refreshError != null ? (
+          // The build's picks stay up; the visitor's own (their region, their
+          // services) are what did not arrive.
+          <SnapshotRefreshNotice
+            className="mb-8"
+            message="Showing saved picks – the ones for your region and services could not be loaded."
+            onRetry={reload}
+            isRetrying={isRetrying}
+          />
+        ) : null
+      }
+    />
+  );
 }
 
 function MoodHeading({ mood, page }: { mood: Mood; page: number }) {
@@ -119,18 +139,22 @@ function MoodPicksView({
   page,
   picks,
   onRetry,
+  notice = null,
 }: {
   mood: Mood;
   page: number;
   picks: MoodPicksPage;
   /** Absent in the prerender, where a failed half never gets this far. */
   onRetry?: () => void;
+  /** Shown under the heading: the snapshot's refresh failing, for one. */
+  notice?: ReactNode;
 }) {
   const { movies, shows, moviesFailed, showsFailed, totalPages } = picks;
 
   return (
     <div className="container mx-auto px-6 lg:px-8 py-8">
       <MoodHeading mood={mood} page={page} />
+      {notice}
 
       {moviesFailed ? (
         <LoadFailureNotice title="Could not load films" onRetry={onRetry} compact />

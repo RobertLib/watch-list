@@ -10,6 +10,7 @@ import {
   profileStoreKey,
   publishProfileStorageChange,
   readProfileStore,
+  sanitizeProfileName,
   withProfileStorage,
   writeProfileStore,
 } from "./profile-storage";
@@ -528,3 +529,23 @@ it.each(["profile-data:p2", "profile-store:p2:watchlist"])(
     expect(storage.getItem(deletedProfileKey("p2"))).toBe("true");
   },
 );
+
+describe("sanitizeProfileName", () => {
+  it.each([
+    ["a cut through a surrogate pair", "a".repeat(23) + "😀"],
+    ["a cut that ends on a space", "a".repeat(23) + " bcd"],
+    ["a cut after padding", "   " + "b".repeat(22) + " 😀😀"],
+    ["control and format characters", "Tom\u200b\u200b\t\nSmith"],
+    ["only emoji, past the limit", "😀".repeat(20)],
+  ])("is idempotent for %s", (_label, input) => {
+    const once = sanitizeProfileName(input);
+    expect(sanitizeProfileName(once)).toBe(once);
+    expect(once.length).toBeLessThanOrEqual(24);
+    expect(once).not.toMatch(/[\uD800-\uDBFF]$/);
+    expect(once).toBe(once.trim());
+  });
+
+  it("drops the half character a cut would keep", () => {
+    expect(sanitizeProfileName("a".repeat(23) + "😀")).toBe("a".repeat(23));
+  });
+});

@@ -82,3 +82,41 @@ describe("archive cards", () => {
     expect(card("2026-10-07").textContent).toContain("Not solved");
   });
 });
+
+/**
+ * "Every puzzle that has run" is what the page promises. The grid used to stop
+ * four months back, so from puzzle #121 on the oldest days quietly fell off.
+ */
+describe("the whole archive", () => {
+  it("lists every puzzle back to the first, grouped by month, newest first", async () => {
+    vi.setSystemTime(new Date("2027-03-01T12:00:00.000Z"));
+    await renderWith({});
+
+    const total = puzzleNumberForDay("2027-03-01");
+    expect(total).toBeGreaterThan(120);
+    expect(screen.getByText(`${total} puzzles so far`, { exact: false })).toBeTruthy();
+    // The very first puzzle is still there, and still playable.
+    expect(card("2026-08-01").getAttribute("href")).toContain("2026-08-01");
+
+    const months = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    expect(months).toEqual([
+      "March 2027",
+      "February 2027",
+      "January 2027",
+      "December 2026",
+      "November 2026",
+      "October 2026",
+      "September 2026",
+      "August 2026",
+    ]);
+    // Every day of a month sits under that month's heading.
+    const august = screen.getByRole("heading", { name: "August 2026" }).closest("section")!;
+    expect(august.querySelectorAll("li")).toHaveLength(31);
+  });
+
+  it("still shows a lost catch-up as lost after its board was pruned", async () => {
+    await renderWith({ archiveLostDays: ["2026-08-03"] });
+
+    expect(card("2026-08-03").textContent).toContain("Caught up, not solved");
+  });
+});

@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addManyToWatchlist, addToWatchlist, clearWatchlist, getWatchlist, migrateWatchlist, removeFromWatchlist, WATCHLIST_STORAGE_KEY } from "./watchlist";
+import { addManyToWatchlist, addToWatchlist, clearWatchlist, getWatchlist, migrateWatchlist, removeFromWatchlist, WATCHLIST_COOKIE_RECOVERY_KEY, WATCHLIST_STORAGE_KEY } from "./watchlist";
 import { initializeProfileStorage, withProfileStorage } from "./profile-storage";
 import { createProfileLockManager } from "@/test/profile-locks";
 import { PROFILE_ROSTER_LOCK } from "./profile-roster-lock";
-import { BACKUP_FORMAT, parseBackup, readStoredStores } from "./portable-data";
+import { BACKUP_FORMAT, describeUnreadable, parseBackup, readBackupSnapshot, readStoredStores } from "./portable-data";
 import { restoreBackup } from "./restore-backup";
 import {
   DEFAULT_PROFILE_ID,
@@ -57,15 +57,58 @@ describe("legacy cookie migration", () => {
     expect(document.cookie).toBe(cookie);
   });
 
-  it.each(mutations)("rejects $name instead of hiding a malformed legacy cookie", async ({ run, refused }) => {
-    document.cookie = `watchlist=${encodeURIComponent(JSON.stringify(legacy).slice(0, -1))};path=/`;
-    const before = { ...window.localStorage };
-    const cookie = document.cookie;
+  it.each(mutations)("keeps a malformed legacy cookie's text and lets $name carry on", async ({ run, refused }) => {
+    const malformed = encodeURIComponent(JSON.stringify(legacy).slice(0, -1));
+    document.cookie = `watchlist=${malformed};path=/`;
 
     expect(getWatchlist()).toEqual([]);
-    expect(await run()).toEqual(refused);
+    const result = await run();
+    expect(result).not.toEqual(refused);
+    expect(window.localStorage.getItem(WATCHLIST_COOKIE_RECOVERY_KEY)).toBe(malformed);
+    expect(document.cookie).not.toContain("watchlist=");
+  });
+
+  it("still refuses edits over an unreadable stored list, whatever the cookie holds", async () => {
+    document.cookie = "watchlist=%7Bnot-json;path=/";
+    window.localStorage.setItem(WATCHLIST_STORAGE_KEY, "[not json");
+    const before = { ...window.localStorage };
+
+    expect(await addToWatchlist({ ...legacy[0], id: 949, title: "Heat" })).toBe("failed");
     expect({ ...window.localStorage }).toEqual(before);
-    expect(document.cookie).toBe(cookie);
+  });
+
+  it("settles a kept cookie that cannot be deleted, without taking the lock again", async () => {
+    document.cookie = "watchlist=%7Bnot-json;path=/";
+    expect(await migrateWatchlist()).toBe(true);
+    // A cookie this page cannot delete (one set for a parent domain, say).
+    document.cookie = "watchlist=%7Bnot-json;path=/";
+    const request = vi.spyOn(navigator.locks, "request");
+
+    expect(getWatchlist()).toEqual([]);
+    expect(getWatchlist({ strict: true })).toEqual([]);
+    expect(await migrateWatchlist()).toBe(true);
+    expect(request).not.toHaveBeenCalled();
+    expect(await addToWatchlist({ ...legacy[0], id: 949, title: "Heat" })).toBe("ok");
+  });
+
+  it("never overwrites an earlier kept cookie with a different one", async () => {
+    document.cookie = "watchlist=%7Bfirst;path=/";
+    expect(await migrateWatchlist()).toBe(true);
+    document.cookie = "watchlist=%7Bsecond;path=/";
+
+    expect(await migrateWatchlist()).toBe(true);
+    expect(window.localStorage.getItem(WATCHLIST_COOKIE_RECOVERY_KEY)).toBe("%7Bfirst");
+    expect(document.cookie).toContain("watchlist=%7Bsecond");
+    expect(await addToWatchlist({ ...legacy[0], id: 949, title: "Heat" })).toBe("failed");
+  });
+
+  it("removes the kept text when the list is cleared", async () => {
+    document.cookie = "watchlist=%7Bnot-json;path=/";
+    expect(await migrateWatchlist()).toBe(true);
+    expect(window.localStorage.getItem(WATCHLIST_COOKIE_RECOVERY_KEY)).not.toBeNull();
+
+    expect(await clearWatchlist()).toBe(true);
+    expect(window.localStorage.getItem(WATCHLIST_COOKIE_RECOVERY_KEY)).toBeNull();
   });
 
   it("does not acquire a lock when there is no legacy cookie", async () => {
@@ -98,14 +141,27 @@ describe("legacy cookie migration", () => {
     expect(document.cookie).toContain("watchlist=");
   });
 
-  it("rejects malformed cookie exports without deleting or rewriting their only copy", async () => {
+  it("rejects malformed cookie exports, then keeps the cookie's text when migrating it", async () => {
     document.cookie = "watchlist=%7Bnot-json;path=/";
     const before = { ...window.localStorage };
 
     expect(getWatchlist()).toEqual([]);
     expect(() => readStoredStores("2026-01-01T00:00:00.000Z")).toThrow();
-    expect(await migrateWatchlist()).toBe(false);
     expect({ ...window.localStorage }).toEqual(before);
+    expect(await migrateWatchlist()).toBe(true);
+    expect(window.localStorage.getItem(WATCHLIST_COOKIE_RECOVERY_KEY)).toBe("%7Bnot-json");
+    expect(window.localStorage.getItem(WATCHLIST_STORAGE_KEY)).toBeNull();
+    expect(document.cookie).not.toContain("watchlist=");
+  });
+
+  it("keeps a malformed cookie in place when storage refuses to keep its text", async () => {
+    document.cookie = "watchlist=%7Bnot-json;path=/";
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Quota exceeded", "QuotaExceededError");
+    });
+
+    expect(await migrateWatchlist()).toBe(false);
+    expect(window.localStorage.getItem(WATCHLIST_COOKIE_RECOVERY_KEY)).toBeNull();
     expect(document.cookie).toContain("watchlist=%7Bnot-json");
   });
 
@@ -287,6 +343,36 @@ describe("queued legacy cookie migration", () => {
   });
 });
 
+describe("an unreadable legacy cookie in a backup", () => {
+  it("keeps the cookie's text before and after it is moved into storage", async () => {
+    document.cookie = "watchlist=%7Bnot-json;path=/";
+
+    expect(readBackupSnapshot("2026-03-01T00:00:00.000Z").unreadable).toEqual([
+      { profile: { id: DEFAULT_PROFILE_ID, name: "Me" }, stores: ["watchlist"], raw: "{not-json" },
+    ]);
+
+    expect(await migrateWatchlist()).toBe(true);
+    const gaps = readBackupSnapshot("2026-03-01T00:00:00.000Z").unreadable!;
+    expect(gaps).toEqual([
+      { profile: { id: DEFAULT_PROFILE_ID, name: "Me" }, stores: ["legacyWatchlistCookie"], raw: "{not-json" },
+    ]);
+    expect(describeUnreadable(gaps[0])).toBe('older saved watchlist for "Me"');
+  });
+
+  it("is replaced, like the rest of the owner's data, by a restore", async () => {
+    document.cookie = "watchlist=%7Bnot-json;path=/";
+    expect(await migrateWatchlist()).toBe(true);
+
+    expect(await restoreBackup(parseBackup({
+      format: BACKUP_FORMAT,
+      activeProfile: { id: DEFAULT_PROFILE_ID, name: "Me" },
+      watchlist: legacy,
+    })!)).toEqual({ ok: true });
+    expect(window.localStorage.getItem(WATCHLIST_COOKIE_RECOVERY_KEY)).toBeNull();
+    expect(getWatchlist()).toEqual(legacy);
+  });
+});
+
 describe("profile switches with a legacy watchlist cookie", () => {
   it("blocks a switch at quota, then preserves the original profile's list after retry", async () => {
     const other = (await createProfile("Someone else"))!;
@@ -352,18 +438,26 @@ describe("profile switches with a legacy watchlist cookie", () => {
     expect(getWatchlist()).toEqual(legacy);
   });
 
-  it("keeps the active profile and malformed cookie unchanged", async () => {
+  it("switches past a malformed cookie, keeping its text for the original owner", async () => {
     const other = (await createProfile("Someone else"))!;
     document.cookie = "watchlist=%7Bnot-json;path=/";
     initializeProfileStorage();
-    const before = { ...window.localStorage };
 
-    expect(await switchProfileWithResult(other.id)).toEqual({
-      ok: false, key: WATCHLIST_STORAGE_KEY, rolledBack: true,
-    });
-    expect(getActiveProfileId()).toBe(DEFAULT_PROFILE_ID);
-    expect({ ...window.localStorage }).toEqual(before);
-    expect(document.cookie).toContain("watchlist=%7Bnot-json");
+    expect(await switchProfileWithResult(other.id)).toEqual({ ok: true });
+    expect(getActiveProfileId()).toBe(other.id);
+    expect(window.localStorage.getItem(WATCHLIST_COOKIE_RECOVERY_KEY)).toBe("%7Bnot-json");
+    expect(document.cookie).not.toContain("watchlist=");
+    expect(await switchProfileWithResult(DEFAULT_PROFILE_ID)).toEqual({ ok: true });
+    expect(getWatchlist()).toEqual([]);
+  });
+
+  it("switches away from an unreadable stored list without parsing it", async () => {
+    const other = (await createProfile("Someone else"))!;
+    window.localStorage.setItem(WATCHLIST_STORAGE_KEY, "[not json");
+
+    expect(await switchProfileWithResult(other.id)).toEqual({ ok: true });
+    expect(window.localStorage.getItem(WATCHLIST_STORAGE_KEY)).toBe("[not json");
+    expect(document.cookie).not.toContain("watchlist=");
   });
 
   it("blocks a switch while cookie deletion is refused, even after migration was saved", async () => {

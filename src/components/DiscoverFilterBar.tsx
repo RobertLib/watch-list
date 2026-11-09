@@ -221,6 +221,11 @@ export function DiscoverFilterBar({
           Filter and sort options for {isMovie ? "movies" : "TV shows"}
         </legend>
 
+        {/* Every select is named by the <label> above it, and by nothing else.
+            Each used to carry an `aria-label` as well, which replaced the
+            visible text: "Min. Rating" was announced as "Filter by minimum
+            rating" and "Sort By" as "Sort content by", so a voice command
+            naming the control on screen found nothing (WCAG 2.5.3). */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           {/* Sort By */}
           <div>
@@ -232,7 +237,6 @@ export function DiscoverFilterBar({
               value={filters.sortBy}
               onChange={(e) => applyFilters({ sortBy: e.target.value })}
               className={SELECT_CLASS}
-              aria-label="Sort content by"
             >
               {/* The default sort is represented by an empty value so that it
                   never shows up in the URL. */}
@@ -257,7 +261,6 @@ export function DiscoverFilterBar({
               value={filters.year}
               onChange={(e) => applyFilters({ year: e.target.value })}
               className={SELECT_CLASS}
-              aria-label={`Filter by ${isMovie ? "release" : "first air"} year`}
             >
               <option value="">All Years</option>
               {releaseYears().map((year) => (
@@ -278,7 +281,6 @@ export function DiscoverFilterBar({
               value={filters.minRating}
               onChange={(e) => applyFilters({ minRating: e.target.value })}
               className={SELECT_CLASS}
-              aria-label="Filter by minimum rating"
             >
               <option value="">Any Rating</option>
               {MIN_RATING_OPTIONS.map((rating) => (
@@ -299,7 +301,6 @@ export function DiscoverFilterBar({
               value={filters.language}
               onChange={(e) => applyFilters({ language: e.target.value })}
               className={SELECT_CLASS}
-              aria-label="Filter by original language"
             >
               <option value="">All Languages</option>
               {LANGUAGES.map((language) => (
@@ -320,7 +321,6 @@ export function DiscoverFilterBar({
               value={filters.genre}
               onChange={(e) => applyFilters({ genre: e.target.value })}
               className={SELECT_CLASS}
-              aria-label={`Filter by ${genreLabel.toLowerCase()}`}
             >
               <option value="">{genreAllLabel}</option>
               {genres.map((genre) => (
@@ -342,7 +342,6 @@ export function DiscoverFilterBar({
               value={filters.provider}
               onChange={(e) => applyFilters({ provider: e.target.value })}
               className={SELECT_CLASS}
-              aria-label="Filter by streaming platform"
             >
               <option value="">Use profile setting</option>
               <option value={ANY_PROVIDERS}>Any Platform</option>

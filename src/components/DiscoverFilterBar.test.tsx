@@ -80,7 +80,7 @@ describe("saved platform discovery filters", () => {
     setWatchProviderFilter("streaming-only");
     const { rerender } = render(<DiscoverFilterBar type="movie" genres={[]} />);
     await screen.findByRole("option", { name: "My Platforms (1)" });
-    const select = screen.getByRole("combobox", { name: "Filter by streaming platform" });
+    const select = screen.getByRole("combobox", { name: "Streaming Platform" });
     expect((select as HTMLSelectElement).value).toBe("");
     expect(screen.getByRole("option", { name: "Use profile setting" })).toBeDefined();
 
@@ -91,7 +91,7 @@ describe("saved platform discovery filters", () => {
     rerender(<DiscoverFilterBar type="movie" genres={[]} />);
     expect((select as HTMLSelectElement).value).toBe(ANY_PROVIDERS);
     expect(screen.queryByRole("option", { name: "Platform #any" })).toBeNull();
-    fireEvent.change(screen.getByRole("combobox", { name: "Filter by release year" }), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Release Year" }), {
       target: { value: "1999" },
     });
     expect(push).toHaveBeenLastCalledWith(`/movies?year=1999&provider=${ANY_PROVIDERS}`, { scroll: false });
@@ -119,7 +119,7 @@ describe("saved platform discovery filters", () => {
 
     await screen.findByRole("option", { name: "My Platforms (1)" });
     expect(screen.getAllByRole("option", { name: saved.provider_name })).toHaveLength(1);
-    const select = screen.getByRole("combobox", { name: "Filter by streaming platform" });
+    const select = screen.getByRole("combobox", { name: "Streaming Platform" });
 
     fireEvent.change(select, { target: { value: MY_PROVIDERS } });
     expect(push).toHaveBeenLastCalledWith(
@@ -162,5 +162,27 @@ describe("result count while the listing reloads", () => {
     render(<DiscoverFilterBar type="movie" genres={[]} />);
 
     expect(screen.queryByText("Updating results…")).toBeNull();
+  });
+});
+
+/**
+ * Each select used to carry an `aria-label` that replaced its visible label:
+ * "Min. Rating" was announced as "Filter by minimum rating", "Sort By" as "Sort
+ * content by". A voice command naming what is on screen found nothing.
+ */
+describe("filter names", () => {
+  it.each(["movie", "tv"] as const)("names every %s select by its visible label", async (mediaType) => {
+    vi.mocked(tmdbFetchJson).mockResolvedValue({ results: [] });
+    render(<DiscoverFilterBar type={mediaType} genres={[]} />);
+
+    const labels = Array.from(document.querySelectorAll("label[for]"));
+    expect(labels.length).toBeGreaterThan(0);
+    for (const label of labels) {
+      const select = document.getElementById(label.getAttribute("for")!)!;
+      expect(select.hasAttribute("aria-label")).toBe(false);
+      expect(screen.getByRole("combobox", { name: label.textContent!.trim() })).toBe(select);
+    }
+    expect(screen.getByRole("combobox", { name: "Min. Rating" })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Sort By" })).toBeTruthy();
   });
 });

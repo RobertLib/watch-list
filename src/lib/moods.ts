@@ -44,15 +44,18 @@ export const MOODS: Mood[] = [
     emoji: "🛋️",
     accent: "from-amber-500/20 to-orange-500/10 border-amber-500/30",
     movie: {
-      // Comedy, family, romance.
-      genre: "35",
+      // Comedy | family | romance – any one of them. TMDB reads a comma in
+      // `with_genres` as AND and a pipe as OR, and a film that is all three at
+      // once is a narrow slice of what "something easy" means.
+      genre: "35|10751|10749",
       sortBy: "vote_average.desc",
       voteCountGte: VOTE_FLOOR,
       minRating: 6.5,
       withRuntimeLte: 110,
     },
     tv: {
-      genre: "35",
+      // Comedy | family. TMDB has no romance genre for series.
+      genre: "35|10751",
       sortBy: "vote_average.desc",
       voteCountGte: TV_VOTE_FLOOR,
       minRating: 7,
@@ -100,13 +103,15 @@ export const MOODS: Mood[] = [
     emoji: "😰",
     accent: "from-red-500/20 to-rose-500/10 border-red-500/30",
     movie: {
-      // Thriller + mystery.
-      genre: "53,9648",
+      // Thriller | mystery. A pipe, not a comma: requiring both left out most
+      // of the thrillers the description promises.
+      genre: "53|9648",
       sortBy: "vote_average.desc",
       voteCountGte: VOTE_FLOOR,
       minRating: 7,
     },
     tv: {
+      // Mystery: TMDB has no thriller genre for series.
       genre: "9648",
       sortBy: "vote_average.desc",
       voteCountGte: TV_VOTE_FLOOR,
@@ -185,7 +190,12 @@ export const MOODS: Mood[] = [
     emoji: "💥",
     accent: "from-orange-500/20 to-red-500/10 border-orange-500/30",
     movie: {
-      // Action + adventure + science fiction.
+      // Action AND adventure – the one mood where the intersection is the
+      // point. Either genre alone is too wide for "spectacle": adventure on its
+      // own is led by family animation, action on its own by small crime
+      // films. Science fiction is not part of the query; a pipe would bring in
+      // the quiet end of that genre too, and TMDB defines no precedence for
+      // mixing commas and pipes.
       genre: "28,12",
       sortBy: "vote_average.desc",
       voteCountGte: VOTE_FLOOR * 3,

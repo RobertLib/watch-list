@@ -48,8 +48,9 @@ export function MoviesContent({
         loadFirstPage={MOVIE_SECTIONS.trending}
         placeholder={snapshot?.trending}
       >
-        {(trending) => (
+        {(trending, snapshotState) => (
           <PaginatedMovieSection
+            snapshot={snapshotState}
             title="Trending This Week"
             fetchFunction={getTrendingMoviesWeekly}
             initialMovies={trending.results}
@@ -63,8 +64,9 @@ export function MoviesContent({
         loadFirstPage={MOVIE_SECTIONS.nowPlaying}
         placeholder={snapshot?.nowPlaying}
       >
-        {(nowPlaying) => (
+        {(nowPlaying, snapshotState) => (
           <PaginatedMovieSection
+            snapshot={snapshotState}
             title="Now Playing"
             fetchFunction={getNowPlayingMovies}
             initialMovies={nowPlaying.results}
@@ -78,8 +80,9 @@ export function MoviesContent({
         loadFirstPage={MOVIE_SECTIONS.upcoming}
         placeholder={snapshot?.upcoming}
       >
-        {(upcoming) => (
+        {(upcoming, snapshotState) => (
           <PaginatedMovieSection
+            snapshot={snapshotState}
             title="Coming Soon"
             fetchFunction={getUpcomingMovies}
             initialMovies={upcoming.results}
@@ -93,8 +96,9 @@ export function MoviesContent({
         loadFirstPage={MOVIE_SECTIONS.topRated}
         placeholder={snapshot?.topRated}
       >
-        {(topRated) => (
+        {(topRated, snapshotState) => (
           <PaginatedMovieSection
+            snapshot={snapshotState}
             title="Top Rated Movies"
             fetchFunction={getTopRatedMovies}
             initialMovies={topRated.results}

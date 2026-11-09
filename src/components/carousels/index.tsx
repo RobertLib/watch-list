@@ -53,7 +53,8 @@ function DiscoverCarousel({
 
   if (isLoading) return <CarouselSkeleton titleWidth={titleWidth} />;
   // A row that failed is left out rather than shown as an error: it is one of
-  // eight, and the page is still worth reading without it.
+  // eight, and the page is still worth reading without it. A row the build
+  // wrote a snapshot of keeps showing that instead (`useAsyncData`).
   if (!data) return null;
 
   return (

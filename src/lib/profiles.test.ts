@@ -76,6 +76,14 @@ class FakeStorage {
   removeItem(key: string): void {
     this.data.delete(key);
   }
+
+  get length(): number {
+    return this.data.size;
+  }
+
+  key(index: number): string | null {
+    return [...this.data.keys()][index] ?? null;
+  }
 }
 
 let storage: FakeStorage;
@@ -692,6 +700,16 @@ describe("subscribeProfiles", () => {
 });
 
 describe("createProfile", () => {
+  it("stores a name cut through an emoji so the roster stays editable", async () => {
+    const cut = (await createProfile("a".repeat(23) + "😀"))!;
+    expect(cut.name).toBe("a".repeat(23));
+
+    expect(() => getProfiles({ strict: true })).not.toThrow();
+    expect(await createProfile("Second")).not.toBeNull();
+    expect(await renameProfile(cut.id, "b".repeat(23) + "😀")).toBe(true);
+    expect(await deleteProfile(cut.id)).toBe(true);
+  });
+
   it("adds a profile without switching to it", async () => {
     seedTwoProfiles();
 
@@ -1089,24 +1107,24 @@ describe("deleteProfile", () => {
     expect(readProfileSlot("p2")).toEqual({});
   });
 
-  it("keeps the profile and its only saved data when the deletion marker is refused", async () => {
+  it("commits through the shortened roster when only the deletion marker is refused", async () => {
     seedTwoProfiles();
-    const before = storage.snapshot();
     storage.failOn.add(deletedProfileKey("p2"));
 
-    expect(await deleteProfile("p2")).toBe(false);
-    expect(storage.snapshot()).toEqual(before);
-    expect(readProfileSlot("p2")[WATCHLIST_STORAGE_KEY]).toBe('["theirs"]');
+    expect(await deleteProfile("p2")).toBe(true);
+    expect(getProfiles({ strict: true }).map((profile) => profile.id)).toEqual([DEFAULT_PROFILE_ID]);
+    expect(storage.getItem("profile-data:p2")).toBeNull();
+    expect(storage.getItem(deletedProfileKey("p2"))).toBeNull();
+    expect(await switchProfile("p2")).toBe(false);
+    expect(() => writeProfileStore(WATCHLIST_STORAGE_KEY, '["late write"]', "p2")).toThrow("removed");
   });
 
-  it("retains a refused deletion even when rewriting the original roster is also refused", async () => {
+  it("keeps the profile and its only saved data when the marker and the shortened roster are both refused", async () => {
     seedTwoProfiles();
     const before = storage.snapshot();
-    const originalRoster = storage.getItem(PROFILES_STORAGE_KEY);
     const write = storage.setItem.bind(storage);
     vi.spyOn(storage, "setItem").mockImplementation((key, value) => {
-      if (key === deletedProfileKey("p2") ||
-          (key === PROFILES_STORAGE_KEY && value === originalRoster)) {
+      if (key === deletedProfileKey("p2") || key === PROFILES_STORAGE_KEY) {
         throw new DOMException("Storage write refused", "QuotaExceededError");
       }
       write(key, value);
@@ -1122,14 +1140,49 @@ describe("deleteProfile", () => {
     unsubscribe();
   });
 
-  it("keeps all data when quota cannot fit the deletion marker", async () => {
+  it("frees space at full quota, then writes the deletion marker into the room it made", async () => {
     seedTwoProfiles();
-    const before = storage.snapshot();
+    storage.byteLimit = storage.usedBytes;
+    const used = storage.usedBytes;
+
+    expect(await deleteProfile("p2")).toBe(true);
+    expect(storage.usedBytes).toBeLessThan(used);
+    expect(storage.getItem("profile-data:p2")).toBeNull();
+    expect(storage.getItem(deletedProfileKey("p2"))).toBe("true");
+    expect(getProfiles({ strict: true }).map((profile) => profile.id)).toEqual([DEFAULT_PROFILE_ID]);
+  });
+
+  it("deletes at full quota even before the owner marker exists, and adds the marker afterwards", async () => {
+    seedTwoProfiles();
+    storage.removeItem(PROFILE_STORAGE_OWNER_KEY);
     storage.byteLimit = storage.usedBytes;
 
-    expect(await deleteProfile("p2")).toBe(false);
-    expect(storage.snapshot()).toEqual(before);
-    expect(getProfiles({ strict: true }).map((profile) => profile.id)).toContain("p2");
+    expect(await deleteProfile("p2")).toBe(true);
+    expect(storage.getItem("profile-data:p2")).toBeNull();
+    expect(getProfiles({ strict: true }).map((profile) => profile.id)).toEqual([DEFAULT_PROFILE_ID]);
+    expect(storage.getItem(PROFILE_STORAGE_OWNER_KEY)).toBe(DEFAULT_PROFILE_ID);
+    expect(readProfileSlot(DEFAULT_PROFILE_ID)[WATCHLIST_STORAGE_KEY]).toBe('["mine"]');
+  });
+
+  it("clears a store at full quota even before the owner marker exists", () => {
+    seedTwoProfiles();
+    // Large enough that clearing it makes room for the marker as well.
+    storage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(Array(20).fill("a title")));
+    storage.removeItem(PROFILE_STORAGE_OWNER_KEY);
+    storage.byteLimit = storage.usedBytes;
+
+    expect(() => writeProfileStore(WATCHLIST_STORAGE_KEY, null, DEFAULT_PROFILE_ID)).not.toThrow();
+    expect(storage.getItem(WATCHLIST_STORAGE_KEY)).toBeNull();
+    expect(storage.getItem(PROFILE_STORAGE_OWNER_KEY)).toBe(DEFAULT_PROFILE_ID);
+  });
+
+  it("still refuses an ordinary edit at full quota before the owner marker exists", () => {
+    seedTwoProfiles();
+    storage.removeItem(PROFILE_STORAGE_OWNER_KEY);
+    storage.byteLimit = storage.usedBytes;
+
+    expect(() => writeProfileStore(WATCHLIST_STORAGE_KEY, '["more"]', DEFAULT_PROFILE_ID)).toThrow();
+    expect(storage.getItem(WATCHLIST_STORAGE_KEY)).toBe('["mine"]');
   });
 
   it("keeps a committed deletion authoritative when physical cleanup fails", async () => {

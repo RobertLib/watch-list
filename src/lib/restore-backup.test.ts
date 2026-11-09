@@ -5,7 +5,7 @@ import { createProfileLockManager } from "../test/profile-locks";
 import { PROFILE_ROSTER_LOCK } from "./profile-roster-lock";
 import { getCollectionsSnapshot, subscribeToCollections } from "./collections";
 import { getGameStateSnapshot, subscribeToGameState } from "./daily-game";
-import { BACKUP_FORMAT, parseBackup, storesToSlot, type PortableData } from "./portable-data";
+import { BACKUP_FORMAT, parseBackup, readBackupSnapshot, storesToSlot, type PortableData } from "./portable-data";
 import { GOAL_STORAGE_KEY, getGoalSnapshot, subscribeToGoal } from "./goal";
 import { ACTIVE_PROFILE_STORAGE_KEY, PROFILES_STORAGE_KEY, createProfile, deleteProfile, getActiveProfileId, getProfiles, liveProfileChanges, readProfileSlot, subscribeProfiles, switchProfile } from "./profiles";
 import { getRatingsSnapshot, subscribeToRatings } from "./ratings";
@@ -496,5 +496,99 @@ describe("restoreFailureLabel", () => {
     for (const key of ["profile-deleted:%E0%A4%A", "profile-store:x", "profile-data:"]) {
       expect(restoreFailureLabel(key, { profiles })).not.toContain(key);
     }
+  });
+});
+
+describe("a damaged roster", () => {
+  const heat = { id: 949, title: "Heat", mediaType: "movie", addedAt: "2026-02-01T00:00:00.000Z" };
+
+  function seedBob(): string {
+    localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify([
+      { id: "default", name: "Original active" }, { id: "bob", name: "Bob" },
+    ]));
+    localStorage.removeItem("profile-data:old");
+    localStorage.setItem("profile-store:bob:watchlist", JSON.stringify([heat]));
+    // Cut one character: the roster no longer parses.
+    const damaged = localStorage.getItem(PROFILES_STORAGE_KEY)!.slice(0, -1);
+    localStorage.setItem(PROFILES_STORAGE_KEY, damaged);
+    return damaged;
+  }
+
+  function exported(): PortableData {
+    return parseBackup(JSON.parse(JSON.stringify(readBackupSnapshot("2026-03-01T00:00:00.000Z"))))!;
+  }
+
+  it("exports the profiles it can no longer list, found from their stores", () => {
+    const damaged = seedBob();
+    const backup = readBackupSnapshot("2026-03-01T00:00:00.000Z");
+
+    expect(backup.otherProfiles).toMatchObject([
+      { id: "bob", name: "Recovered profile 1", watchlist: [{ id: 949, title: "Heat" }] },
+    ]);
+    expect(backup.unreadable).toContainEqual({ profile: null, stores: ["profiles"], raw: damaged });
+  });
+
+  it("brings them back through a restore of that backup", async () => {
+    seedBob();
+    const backup = exported();
+
+    expect(await restoreBackup(backup)).toEqual({ ok: true });
+    expect(getProfiles({ strict: true }).map((profile) => profile.id)).toEqual(["default", "bob"]);
+    expect(await switchProfile("bob")).toBe(true);
+    expect(getWatchlist().map((item) => item.id)).toEqual([949]);
+  });
+
+  it("keeps a name the repaired roster dropped, when it is still usable", () => {
+    localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify([
+      { id: "default", name: "Me" }, { id: "a", name: "A" }, { id: "b", name: "B" },
+      { id: "c", name: "C" }, { id: "d", name: "D" }, { id: "eve", name: "Eve" },
+    ]));
+    localStorage.setItem("profile-store:eve:watchlist", JSON.stringify([heat]));
+
+    const backup = readBackupSnapshot("2026-03-01T00:00:00.000Z");
+    expect(backup.otherProfiles.find((profile) => profile.id === "eve")).toMatchObject({
+      name: "Eve", watchlist: [{ id: 949 }],
+    });
+  });
+
+  it("deletes everybody the backup does not carry, even those the roster cannot list", async () => {
+    seedBob();
+    localStorage.setItem("profile-data:carol", '{"watchlist":"[]"}');
+    const only = parseBackup({
+      format: BACKUP_FORMAT,
+      activeProfile: { id: "default", name: "Me" },
+      otherProfiles: [],
+      watchlist: [],
+    })!;
+
+    expect(await restoreBackup(only)).toEqual({ ok: true });
+    expect(localStorage.getItem("profile-store:bob:watchlist")).toBeNull();
+    expect(localStorage.getItem("profile-data:carol")).toBeNull();
+    expect(localStorage.getItem(deletedProfileKey("bob"))).toBe("true");
+    expect(getProfiles({ strict: true }).map((profile) => profile.id)).toEqual(["default"]);
+    expect(localStorage.getItem("unrelated")).toBe("must remain intact");
+  });
+
+  it("also clears a deleted profile's leftovers that its own cleanup could not remove", async () => {
+    localStorage.setItem(deletedProfileKey("gone"), "true");
+    localStorage.setItem("profile-store:gone:watchlist", JSON.stringify([heat]));
+
+    expect(await restoreBackup(incoming())).toEqual({ ok: true });
+    expect(localStorage.getItem("profile-store:gone:watchlist")).toBeNull();
+    expect(localStorage.getItem(deletedProfileKey("gone"))).toBe("true");
+  });
+});
+
+describe("undated entries in a backup", () => {
+  it("stay undated through an export and a restore", async () => {
+    localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify([
+      { id: 550, title: "Undated", mediaType: "movie", addedAt: "" },
+      { id: 949, title: "Dated", mediaType: "movie", addedAt: "2026-02-01T00:00:00.000Z" },
+    ]));
+    const backup = parseBackup(JSON.parse(JSON.stringify(readBackupSnapshot("2026-03-01T00:00:00.000Z"))))!;
+
+    expect(backup.watchlist.map((item) => item.addedAt)).toEqual(["", "2026-02-01T00:00:00.000Z"]);
+    expect(await restoreBackup(backup)).toEqual({ ok: true });
+    expect(getWatchlist().map((item) => item.addedAt)).toEqual(["", "2026-02-01T00:00:00.000Z"]);
   });
 });

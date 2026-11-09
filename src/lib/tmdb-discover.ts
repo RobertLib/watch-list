@@ -126,12 +126,17 @@ export function buildFilteredUrl(
     finalParams.with_original_language = filters.withOriginalLanguage;
   }
 
-  if (filters.primaryReleaseDateGte) {
-    finalParams["primary_release_date.gte"] = filters.primaryReleaseDateGte;
-  }
+  // Each date pair only on the endpoint it belongs to, as with the year above:
+  // the sanitised filters carry both pairs whatever the media type
+  // (`discover-filters.ts`), and this is where the choice is made.
+  if (endpoint.includes("/movie")) {
+    if (filters.primaryReleaseDateGte) {
+      finalParams["primary_release_date.gte"] = filters.primaryReleaseDateGte;
+    }
 
-  if (filters.primaryReleaseDateLte) {
-    finalParams["primary_release_date.lte"] = filters.primaryReleaseDateLte;
+    if (filters.primaryReleaseDateLte) {
+      finalParams["primary_release_date.lte"] = filters.primaryReleaseDateLte;
+    }
   }
 
   if (filters.voteCountGte) {
@@ -146,12 +151,14 @@ export function buildFilteredUrl(
     finalParams["popularity.lte"] = filters.popularityLte.toString();
   }
 
-  if (filters.firstAirDateGte) {
-    finalParams["first_air_date.gte"] = filters.firstAirDateGte;
-  }
+  if (endpoint.includes("/tv")) {
+    if (filters.firstAirDateGte) {
+      finalParams["first_air_date.gte"] = filters.firstAirDateGte;
+    }
 
-  if (filters.firstAirDateLte) {
-    finalParams["first_air_date.lte"] = filters.firstAirDateLte;
+    if (filters.firstAirDateLte) {
+      finalParams["first_air_date.lte"] = filters.firstAirDateLte;
+    }
   }
 
   // Returning Series is code 0, so this filter must not use a truthiness check.

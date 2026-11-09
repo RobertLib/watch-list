@@ -73,6 +73,20 @@ describe("where the overlay renders", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("embeds a YouTube id, and refuses a key that would rewrite the player's URL", () => {
+    const { rerender } = renderOverlay();
+    expect(screen.getByTitle("Official Trailer").getAttribute("src"))
+      .toBe("https://www.youtube-nocookie.com/embed/k-trailer?autoplay=1&rel=0");
+
+    for (const key of ["videoseries?list=PL123", "../embed/other", "abc#t=1", "a%2Fb"]) {
+      rerender(
+        <VideoOverlay isOpen video={{ ...trailer, key }} isLoading={false} onClose={() => {}} />,
+      );
+      expect(document.querySelector("iframe")).toBeNull();
+      expect(screen.getByText("Video is not available")).toBeTruthy();
+    }
+  });
+
   it("prerenders safely without browser globals even when marked open", () => {
     vi.stubGlobal("document", undefined);
     try {

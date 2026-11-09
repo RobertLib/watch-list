@@ -7,6 +7,7 @@ import { createSlug } from "@/lib/utils";
 import { personHref } from "@/lib/routes";
 import { PeopleContent } from "@/components/PeopleContent";
 import { LoadFailureNotice } from "@/components/LoadFailureNotice";
+import { SnapshotRefreshNotice } from "@/components/SnapshotRefreshNotice";
 import { PeopleSkeleton } from "@/components/skeletons";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { loadPopularPeople } from "@/lib/listing-sections";
@@ -28,6 +29,8 @@ export function PeoplePageContent({
     data: people,
     isLoading,
     reload,
+    refreshError,
+    isRetrying,
   } = useAsyncData(loadPopularPeople, [], snapshot);
 
   if (isLoading) return <PeopleSkeleton />;
@@ -138,6 +141,14 @@ export function PeoplePageContent({
         <p className="text-gray-400 mb-6">
           The most popular personalities in film and TV this week
         </p>
+        {refreshError != null && (
+          <SnapshotRefreshNotice
+            className="mb-6"
+            message="Showing a saved list – this week's could not be loaded."
+            onRetry={reload}
+            isRetrying={isRetrying}
+          />
+        )}
 
         <PeopleContent people={people} />
       </div>

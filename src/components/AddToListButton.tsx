@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { Check, ListPlus, Plus } from "lucide-react";
 import { toast } from "@/components/Toast";
@@ -67,6 +67,7 @@ function ProfileAddToListButton({ item, className, profileId }: {
   const containerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
 
   useEffect(() => {
     mounted.current = true;
@@ -85,8 +86,9 @@ function ProfileAddToListButton({ item, className, profileId }: {
     function onKeyDown(event: KeyboardEvent) {
       // Escape during IME composition cancels the composition, not the picker.
       if (event.key !== "Escape" || event.isComposing) return;
+      // Spent on the picker, so the header's Escape (search, menu) stands down.
+      event.preventDefault();
       if (panelRef.current?.contains(document.activeElement)) {
-        event.preventDefault();
         triggerRef.current?.focus();
       }
       setOpen(false);
@@ -237,8 +239,12 @@ function ProfileAddToListButton({ item, className, profileId }: {
       <button
         ref={triggerRef}
         onClick={() => setOpen(!open)}
+        // A disclosure, like Share: expanded or not, and which panel it opens.
+        // `aria-haspopup="true"` announced a menu, and the panel is not one –
+        // no menu role, no arrow keys – so a screen reader promised behaviour
+        // that was not there.
         aria-expanded={open}
-        aria-haspopup="true"
+        aria-controls={open ? panelId : undefined}
         className={cn(
           "inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
           memberOf > 0
@@ -253,6 +259,7 @@ function ProfileAddToListButton({ item, className, profileId }: {
       {open && (
         <div
           ref={panelRef}
+          id={panelId}
           className="absolute left-0 top-full z-30 mt-2 w-72 max-w-[calc(100vw-32px)] rounded-xl border border-gray-700 bg-gray-900 shadow-xl p-3 space-y-3"
         >
           {collections.length > 0 && (

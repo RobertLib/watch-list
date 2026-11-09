@@ -14,6 +14,7 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { isPlainPrimaryClick } from "@/lib/plain-click";
 import { MediaCarousel } from "./MediaCarousel";
 import { LoadingSpinner } from "./LoadingSpinner";
 import { WatchlistCounter } from "./WatchlistCounter";
@@ -258,6 +259,16 @@ export function Navigation() {
     searchInputRef.current?.focus();
   };
 
+  // The ✕ inside the box: an empty box to type the next query into, not a
+  // closed bar. It used to call `clearSearch`, which also collapsed the bar and
+  // sent focus up to the toolbar – "Close search" under another name, leaving
+  // whoever wanted to start over to reopen the search before typing again.
+  // Focus moves first: the button disappears with the query it clears.
+  const clearQuery = () => {
+    searchInputRef.current?.focus();
+    updateSearchQuery("");
+  };
+
   const closeMobileMenu = () => {
     setIsMobileMenuOpen(false);
   };
@@ -267,7 +278,15 @@ export function Navigation() {
     setIsMobileMenuOpen(!isMobileMenuOpen);
   };
 
-  const handleMobileLinkClick = () => {
+  // A header link closes search and the menu only when it takes this tab
+  // somewhere. Cmd/Ctrl/Shift-click opens a new tab or window and this page
+  // stays as it was – query, results and an open menu included.
+  const handleLinkClick = (e: React.MouseEvent) => {
+    if (isPlainPrimaryClick(e)) clearSearch();
+  };
+
+  const handleMobileLinkClick = (e: React.MouseEvent) => {
+    if (!isPlainPrimaryClick(e)) return;
     clearSearch();
     closeMobileMenu();
   };
@@ -346,8 +365,13 @@ export function Navigation() {
       // composition with `isComposing` already false, but as key code 229.
       if (e.isComposing || e.keyCode === 229) return;
 
-      // A trailer or gallery owns the keyboard while it is open. Checking the
-      // modal itself also works when this listener runs before its handler.
+      // A trailer or gallery owns the keyboard while it is open, and so does an
+      // open panel on the page (Share, Add to list): each closes itself on
+      // Escape and prevents the default to say it took the key. This listener
+      // is on `window`, so it runs after every `document` listener and every
+      // React handler – one Escape closes one layer, whichever order the
+      // listeners happened to be registered in. The modal check stays as a
+      // second line for a dialog that does not prevent the default.
       if (
         e.defaultPrevented ||
         document.querySelector('[role="dialog"][aria-modal="true"]')
@@ -386,11 +410,19 @@ export function Navigation() {
       // text on a Mac. And never inside another text field, where the chord
       // has a meaning of its own; the search box is the exception, since it
       // can only mean "search".
+      //
+      // The K is the character first, and the physical key only when the
+      // layout types no Latin letter there: on a Russian, Greek or Hebrew
+      // keyboard `e.key` is "л", "κ" or "ל" and the shortcut never fired. A
+      // Latin layout that puts another letter on that key – Dvorak types "t"
+      // there – keeps its own meaning for the chord.
       const hasShortcutModifier = isApple
         ? e.metaKey && !e.ctrlKey
         : e.ctrlKey && !e.metaKey;
+      const key = e.key.toLowerCase();
+      const isK = key === "k" || (!/^[a-z]$/.test(key) && e.code === "KeyK");
       if (
-        e.key.toLowerCase() === "k" &&
+        isK &&
         hasShortcutModifier &&
         !e.altKey &&
         !e.shiftKey
@@ -413,8 +445,12 @@ export function Navigation() {
       }
     };
 
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    // `window`, not `document`: see the `defaultPrevented` check above. On
+    // `document` this listener ran before any panel registered after it – and
+    // it re-registers whenever the search or the menu opens – so Escape in a
+    // Share panel also closed the search bar and moved focus up to the header.
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isSearching, isSearchOpen, isMobileMenuOpen, cancelScheduledFocus, clearSearch]);
 
   // The results panel is open. Read by the combobox attributes on the input and
@@ -477,7 +513,7 @@ export function Navigation() {
               <Link
                 href="/"
                 prefetch={false}
-                onClick={clearSearch}
+                onClick={handleLinkClick}
                 className="flex items-center gap-2 text-2xl font-bold text-white hover:text-gray-300 transition-colors group"
                 aria-label="WatchList home page"
               >
@@ -501,7 +537,7 @@ export function Navigation() {
               <Link
                 href="/"
                 prefetch={false}
-                onClick={clearSearch}
+                onClick={handleLinkClick}
                 className={cn(
                   "transition-colors whitespace-nowrap",
                   isActiveLink("/")
@@ -515,7 +551,7 @@ export function Navigation() {
               <Link
                 href="/movies"
                 prefetch={false}
-                onClick={clearSearch}
+                onClick={handleLinkClick}
                 className={cn(
                   "transition-colors whitespace-nowrap",
                   isActiveLink("/movies")
@@ -529,7 +565,7 @@ export function Navigation() {
               <Link
                 href="/tv-shows"
                 prefetch={false}
-                onClick={clearSearch}
+                onClick={handleLinkClick}
                 className={cn(
                   "transition-colors whitespace-nowrap",
                   isActiveLink("/tv-shows")
@@ -543,7 +579,7 @@ export function Navigation() {
               <Link
                 href="/genres"
                 prefetch={false}
-                onClick={clearSearch}
+                onClick={handleLinkClick}
                 className={cn(
                   "transition-colors whitespace-nowrap",
                   isActiveLink("/genres")
@@ -557,7 +593,7 @@ export function Navigation() {
               <Link
                 href="/people"
                 prefetch={false}
-                onClick={clearSearch}
+                onClick={handleLinkClick}
                 className={cn(
                   "transition-colors whitespace-nowrap",
                   isActiveLink("/people")
@@ -571,7 +607,7 @@ export function Navigation() {
               <Link
                 href="/tonight"
                 prefetch={false}
-                onClick={clearSearch}
+                onClick={handleLinkClick}
                 className={cn(
                   "transition-colors flex items-center gap-1 whitespace-nowrap",
                   isActiveLink("/tonight")
@@ -587,7 +623,7 @@ export function Navigation() {
               <Link
                 href="/calendar"
                 prefetch={false}
-                onClick={clearSearch}
+                onClick={handleLinkClick}
                 className={cn(
                   "transition-colors flex items-center gap-1 whitespace-nowrap",
                   isActiveLink("/calendar")
@@ -603,7 +639,7 @@ export function Navigation() {
               <Link
                 href="/watchlist"
                 prefetch={false}
-                onClick={clearSearch}
+                onClick={handleLinkClick}
                 className={cn(
                   "transition-colors flex items-center gap-1 relative whitespace-nowrap",
                   isActiveLink("/watchlist")
@@ -639,7 +675,7 @@ export function Navigation() {
               <Link
                 href="/profile"
                 prefetch={false}
-                onClick={clearSearch}
+                onClick={handleLinkClick}
                 className="p-2 text-gray-300 hover:text-white transition-colors"
                 aria-label="Go to profile page"
               >
@@ -719,7 +755,7 @@ export function Navigation() {
               {searchQuery && (
                 <button
                   type="button"
-                  onClick={clearSearch}
+                  onClick={clearQuery}
                   className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white focus:outline-none focus:text-white"
                   aria-label="Clear search"
                   tabIndex={isSearchOpen ? 0 : -1}

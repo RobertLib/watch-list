@@ -40,8 +40,9 @@ export function TVShowsContent({
         loadFirstPage={TV_SECTIONS.trending}
         placeholder={snapshot?.trending}
       >
-        {(trending) => (
+        {(trending, snapshotState) => (
           <PaginatedTVSection
+            snapshot={snapshotState}
             title="Trending This Week"
             fetchFunction={getTrendingTVShowsWeekly}
             initialTVShows={trending.results}
@@ -56,8 +57,9 @@ export function TVShowsContent({
         loadFirstPage={TV_SECTIONS.airingToday}
         placeholder={snapshot?.airingToday}
       >
-        {(airingToday) => (
+        {(airingToday, snapshotState) => (
           <PaginatedTVSection
+            snapshot={snapshotState}
             title="Airing Today"
             fetchFunction={getAiringTodayTVShows}
             initialTVShows={airingToday.results}
@@ -71,8 +73,9 @@ export function TVShowsContent({
         loadFirstPage={TV_SECTIONS.topRated}
         placeholder={snapshot?.topRated}
       >
-        {(topRated) => (
+        {(topRated, snapshotState) => (
           <PaginatedTVSection
+            snapshot={snapshotState}
             title="Top Rated TV Shows"
             fetchFunction={getTopRatedTVShows}
             initialTVShows={topRated.results}

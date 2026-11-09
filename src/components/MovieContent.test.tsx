@@ -178,3 +178,40 @@ describe("MovieContent Wikipedia identity", () => {
     expect(screen.queryByText("Editorial Insights")).toBeNull();
   });
 });
+
+describe("MovieContent snapshot", () => {
+  // A prerendered film page starts from the build's snapshot. When the
+  // browser's own request fails – offline with the saved page, or TMDB refusing
+  // it – the film the visitor is reading must stay on screen.
+  it("keeps the snapshot when the live load fails, with a retry beside it", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    api.getMovieDetails
+      .mockRejectedValueOnce(new Error("TMDB API error: 503 Service Unavailable"))
+      .mockResolvedValueOnce({ ...film(null), title: "Dr. Strangelove (live)" });
+
+    await act(async () => {
+      render(<MovieContent slug="dr-strangelove-935" snapshot={film(null)} />);
+    });
+
+    expect(screen.getByRole("heading", { level: 1, name: "Dr. Strangelove" })).toBeTruthy();
+    expect(screen.queryByText("Could not load this film")).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain("saved copy");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    });
+    expect(screen.getByRole("heading", { level: 1, name: "Dr. Strangelove (live)" })).toBeTruthy();
+    expect(screen.queryByText(/saved copy/)).toBeNull();
+  });
+
+  it("says the film is gone when TMDB answers 404 behind the snapshot", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    api.getMovieDetails.mockRejectedValueOnce(new Error("TMDB API error: 404 Not Found"));
+
+    await act(async () => {
+      render(<MovieContent slug="dr-strangelove-935" snapshot={film(null)} />);
+    });
+
+    expect(screen.getByText("Movie not found")).toBeTruthy();
+  });
+});

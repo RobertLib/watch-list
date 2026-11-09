@@ -95,8 +95,9 @@ export function ShareListButton({
       // Escape during IME composition in the name field cancels the
       // composition, not the panel.
       if (event.key !== "Escape" || event.isComposing) return;
+      // Spent on the panel, so the header's Escape (search, menu) stands down.
+      event.preventDefault();
       if (panelRef.current?.contains(document.activeElement)) {
-        event.preventDefault();
         triggerRef.current?.focus();
       }
       setOpen(false);

@@ -39,6 +39,24 @@ const OUTCOME_LABEL: Record<DayOutcome, string> = {
 };
 
 /**
+ * The legend, drawn from the same two maps as the squares and their tooltips so
+ * the three cannot disagree. They did: the red square – a day played and lost –
+ * was labelled "Missed", and the grey one – a day really missed – "Never played",
+ * which in a panel about streaks read a lost day as a skipped one.
+ */
+const LEGEND_OUTCOMES: DayOutcome[] = [
+  "won",
+  "lost",
+  "archive-won",
+  "archive-lost",
+  "missed",
+];
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
  * The grid in words, for the one element a screen reader reads out.
  *
  * Counted over the squares actually drawn. It used to name "the last 56 days"
@@ -143,11 +161,13 @@ export function DailyStreakPanel() {
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
-          <Legend className="bg-green-500" label="Solved" />
-          <Legend className="bg-red-500/70" label="Missed" />
-          <Legend className="bg-blue-500/60" label="Caught up" />
-          <Legend className="bg-blue-500/25" label="Caught up, not solved" />
-          <Legend className="bg-gray-800" label="Never played" />
+          {LEGEND_OUTCOMES.map((outcome) => (
+            <Legend
+              key={outcome}
+              className={OUTCOME_STYLE[outcome]}
+              label={capitalize(OUTCOME_LABEL[outcome])}
+            />
+          ))}
         </div>
       </div>
 

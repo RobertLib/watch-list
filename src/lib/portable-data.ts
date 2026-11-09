@@ -34,7 +34,14 @@ import {
   sanitizeWatchedItems,
   sanitizeWatchlistItems,
 } from "./media-list";
-import { getWatchlist, WATCHLIST_STORAGE_KEY, type WatchlistItem } from "./watchlist";
+import {
+  getWatchlist,
+  retiredWatchlistCookieText,
+  unreadableWatchlistCookieText,
+  WATCHLIST_COOKIE_RECOVERY_KEY,
+  WATCHLIST_STORAGE_KEY,
+  type WatchlistItem,
+} from "./watchlist";
 import { WATCHED_STORAGE_KEY, type WatchedItem } from "./watched";
 import {
   LAST_VISIT_STORAGE_KEY,
@@ -50,6 +57,7 @@ import {
   MAX_PROFILES,
   parseStoredProfiles,
   PROFILES_STORAGE_KEY,
+  recoverUnlistedProfiles,
 } from "./profiles";
 import {
   getLegacyProfileStorageOwner,
@@ -247,11 +255,38 @@ export function sanitizePortableSettings(input: unknown): PortableSettings {
 }
 
 /**
+ * A list's entries with a timestamp that is missing or not a date replaced by
+ * `fallback` – except an empty one, which is how storage says "unknown".
+ *
+ * Storage repairs a bad timestamp to "" rather than inventing one, and every
+ * view reads "" as undated: no year in the stats, the bottom of "newest first".
+ * A backup used to date those entries to the export instead, so after a round
+ * trip they sorted as the newest titles on the list and counted towards the
+ * export's year. "" now survives the file both ways.
+ */
+function withFallbackTimestamps(
+  input: unknown,
+  key: "addedAt" | "watchedAt",
+  fallback: string,
+): unknown {
+  if (!Array.isArray(input)) return input;
+  return input.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
+    const value = (entry as Record<string, unknown>)[key];
+    if (value === "" || (typeof value === "string" && !Number.isNaN(Date.parse(value)))) {
+      return entry;
+    }
+    return { ...entry, [key]: fallback };
+  });
+}
+
+/**
  * Rebuild one profile's stores from whatever a file happens to hold.
  *
  * Every field goes through the sanitizer that owns it, so a field that is
  * missing, renamed or hand-edited comes back as that store's empty value rather
- * than reaching the app as something it cannot render.
+ * than reaching the app as something it cannot render. `fallbackTimestamp`
+ * dates list entries that carry no timestamp at all; "" is kept as unknown.
  */
 export function sanitizeStores(
   input: unknown,
@@ -266,13 +301,13 @@ export function sanitizeStores(
     // The app allows lists beyond the standalone sanitizer's default bound.
     // A backup must preserve those lists, including parked profiles at export.
     watchlist: sanitizeWatchlistItems(
-      record.watchlist,
-      fallbackTimestamp,
+      withFallbackTimestamps(record.watchlist, "addedAt", fallbackTimestamp),
+      "",
       Number.POSITIVE_INFINITY,
     ),
     watched: sanitizeWatchedItems(
-      record.watched,
-      fallbackTimestamp,
+      withFallbackTimestamps(record.watched, "watchedAt", fallbackTimestamp),
+      "",
       Number.POSITIVE_INFINITY,
     ),
     episodeProgress: sanitizeProgress(record.episodeProgress),
@@ -480,17 +515,22 @@ const STORE_LABELS: Record<keyof PortableStores, string> = {
   lastVisit: "last-visit date",
 };
 
+/** An unreadable legacy watchlist cookie whose text storage kept. */
+const RETIRED_COOKIE_STORE = "legacyWatchlistCookie";
+
 const OTHER_LABELS: Record<string, string> = {
   "settings.region": "region setting",
   "settings.watchProviderFilter": "what-to-show setting",
   "settings.selectedProviderIds": "platform selection",
   "settings.hasCustomSettings": "record of changed settings",
   profiles: "profile list",
+  [RETIRED_COOKIE_STORE]: "older saved watchlist",
 };
 
 /** The person-facing name of a store, from its storage key; undefined if not a store. */
 export function storeLabelForKey(key: string): string | undefined {
   if (key === LEGACY_LAST_VISIT_STORAGE_KEY) return STORE_LABELS.lastVisit;
+  if (key === WATCHLIST_COOKIE_RECOVERY_KEY) return OTHER_LABELS[RETIRED_COOKIE_STORE];
   const field = (Object.keys(SLOT_KEYS) as (keyof PortableStores)[])
     .find((candidate) => SLOT_KEYS[candidate] === key);
   return field ? STORE_LABELS[field] : undefined;
@@ -549,7 +589,21 @@ function readProfileStores(
         );
       } catch (error) {
         console.error("Error reading the legacy watchlist for a backup:", error);
-        failed[WATCHLIST_STORAGE_KEY] = null;
+        // The cookie's own text when it is what could not be parsed: null
+        // would tell the visitor the browser refused a read it never refused.
+        failed[WATCHLIST_STORAGE_KEY] = unreadableWatchlistCookieText();
+      }
+    }
+    if (profile.id === getLegacyProfileStorageOwner()) {
+      // An unreadable cookie's text, kept once the list moved on without it.
+      try {
+        const kept = retiredWatchlistCookieText();
+        if (kept !== null) {
+          unreadable.push({ profile: { id: profile.id, name: profile.name }, stores: [RETIRED_COOKIE_STORE], raw: kept });
+        }
+      } catch (error) {
+        console.error("Error reading an unreadable legacy watchlist for a backup:", error);
+        unreadable.push({ profile: { id: profile.id, name: profile.name }, stores: [RETIRED_COOKIE_STORE], raw: null });
       }
     }
     if (slot[LAST_VISIT_STORAGE_KEY] === undefined && !(LAST_VISIT_STORAGE_KEY in failed)) {
@@ -632,13 +686,22 @@ export function readBackupSnapshot(exportedAt: string): PortableData {
   const active = profiles.find((profile) => profile.id === activeId);
   if (!active) throw new Error("The active profile is absent from the stored roster");
 
-  const stores = readProfileStores(active, exportedAt, unreadable);
-  const otherProfiles = profiles
+  // A roster the app had to repair no longer names everybody with data here.
+  // Those people are found from their stores and carried too, rather than left
+  // out of the one copy that would let a restore bring them back.
+  const everyone = canonical
+    ? profiles
+    : [...profiles, ...recoverUnlistedProfiles(rosterText, profiles)];
+
+  // Read as storage holds them: an entry storage could not date stays undated
+  // ("") in the file, as it is everywhere in the app – never dated to the export.
+  const stores = readProfileStores(active, "", unreadable);
+  const otherProfiles = everyone
     .filter((profile) => profile.id !== active.id)
     .map((profile) => ({
       id: profile.id,
       name: profile.name,
-      ...readProfileStores(profile, exportedAt, unreadable),
+      ...readProfileStores(profile, "", unreadable),
     }));
 
   const backup = buildBackup({

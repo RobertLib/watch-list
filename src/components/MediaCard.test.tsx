@@ -866,3 +866,50 @@ describe("the overlay", () => {
     expect(document.activeElement).toBe(play);
   });
 });
+
+/**
+ * In the search overlay `onCardClick` closes the overlay and throws the query
+ * away. Next's Link calls a link's `onClick` for every click – Cmd/Ctrl-click
+ * into a background tab included – so a card that passed every click on wiped
+ * the results someone was opening one by one in new tabs.
+ */
+describe("a click on the poster", () => {
+  it("tells the owner about a plain click, which navigates this tab", () => {
+    const onCardClick = vi.fn();
+    renderCard({ onCardClick });
+
+    fireEvent.click(screen.getByRole("link"));
+
+    expect(onCardClick).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["Cmd", { metaKey: true }],
+    ["Ctrl", { ctrlKey: true }],
+    ["Shift", { shiftKey: true }],
+    ["Alt", { altKey: true }],
+  ])("leaves the owner alone on a %s-click, which opens elsewhere", (_, modifier) => {
+    const onCardClick = vi.fn();
+    renderCard({ onCardClick });
+
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true, ...modifier });
+    fireEvent(screen.getByRole("link"), click);
+
+    expect(onCardClick).not.toHaveBeenCalled();
+    // Nothing stood in the browser's way of opening the new tab.
+    expect(click.defaultPrevented).toBe(false);
+  });
+
+  it("lets a modified tap through on a phone instead of revealing the details first", async () => {
+    pretendPhone();
+    renderCard();
+
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true, metaKey: true });
+    await act(async () => {
+      fireEvent(screen.getByRole("link"), click);
+    });
+
+    expect(click.defaultPrevented).toBe(false);
+    expect(screen.queryByLabelText("Hide details for Fight Club")).toBeNull();
+  });
+});

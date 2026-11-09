@@ -99,3 +99,79 @@ describe.each(sections)("Paginated $name", ({ component }) => {
     expect(fetchPage).not.toHaveBeenCalled();
   });
 });
+
+describe("Load More behind the build's snapshot", () => {
+  // Page two would come from the visitor's own region and be appended to the
+  // build's default-region page one, and the section remounts – dropping what
+  // was appended – the moment the visitor's own page one arrives.
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+    return { promise, resolve, reject };
+  }
+
+  async function renderSection(loadFirstPage: () => Promise<{ results: (Movie & TVShow)[]; total_pages: number }>) {
+    const { AsyncDiscoverySection } = await import("./AsyncDiscoverySection");
+    const fetchPage = vi.fn<FetchPage>().mockResolvedValue({ results: [title(3)], total_pages: 5 });
+    await act(async () => {
+      render(
+        <AsyncDiscoverySection
+          title="Movies"
+          loadKey="US"
+          loadFirstPage={loadFirstPage}
+          placeholder={{ results: [title(1)], total_pages: 5 }}
+        >
+          {(page, snapshot) => (
+            <PaginatedMovieSection
+              title="Movies"
+              initialMovies={page.results}
+              initialTotalPages={page.total_pages}
+              fetchFunction={fetchPage}
+              snapshot={snapshot}
+            />
+          )}
+        </AsyncDiscoverySection>,
+      );
+    });
+    return fetchPage;
+  }
+
+  it("holds Load More until the visitor's own page one replaces the snapshot", async () => {
+    const live = deferred<{ results: (Movie & TVShow)[]; total_pages: number }>();
+    const fetchPage = await renderSection(() => live.promise);
+
+    const button = screen.getByRole("button", { name: "Load More Movies" }) as HTMLButtonElement;
+    expect(screen.getByText("Title 1")).toBeTruthy();
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(fetchPage).not.toHaveBeenCalled();
+
+    await act(async () => { live.resolve({ results: [title(2)], total_pages: 5 }); });
+    expect(screen.getByText("Title 2")).toBeTruthy();
+    const liveButton = screen.getByRole("button", { name: "Load More Movies" }) as HTMLButtonElement;
+    expect(liveButton.disabled).toBe(false);
+
+    await act(async () => { fireEvent.click(liveButton); });
+    expect(fetchPage).toHaveBeenCalledWith(2);
+    expect(screen.getByText("Title 3")).toBeTruthy();
+  });
+
+  it("keeps the snapshot when page one fails, and offers that load again in Load More's place", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const loadFirstPage = vi.fn()
+      .mockRejectedValueOnce(new Error("Offline"))
+      .mockResolvedValueOnce({ results: [title(2)], total_pages: 5 });
+    await renderSection(loadFirstPage);
+
+    expect(screen.getByText("Title 1")).toBeTruthy();
+    expect(screen.queryByText(/Could not load/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Load More Movies" })).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    });
+    expect(screen.getByText("Title 2")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Load More Movies" })).toBeTruthy();
+  });
+});

@@ -32,8 +32,17 @@ export function prerenderedTitles(kind: PrerenderedKind): PrerenderedTitle[] {
     } catch {
       // No list: `next dev`, or a build without `npm run build`'s prebuild.
     }
-    const toTitles = (entries: { id: number; name: string }[] = []) =>
-      entries.map(({ id, name }) => ({ id, slug: createSlug(name, id) }));
+    // `next.config.ts` reads this too, and a config that throws stops every
+    // build – so a list of the wrong shape counts as no list, entry by entry.
+    const toTitles = (entries: unknown) =>
+      (Array.isArray(entries) ? entries : [])
+        .filter(
+          (entry): entry is { id: number; name: string } =>
+            Number.isSafeInteger(entry?.id) &&
+            entry.id > 0 &&
+            typeof entry.name === "string",
+        )
+        .map(({ id, name }) => ({ id, slug: createSlug(name, id) }));
     cached = {
       movie: toTitles(list.movie),
       tv: toTitles(list.tv),

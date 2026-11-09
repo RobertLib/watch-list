@@ -186,3 +186,55 @@ describe("profile storage coordination without Web Locks", () => {
     expect(operation).not.toHaveBeenCalled();
   });
 });
+
+describe("profile storage coordination with Web Locks and an unusable IndexedDB", () => {
+  beforeEach(() => {
+    vi.stubGlobal("navigator", { locks: createProfileLockManager() });
+  });
+
+  it("coordinates with Web Locks alone when IndexedDB is null", async () => {
+    vi.stubGlobal("indexedDB", null);
+    expect(await withProfileRosterLock(() => "saved", "failed")).toBe("saved");
+  });
+
+  it.each(["open", "transaction", "get"] as const)(
+    "falls back to Web Locks when IndexedDB %s fails before the operation runs",
+    async (stage) => {
+      if (stage !== "open") (await openDatabase()).close();
+      const error = new DOMException("Coordination denied", "SecurityError");
+      if (stage === "open") vi.spyOn(indexedDB, "open").mockImplementation(() => { throw error; });
+      else if (stage === "transaction") vi.spyOn(IDBDatabase.prototype, "transaction").mockImplementation(() => { throw error; });
+      else vi.spyOn(IDBObjectStore.prototype, "get").mockImplementation(() => { throw error; });
+      const operation = vi.fn(() => {
+        window.localStorage.setItem("saved", "yes");
+        return true;
+      });
+
+      expect(await withProfileRosterLock(operation, false)).toBe(true);
+      expect(operation).toHaveBeenCalledTimes(1);
+      expect(window.localStorage.getItem("saved")).toBe("yes");
+    },
+  );
+
+  it("never runs an operation a second time after it failed under IndexedDB", async () => {
+    const operation = vi.fn(() => {
+      throw new Error("Storage refused");
+    });
+
+    expect(await withProfileRosterLock(operation, "failed")).toBe("failed");
+    expect(operation).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets watchlist edits through with Web Locks when IndexedDB refuses to open", async () => {
+    vi.spyOn(indexedDB, "open").mockImplementation(() => {
+      throw new DOMException("IndexedDB disabled", "InvalidStateError");
+    });
+    const film = {
+      id: 550, title: "Fight Club", mediaType: "movie" as const,
+      posterPath: null, voteAverage: 8.4, releaseDate: "1999-10-15",
+    };
+
+    expect(await addToWatchlist(film)).toBe("ok");
+    expect(getWatchlist().map((item) => item.id)).toEqual([550]);
+  });
+});

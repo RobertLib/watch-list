@@ -359,15 +359,30 @@ describe("isGapWorthShowing", () => {
 });
 
 describe("describeGap", () => {
+  // Built from local wall-clock times, because the answer is about the
+  // visitor's calendar: the same instants are different days in Auckland.
+  const local = (month: number, day: number, hour: number) =>
+    new Date(2026, month - 1, day, hour).toISOString();
+  const LOCAL_NOW = new Date(2026, 7, 1, 12);
+
   it("uses the words a person would", () => {
-    expect(describeGap("2026-08-01T09:00:00.000Z", NOW)).toBe("earlier today");
-    expect(describeGap("2026-07-31T10:00:00.000Z", NOW)).toBe("yesterday");
-    expect(describeGap("2026-07-29T10:00:00.000Z", NOW)).toBe("3 days ago");
-    expect(describeGap("2026-07-25T10:00:00.000Z", NOW)).toBe("last week");
+    expect(describeGap(local(8, 1, 9), LOCAL_NOW)).toBe("earlier today");
+    expect(describeGap(local(7, 31, 10), LOCAL_NOW)).toBe("yesterday");
+    expect(describeGap(local(7, 29, 10), LOCAL_NOW)).toBe("3 days ago");
+    expect(describeGap(local(7, 25, 10), LOCAL_NOW)).toBe("last week");
   });
 
   it("rounds to weeks and then to months", () => {
-    expect(describeGap("2026-07-11T12:00:00.000Z", NOW)).toBe("3 weeks ago");
-    expect(describeGap("2026-05-01T12:00:00.000Z", NOW)).toBe("3 months ago");
+    expect(describeGap(local(7, 11, 12), LOCAL_NOW)).toBe("3 weeks ago");
+    expect(describeGap(local(5, 1, 12), LOCAL_NOW)).toBe("3 months ago");
+  });
+
+  /** Ten hours, but across midnight: the visit was yesterday, not today. */
+  it("counts calendar days rather than 24-hour periods", () => {
+    const morning = new Date(2026, 7, 2, 8);
+    expect(describeGap(local(8, 1, 22), morning)).toBe("yesterday");
+    expect(describeGap(local(8, 2, 1), morning)).toBe("earlier today");
+    // Thirty-six hours, two midnights.
+    expect(describeGap(local(7, 31, 20), morning)).toBe("2 days ago");
   });
 });

@@ -276,7 +276,7 @@ describe("exporting a backup", () => {
     expect(showToast).not.toHaveBeenCalledWith("Backup downloaded", "success");
   }
 
-  it("exports every profile after deletion and its roster recovery writes are refused", async () => {
+  it("exports every profile after deletion and its roster writes are refused", async () => {
     const roster = JSON.stringify([
       { id: "default", name: "Me" }, { id: "p2", name: "Second" },
     ]);
@@ -288,8 +288,9 @@ describe("exporting a backup", () => {
     const intercepted = interceptDownload();
     const write = Storage.prototype.setItem;
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
-      if (key === deletedProfileKey("p2") ||
-          (key === PROFILES_STORAGE_KEY && value === roster)) {
+      // The marker, and the shortened roster that would commit the deletion
+      // in its place: nothing may be deleted.
+      if (key === deletedProfileKey("p2") || key === PROFILES_STORAGE_KEY) {
         throw new DOMException("Storage write refused", "QuotaExceededError");
       }
       write.call(this, key, value);
@@ -717,13 +718,13 @@ describe("exporting a backup", () => {
     }
   });
 
-  it("names malformed legacy cookie data without deleting its only persisted copy", async () => {
+  it("names malformed legacy cookie data, with its text, without deleting its only persisted copy", async () => {
     renderPortability();
     const intercepted = interceptDownload();
     document.cookie = "watchlist=%7Bnot%20json;path=/";
     try {
       const backup = await expectExportWithGaps(intercepted, [
-        { profile: ME, stores: ["watchlist"], raw: null },
+        { profile: ME, stores: ["watchlist"], raw: "{not json" },
       ]);
       expect(backup.watchlist).toEqual([]);
       expect(document.cookie).toContain("watchlist=");

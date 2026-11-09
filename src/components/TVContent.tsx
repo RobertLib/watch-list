@@ -30,6 +30,7 @@ import { ShareButton } from "@/components/ShareButton";
 import { UserRating } from "@/components/UserRating";
 import { LoadFailureNotice } from "@/components/LoadFailureNotice";
 import { NotFoundNotice, isNotFoundError } from "@/components/NotFoundNotice";
+import { SnapshotRefreshNotice } from "@/components/SnapshotRefreshNotice";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { useCanonicalUrl } from "@/hooks/useCanonicalUrl";
@@ -98,7 +99,7 @@ function TVDetail({
   const id = extractIdFromSlug(slug);
   const { region } = useSettings();
 
-  const { data, isLoading, error, reload } = useAsyncData(
+  const { data, isLoading, error, reload, refreshError, isRetrying } = useAsyncData(
     async () => (id ? tmdbApi.getTVShowDetails(id, TV_APPENDED_SECTIONS) : null),
     [id],
     snapshot,
@@ -134,7 +135,10 @@ function TVDetail({
     );
   }
 
-  if (!data) {
+  // A 404 behind the build's snapshot is an answer too: the series has left
+  // TMDB since the build. Any other failure leaves the snapshot readable, with
+  // a retry beside it (below).
+  if (!data || isNotFoundError(refreshError)) {
     return (
       <NotFoundNotice
         title="TV show not found"
@@ -250,6 +254,14 @@ function TVDetail({
             title={details.name}
             genres={details.genres}
           />
+          {refreshError != null && (
+            <SnapshotRefreshNotice
+              className="mt-4 max-w-6xl xl:max-w-7xl"
+              message="Showing a saved copy of this series – the latest details could not be loaded."
+              onRetry={reload}
+              isRetrying={isRetrying}
+            />
+          )}
           <div className="grid md:grid-cols-3 gap-8 max-w-6xl xl:max-w-7xl mt-6">
             {/* Poster */}
             <div className="md:col-span-1">

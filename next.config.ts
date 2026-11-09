@@ -1,26 +1,26 @@
-import { readFileSync } from "node:fs";
 import type { NextConfig } from "next";
-import { encodePrerenderedIds } from "./src/lib/prerendered-titles";
+import { encodePrerenderedTitles } from "./src/lib/prerendered-titles";
+import { prerenderedTitles } from "./src/lib/prerendered-titles-server";
 
 /**
- * The titles `scripts/prebuild.mjs` chose to prerender, as the compact id list
- * the bundle carries (`src/lib/prerendered-titles.ts`). Empty when there is no
- * list – `next dev`, a build without a TMDB token, or `next build` run without
- * `npm run build` – and then every title link stays on its query-string page.
+ * The titles `scripts/prebuild.mjs` chose to prerender, as the compact id and
+ * slug-hash list the bundle carries (`src/lib/prerendered-titles.ts`). Read
+ * through `prerenderedTitles`, the same function `generateStaticParams` and the
+ * sitemap use, so the slugs hashed here are the slugs the pages are written
+ * under.
+ *
+ * Empty when there is no list – a build without a TMDB token, or a `next build`
+ * run without `npm run build`'s prebuild – and then every title link stays on
+ * its query-string page. `next dev` reads whatever list the last
+ * `npm run build` left in `.next/cache`, if any; the server and the browser
+ * read the same one, so the links still agree with each other.
  */
 function prerenderedTitleIds(): string {
-  try {
-    const list = JSON.parse(
-      readFileSync(".next/cache/prerendered-titles.json", "utf8"),
-    ) as Record<"movie" | "tv" | "person", { id: number }[]>;
-    return encodePrerenderedIds({
-      movie: list.movie.map((title) => title.id),
-      tv: list.tv.map((title) => title.id),
-      person: list.person.map((title) => title.id),
-    });
-  } catch {
-    return "";
-  }
+  return encodePrerenderedTitles({
+    movie: prerenderedTitles("movie"),
+    tv: prerenderedTitles("tv"),
+    person: prerenderedTitles("person"),
+  });
 }
 
 /**

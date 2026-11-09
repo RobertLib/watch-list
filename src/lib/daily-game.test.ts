@@ -758,3 +758,110 @@ describe("a live board left unfinished when its day ended", () => {
     expect(state.archive[DAY].guesses).toEqual([wrong(1), wrong(2), wrong(3)]);
   });
 });
+
+/**
+ * A finished day has to stay finished however much the store is trimmed. The
+ * archive shows every puzzle that has run, so a result that fell out of the
+ * record came back as "not played" – replayable, with six fresh guesses.
+ */
+describe("results that outlive their boards", () => {
+  function loseAllSix(state: DailyGameState, day: string): DailyGameState {
+    for (let id = 1; id <= MAX_GUESSES; id++) {
+      state = recordArchiveGuess(state, day, wrong(id));
+    }
+    return state;
+  }
+
+  it("keeps a lost catch-up lost after ninety newer boards push its board out", () => {
+    let state = loseAllSix(playing(), DAY);
+    for (let index = 1; index <= 90; index++) {
+      state = recordArchiveGuess(state, shiftDate(DAY, index), wrong(1));
+    }
+
+    expect(state.archiveLostDays).toEqual([DAY]);
+    expect(outcomeForDay(state, DAY, shiftDate(DAY, 200))).toBe("archive-lost");
+    expect(archiveBoardFor(state, DAY).status).toBe("lost");
+    // No second chance: the board is finished, so the guess changes nothing.
+    expect(recordArchiveGuess(state, DAY, right(99))).toBe(state);
+    expect(archiveSolvedCount(state)).toBe(0);
+  });
+
+  it("keeps a won catch-up finished, rather than reopening it, once its board is gone", () => {
+    let state = recordArchiveGuess(playing(), DAY, right(1));
+    for (let index = 1; index <= 90; index++) {
+      state = recordArchiveGuess(state, shiftDate(DAY, index), right(index + 1));
+    }
+
+    expect(state.archive[DAY]).toBeUndefined();
+    expect(archiveBoardFor(state, DAY)).toEqual({ day: DAY, guesses: [], status: "won" });
+    expect(recordArchiveGuess(state, DAY, wrong(5))).toBe(state);
+  });
+
+  it("evicts finished boards before a board still being played", () => {
+    const OLD = "2026-07-01";
+    let state = recordArchiveGuess(playing(), OLD, wrong(1));
+    state = recordArchiveGuess(state, OLD, wrong(2));
+    for (let index = 0; index < 89; index++) {
+      state = recordArchiveGuess(state, shiftDate(DAY, index), right(index + 1));
+    }
+    expect(Object.keys(state.archive)).toHaveLength(90);
+
+    state = recordArchiveGuess(state, shiftDate(DAY, 89), right(500));
+
+    expect(Object.keys(state.archive)).toHaveLength(90);
+    // The oldest board is the one in progress, and it keeps its guesses…
+    expect(state.archive[OLD]?.guesses).toEqual([wrong(1), wrong(2)]);
+    // …while the oldest finished one gives way, its result kept.
+    expect(state.archive[DAY]).toBeUndefined();
+    expect(outcomeForDay(state, DAY, shiftDate(DAY, 200))).toBe("archive-won");
+  });
+
+  it("trims a stored archive the same way, finished boards first", () => {
+    const OLD = "2026-07-01";
+    const archive: Record<string, unknown> = {
+      [OLD]: { day: OLD, guesses: [wrong(1)], status: "playing" },
+    };
+    for (let index = 0; index < 95; index++) {
+      const day = shiftDate(DAY, index);
+      archive[day] = { day, guesses: [...[1, 2, 3, 4, 5, 6].map(wrong)], status: "lost" };
+    }
+
+    const repaired = sanitizeGameState({ archive });
+
+    expect(Object.keys(repaired.archive)).toHaveLength(90);
+    expect(repaired.archive[OLD]?.status).toBe("playing");
+    expect(repaired.archiveLostDays).toHaveLength(95);
+    expect(sanitizeGameState(JSON.parse(JSON.stringify(repaired)))).toEqual(repaired);
+  });
+
+  it("never lists a lost catch-up that was won or played on the day", () => {
+    const repaired = sanitizeGameState({
+      history: { [DAY]: "won" },
+      archiveWonDays: [NEXT_DAY],
+      archiveLostDays: [DAY, NEXT_DAY, "2026-08-03", "2026-08-03", "nope", 7],
+    });
+
+    expect(repaired.archiveLostDays).toEqual(["2026-08-03"]);
+  });
+
+  it("reads a store written before the list existed", () => {
+    const legacy = sanitizeGameState({
+      archive: { [DAY]: { day: DAY, guesses: [1, 2, 3, 4, 5, 6].map(wrong), status: "lost" } },
+    });
+
+    expect(legacy.archiveLostDays).toEqual([DAY]);
+  });
+
+  it("keeps a day played on the day, however long ago, out of the catch-ups", () => {
+    let state = playing();
+    for (let index = 0; index < 450; index++) {
+      state = recordResult(state, shiftDate(DAY, index), index % 2 === 0, 3);
+    }
+    state = sanitizeGameState(JSON.parse(JSON.stringify(state)));
+
+    expect(Object.keys(state.history)).toHaveLength(450);
+    expect(outcomeForDay(state, DAY, shiftDate(DAY, 450))).toBe("won");
+    expect(archiveBoardFor(state, DAY).status).toBe("won");
+    expect(recordArchiveGuess(state, DAY, right(1))).toBe(state);
+  });
+});

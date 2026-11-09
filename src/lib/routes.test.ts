@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { encodePrerenderedIds } from "./prerendered-titles";
+import { encodePrerenderedTitles } from "./prerendered-titles";
 import {
   SITE_URL,
   absoluteMediaUrl,
@@ -68,15 +68,24 @@ describe("dailyHref", () => {
 
 /**
  * The build prerenders the best-known titles at a path of their own, and a link
- * points there only when that page exists: in the id list the build inlined,
- * and at the slug the build wrote it under – `createSlug(name, id)`, ending in
- * its id. Anything else goes to the query page, which exists for every title.
+ * points there only when that page exists: in the list the build inlined, and
+ * at the slug the build wrote it under – `createSlug(name, id)`, ending in its
+ * id, or a bare id for a name with no Latin letters. Anything else goes to the
+ * query page, which exists for every title.
  */
 describe("prerendered title links", () => {
   const prerender = () =>
     vi.stubEnv(
       "PRERENDERED_TITLE_IDS",
-      encodePrerenderedIds({ movie: [550], tv: [1396], person: [31] }),
+      encodePrerenderedTitles({
+        movie: [{ id: 550, slug: "fight-club-550" }],
+        tv: [
+          { id: 1396, slug: "breaking-bad-1396" },
+          // A Hangul-only name: `createSlug` keeps nothing but the id.
+          { id: 90447, slug: "90447" },
+        ],
+        person: [{ id: 31, slug: "tom-hanks-31" }],
+      }),
     );
 
   it("points a prerendered title, series or person at its path", () => {
@@ -96,6 +105,25 @@ describe("prerendered title links", () => {
     expect(movieHref("550-fight-club")).toBe("/movie?id=550-fight-club");
     // The same id under the other kind is not a page either.
     expect(personHref("someone-550")).toBe("/person?id=someone-550");
+  });
+
+  it("keeps the query page for a title renamed since the build wrote its page", () => {
+    // A watchlist entry saved under an older name builds an older slug; its
+    // file does not exist, and linking to it was a 404 and a redirect.
+    prerender();
+    expect(movieHref("fight-club-directors-cut-550")).toBe(
+      "/movie?id=fight-club-directors-cut-550",
+    );
+  });
+
+  it("points a title with no Latin letters at its bare-id path", () => {
+    // The build wrote `/tv/90447`; a link, and the page's own canonical, used
+    // to send that title to the noindex query page instead.
+    prerender();
+    expect(tvHref("90447")).toBe("/tv/90447");
+    expect(absoluteMediaUrl("tv", "90447")).toBe(`${SITE_URL}/tv/90447`);
+    // A bare id for a title whose page has a slug is still not a file.
+    expect(tvHref("1396")).toBe("/tv?id=1396");
   });
 
   it("keeps collections on the query page", () => {
@@ -150,12 +178,38 @@ describe("genreHref", () => {
     expect(params.get("sort")).toBe("vote_average.desc");
   });
 
-  it("drops the query-addressed genre and platform the path now carries", () => {
+  it("drops the query-addressed genre the path now carries", () => {
     const href = genreHref("movie", "horror-27", {
-      filterQuery: "?genre=comedy-35&provider=hulu&page=2",
+      filterQuery: "?genre=comedy-35&page=2",
     });
 
     expect(href).toBe("/genres/movie/horror-27?page=2");
+  });
+
+  it("keeps the filter bar's provider alongside the page", () => {
+    // The filter bar writes `provider` into the query on a genre page; the
+    // pager and the out-of-range correction both build their links here, and
+    // dropping it sent page two to the unfiltered catalogue.
+    for (const provider of ["8", "8|337", "mine", "any"]) {
+      const href = genreHref("movie", "horror-27", {
+        filterQuery: `?page=2&year=2020&provider=${encodeURIComponent(provider)}`,
+      });
+      const params = new URLSearchParams(href.split("?")[1]);
+
+      expect(href.split("?")[0]).toBe("/genres/movie/horror-27");
+      expect(params.get("page")).toBe("2");
+      expect(params.get("year")).toBe("2020");
+      expect(params.get("provider")).toBe(provider);
+    }
+  });
+
+  it("drops a provider filter on a landing, whose platform is the path", () => {
+    expect(
+      genreHref("movie", "horror-27", {
+        provider: "netflix",
+        filterQuery: "?page=2&provider=8",
+      }),
+    ).toBe("/genres/movie/horror-27/netflix?page=2");
   });
 
   it("leaves no question mark when there is nothing to carry", () => {

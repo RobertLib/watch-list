@@ -13,6 +13,7 @@ import { WatchlistProvider } from "@/contexts/WatchlistContext";
 import { WATCHLIST_STORAGE_KEY } from "@/lib/watchlist";
 import { Navigation } from "./Navigation";
 import { VideoOverlay } from "./VideoOverlay";
+import { ShareButton } from "./ShareButton";
 import type { MediaItem, Person } from "@/types/tmdb";
 
 /**
@@ -1412,5 +1413,231 @@ describe("results", () => {
     expect(
       screen.getByText(/no results found\. try a different search term/i),
     ).toBeTruthy();
+  });
+});
+
+/**
+ * A panel on the page – Share here – and the header's own layers both close on
+ * Escape, and one key closes one of them. The header used to listen on
+ * `document` like the panels, so which ran first was a matter of registration
+ * order: a search bar opened before the panel re-registered its listener ahead
+ * of the panel's, missed the panel's `preventDefault`, and closed too, taking
+ * focus up to the header and away from the control the visitor was on.
+ */
+describe("one Escape, one layer", () => {
+  function renderWithShare() {
+    return render(
+      <>
+        <Navigation />
+        <main id="main-content">
+          <ShareButton title="Fight Club" url="https://example.com/movie/fight-club-550" />
+        </main>
+      </>,
+      { wrapper },
+    );
+  }
+
+  /** jsdom has no `navigator.share`, so Share opens its own panel. */
+  async function openSharePanel() {
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Share" }));
+    });
+    return screen.getByRole("button", { name: /Copy link/ });
+  }
+
+  it("closes only the Share panel, and leaves the search bar opened before it", async () => {
+    renderWithShare();
+    await openSearch();
+    const copy = await openSharePanel();
+    copy.focus();
+
+    await act(async () => {
+      fireEvent.keyDown(copy, { key: "Escape" });
+    });
+
+    expect(screen.queryByRole("button", { name: /Copy link/ })).toBeNull();
+    expect(screen.getByLabelText("Close search").getAttribute("aria-expanded")).toBe("true");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Share" }));
+  });
+
+  it("closes only the Share panel, and leaves the mobile menu open", async () => {
+    renderWithShare();
+    fireEvent.click(screen.getByLabelText("Open menu"));
+    const copy = await openSharePanel();
+    copy.focus();
+
+    await act(async () => {
+      fireEvent.keyDown(copy, { key: "Escape" });
+    });
+
+    expect(screen.queryByRole("button", { name: /Copy link/ })).toBeNull();
+    expect(screen.getByLabelText("Close menu").getAttribute("aria-expanded")).toBe("true");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Share" }));
+  });
+
+  it("takes the panel first with focus elsewhere, and the search bar on the next Escape", async () => {
+    renderWithShare();
+    await openSearch();
+    await openSharePanel();
+    const input = screen.getByRole("combobox");
+    expect(document.activeElement).toBe(input);
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Escape" });
+    });
+    expect(screen.queryByRole("button", { name: /Copy link/ })).toBeNull();
+    expect(screen.getByLabelText("Close search")).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Escape" });
+    });
+    expect(screen.getByLabelText("Open search")).toBeTruthy();
+  });
+});
+
+/**
+ * A header link closes search because following it leaves the page. A
+ * Cmd/Ctrl/Shift-click does not leave – it opens a new tab or window – and Next's
+ * Link calls `onClick` for it all the same, so the overlay and its query used
+ * to vanish under a visitor opening several things in background tabs.
+ */
+describe("modified clicks on header links", () => {
+  it.each([
+    ["Cmd", { metaKey: true }],
+    ["Ctrl", { ctrlKey: true }],
+    ["Shift", { shiftKey: true }],
+  ])("keep the search results open on a %s-click", async (_, modifier) => {
+    vi.mocked(searchMulti).mockResolvedValue({
+      results: [media("Fight Club", 550)],
+    } as never);
+    renderNav();
+    await openSearch();
+    await search("fight");
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole("link", { name: "Movies" })[0], modifier);
+    });
+
+    expect(screen.getByTestId("media-results").textContent).toContain("Fight Club");
+    expect(
+      (screen.getByLabelText(/search movies, tv shows and people/i) as HTMLInputElement).value,
+    ).toBe("fight");
+  });
+
+  it("still close search on a plain click", async () => {
+    vi.mocked(searchMulti).mockResolvedValue({
+      results: [media("Fight Club", 550)],
+    } as never);
+    renderNav();
+    await openSearch();
+    await search("fight");
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole("link", { name: "Movies" })[0]);
+    });
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByLabelText("Open search")).toBeTruthy();
+  });
+
+  it("keep the mobile menu open on a Cmd-click inside it", async () => {
+    renderNav();
+    fireEvent.click(screen.getByLabelText("Open menu"));
+    const mobileLink = screen.getAllByRole("link", { name: "Movies" }).find(
+      (link) => link.closest("#mobile-menu"),
+    )!;
+
+    await act(async () => {
+      fireEvent.click(mobileLink, { metaKey: true });
+    });
+    expect(screen.getByLabelText("Close menu")).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(mobileLink);
+    });
+    expect(screen.getByLabelText("Open menu")).toBeTruthy();
+  });
+});
+
+/**
+ * The ✕ in the box used to be "Close search" under another name: it collapsed
+ * the bar and sent focus to the toolbar, so starting a new query meant opening
+ * search all over again.
+ */
+describe("clearing the box", () => {
+  it("empties it and closes the results, but keeps the bar open with focus in it", async () => {
+    vi.mocked(searchMulti).mockResolvedValue({
+      results: [media("Fight Club", 550)],
+    } as never);
+    renderNav();
+    await openSearch();
+    await search("fight");
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Clear search"));
+    });
+
+    const input = screen.getByLabelText(/search movies, tv shows and people/i) as HTMLInputElement;
+    expect(input.value).toBe("");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByLabelText("Close search").getAttribute("aria-expanded")).toBe("true");
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("does not let the cleared query's pending answer reopen the results", async () => {
+    let answer!: (value: unknown) => void;
+    vi.mocked(searchMulti).mockReturnValue(new Promise((resolve) => { answer = resolve; }) as never);
+    renderNav();
+    await openSearch();
+    await search("fight");
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Clear search"));
+    });
+    await act(async () => {
+      answer({ results: [media("Fight Club", 550)] });
+    });
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+/**
+ * `e.key` is the character the layout types. On a Russian, Greek or Hebrew
+ * keyboard that is not "k", and the shortcut never fired; the physical key is
+ * the fallback for a layout with no Latin letter there – and only for one, or
+ * Dvorak's Cmd+T (the "t" sits where QWERTY has K) would be claimed too.
+ */
+describe("Cmd/Ctrl+K on other keyboard layouts", () => {
+  it.each([["Russian", "л"], ["Greek", "κ"], ["Hebrew", "ל"]])(
+    "opens search on a %s layout",
+    async (_, key) => {
+      onPlatform("MacIntel");
+      renderNav();
+
+      await act(async () => {
+        fireEvent.keyDown(document, { key, code: "KeyK", metaKey: true });
+      });
+
+      expect(screen.getByLabelText("Close search")).toBeTruthy();
+    },
+  );
+
+  it("leaves a Latin layout's own letter on that key alone", async () => {
+    onPlatform("MacIntel");
+    renderNav();
+
+    const chord = new KeyboardEvent("keydown", {
+      key: "t",
+      code: "KeyK",
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    await act(async () => { document.dispatchEvent(chord); });
+
+    expect(chord.defaultPrevented).toBe(false);
+    expect(screen.getByLabelText("Open search")).toBeTruthy();
   });
 });

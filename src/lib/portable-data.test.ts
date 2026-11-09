@@ -249,6 +249,25 @@ describe("parseBackup", () => {
     expect(parseBackup(JSON.parse(JSON.stringify(backup)))).toEqual(backup);
   });
 
+  it("keeps an undated entry undated, and dates only entries with no timestamp at all", () => {
+    const parsed = parseBackup({
+      format: BACKUP_FORMAT,
+      exportedAt: "2026-03-01T00:00:00.000Z",
+      watchlist: [
+        { id: 1, title: "Undated", mediaType: "movie", addedAt: "" },
+        { id: 2, title: "Missing", mediaType: "movie" },
+        { id: 3, title: "Garbled", mediaType: "movie", addedAt: "not a date" },
+        { id: 4, title: "Dated", mediaType: "movie", addedAt: "2026-01-01T00:00:00.000Z" },
+      ],
+      watched: [{ id: 5, title: "Undated", mediaType: "tv", watchedAt: "" }],
+    })!;
+
+    expect(parsed.watchlist.map((item) => item.addedAt)).toEqual([
+      "", "2026-03-01T00:00:00.000Z", "2026-03-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z",
+    ]);
+    expect(parsed.watched.map((item) => item.watchedAt)).toEqual([""]);
+  });
+
   it("refuses a file that is not one of ours", () => {
     expect(parseBackup(null)).toBeNull();
     expect(parseBackup([])).toBeNull();

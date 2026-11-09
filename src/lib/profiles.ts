@@ -9,8 +9,8 @@ import { LAST_VISIT_STORAGE_KEY, LEGACY_LAST_VISIT_STORAGE_KEY } from "./last-vi
 import { RANKING_STORAGE_KEY } from "./ranking";
 import { RATINGS_STORAGE_KEY, notifyRatingsChanged } from "./ratings";
 import { WATCHED_STORAGE_KEY } from "./watched";
-import { WATCHLIST_STORAGE_KEY, prepareWatchlistForProfileSwitch } from "./watchlist";
-import { DEFAULT_PROFILE, DELETED_PROFILE_PREFIX, deletedProfileKey, getLegacyProfileStorageOwner, getProfileStorageOwner, initializeProfileStorage, inspectProfileStore, isProfileDeleted, isProfileStorageOwnerAvailable, MAX_PROFILES, PROFILE_STORAGE_OWNER_KEY, profileStoreChanges, profileStoreKey, publishProfileStorageChange, resolveProfileStorageOwner, sanitizeProfileName, sanitizeProfiles, withProfileStorage, type Profile } from "./profile-storage";
+import { WATCHLIST_COOKIE_RECOVERY_KEY, WATCHLIST_STORAGE_KEY, prepareWatchlistForProfileSwitch } from "./watchlist";
+import { DEFAULT_PROFILE, DELETED_PROFILE_PREFIX, deletedProfileKey, getLegacyProfileStorageOwner, getProfileStorageOwner, initializeProfileStorage, initializeProfileStorageAfterRelease, initializeProfileStorageForRelease, inspectProfileStore, isProfileDeleted, isProfileStorageOwnerAvailable, MAX_PROFILES, PROFILE_STORAGE_OWNER_KEY, profileIdsInStorage, profileStoreChanges, profileStoreKey, publishProfileStorageChange, resolveProfileStorageOwner, sanitizeProfileId, sanitizeProfileName, sanitizeProfiles, withProfileStorage, type Profile } from "./profile-storage";
 import { withProfileRosterLock } from "./profile-roster-lock";
 import type { StorageTransactionResult } from "./storage-transaction";
 
@@ -99,12 +99,82 @@ function slotKey(profileId: string): string {
 
 /**
  * Storage a profile owns outside its stable store addresses: the shared
- * last-visit stamp written before profiles had their own belongs to the
- * original owner, like the other legacy live keys. Restores and deletions
- * replace it with the rest of that owner's data.
+ * last-visit stamp written before profiles had their own, and the kept text of
+ * an unreadable legacy watchlist cookie, belong to the original owner, like the
+ * other legacy live keys. Restores and deletions replace them with the rest of
+ * that owner's data.
  */
 function legacyOwnedKeys(profileId: string): string[] {
-  return profileId === getLegacyProfileStorageOwner() ? [LEGACY_LAST_VISIT_STORAGE_KEY] : [];
+  return profileId === getLegacyProfileStorageOwner()
+    ? [LEGACY_LAST_VISIT_STORAGE_KEY, WATCHLIST_COOKIE_RECOVERY_KEY]
+    : [];
+}
+
+/** Whether the original owner's bare keys hold anything. */
+function legacyOwnerHasData(): boolean {
+  const storage = window.localStorage;
+  return [...OWNED_KEYS, LEGACY_LAST_VISIT_STORAGE_KEY, WATCHLIST_COOKIE_RECOVERY_KEY]
+    .some((key) => storage.getItem(key) !== null);
+}
+
+/**
+ * Every profile id with data in storage, from the addresses themselves rather
+ * than the roster: namespaced stores, parked slots and the original owner's
+ * bare keys. Deleted profiles are left out unless `includeDeleted` asks for
+ * their leftovers too.
+ */
+function profileIdsWithData(options: { includeDeleted?: boolean; withContent?: boolean } = {}): string[] {
+  const ids = profileIdsInStorage(OWNED_KEYS, { withContent: options.withContent });
+  const legacy = getLegacyProfileStorageOwner();
+  if (legacyOwnerHasData()) ids.add(legacy);
+  return [...ids]
+    .filter((id) => options.includeDeleted || !isProfileDeleted(id))
+    .sort();
+}
+
+/**
+ * The people a damaged roster no longer lists, found from the data they left.
+ *
+ * A roster that cannot be parsed reads as the default profile alone, and one
+ * the normalizer had to repair loses the entries it dropped – but their stores
+ * are still in storage, readable at their own addresses. A backup that trusted
+ * the repaired roster exported nobody else, and a restore of that file then
+ * orphaned all of them; this is what lets the backup carry them instead. Each
+ * keeps the name the damaged roster still gives it where that is usable and
+ * unique, and is otherwise called "Recovered profile N".
+ */
+export function recoverUnlistedProfiles(rosterText: string | null, listed: Profile[]): Profile[] {
+  if (typeof window === "undefined") return [];
+
+  const storedNames = new Map<string, string>();
+  try {
+    const parsed: unknown = rosterText === null ? null : JSON.parse(rosterText);
+    if (Array.isArray(parsed)) {
+      for (const entry of parsed) {
+        if (!entry || typeof entry !== "object") continue;
+        const record = entry as Record<string, unknown>;
+        const id = sanitizeProfileId(record.id);
+        const name = sanitizeProfileName(record.name);
+        if (id && name && !storedNames.has(id)) storedNames.set(id, name);
+      }
+    }
+  } catch {
+    // Unparseable: every recovered profile gets a placeholder name.
+  }
+
+  const listedIds = new Set(listed.map((profile) => profile.id));
+  const recovered: Profile[] = [];
+  let counter = 0;
+  for (const id of profileIdsWithData({ withContent: true })) {
+    if (listedIds.has(id)) continue;
+    let name = storedNames.get(id);
+    while (!name || nameIsTaken([...listed, ...recovered], name)) {
+      counter += 1;
+      name = `Recovered profile ${counter}`;
+    }
+    recovered.push({ id, name });
+  }
+  return recovered;
 }
 
 /**
@@ -350,9 +420,9 @@ function newProfileId(): string {
  *
  * A name is all the switcher shows. Two profiles called "Tom" are two
  * indistinguishable rows over two different watchlists, and picking the wrong
- * one is a switch – which parks your data under the other person's id and loads
- * theirs over yours. Compared case-insensitively because "tom" and "Tom" are the
- * same person as far as anyone reading the menu is concerned.
+ * one is a switch – after which every save lands in the other person's stores
+ * and theirs are what you see. Compared case-insensitively because "tom" and
+ * "Tom" are the same person as far as anyone reading the menu is concerned.
  */
 function nameIsTaken(profiles: Profile[], clean: string, exceptId?: string): boolean {
   const wanted = clean.toLocaleLowerCase();
@@ -450,7 +520,9 @@ function deleteProfileLocked(profileId: string): boolean {
   if (profileId === getActiveProfileId()) return false;
 
   try {
-    initializeProfileStorage();
+    // Deletion is how a full browser makes room, so an owner marker it cannot
+    // write yet must not refuse it (see `initializeProfileStorageForRelease`).
+    initializeProfileStorageForRelease();
   } catch (error) {
     console.error("Error preparing profile storage:", error);
     return false;
@@ -460,19 +532,29 @@ function deleteProfileLocked(profileId: string): boolean {
   if (!profiles.some((profile) => profile.id === profileId)) return false;
   if (profileId === getActiveProfileId()) return false;
   const removed = profiles.filter((profile) => profile.id !== profileId);
-  // This atomic write is the deletion's only commit point. Shrinking the roster
+  // This atomic write is the deletion's commit point. Shrinking the roster
   // first would orphan the profile if both the marker and roster recovery failed,
   // causing the next backup to omit data after a reported failed deletion.
+  let marked = true;
   try {
     window.localStorage.setItem(deletedProfileKey(profileId), "true");
   } catch (error) {
     console.error("Error saving profile deletion:", error);
-    return false;
+    marked = false;
   }
 
-  // Readers already exclude marked owners. Cleanup cannot turn a committed
-  // deletion into a failure, even if the original roster remains in storage.
-  writeProfiles(removed);
+  if (marked) {
+    // Readers already exclude marked owners. Cleanup cannot turn a committed
+    // deletion into a failure, even if the original roster remains in storage.
+    writeProfiles(removed);
+  } else {
+    // A browser at its quota has no room for even the small marker – and
+    // deleting a profile is how somebody makes room. A shorter roster always
+    // fits where the longer one did, and it commits the deletion just as well:
+    // an owner the roster does not list is unavailable to every reader and
+    // writer. The marker is written once the data below has released space.
+    if (!writeProfiles(removed)) return false;
+  }
 
   try {
     window.localStorage.removeItem(slotKey(profileId));
@@ -485,6 +567,16 @@ function deleteProfileLocked(profileId: string): boolean {
     // failed cleanup costs storage without reversing the requested deletion.
     console.error("Error removing the profile's data:", error);
   }
+
+  if (!marked) {
+    try {
+      window.localStorage.setItem(deletedProfileKey(profileId), "true");
+    } catch (error) {
+      // The shortened roster already committed the deletion.
+      console.error("Error saving profile deletion after cleanup:", error);
+    }
+  }
+  initializeProfileStorageAfterRelease();
 
   notifyProfilesChanged();
   return true;
@@ -549,14 +641,24 @@ export function profileRestoreChanges(
   }
   changes.set(PROFILES_STORAGE_KEY, JSON.stringify(roster));
   changes.set(ACTIVE_PROFILE_STORAGE_KEY, active.id);
-  for (const existing of getProfiles()) {
-    if (keep.has(existing.id)) continue;
-    changes.set(deletedProfileKey(existing.id), "true");
-    changes.set(slotKey(existing.id), null);
+  // Everybody the backup does not carry goes, with all their data – which is
+  // what the confirmation promises. Found from the addresses in storage as well
+  // as from the roster: a roster that cannot be parsed, or one the normalizer
+  // repaired, does not list everybody whose stores are still here, and those
+  // used to survive the restore as data no profile could ever reach again.
+  // A deleted profile's leftovers – from a cleanup the browser refused – go too.
+  const absent = new Set([
+    ...getProfiles().map((profile) => profile.id),
+    ...profileIdsWithData({ includeDeleted: true }),
+  ]);
+  for (const existingId of absent) {
+    if (keep.has(existingId)) continue;
+    changes.set(deletedProfileKey(existingId), "true");
+    changes.set(slotKey(existingId), null);
     for (const key of OWNED_KEYS) {
-      changes.set(profileStoreKey(key, existing.id), null);
+      changes.set(profileStoreKey(key, existingId), null);
     }
-    for (const key of legacyOwnedKeys(existing.id)) changes.set(key, null);
+    for (const key of legacyOwnedKeys(existingId)) changes.set(key, null);
   }
 
   return changes;

@@ -11,6 +11,7 @@ import {
 } from "@/components/DiscoverFilterBar";
 import { LoadingSection } from "@/components/LoadingSpinner";
 import { LoadFailureNotice } from "@/components/LoadFailureNotice";
+import { SnapshotRefreshNotice } from "@/components/SnapshotRefreshNotice";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { useSettingsKey } from "@/hooks/useSettings";
 import { genreHref } from "@/lib/routes";
@@ -198,15 +199,27 @@ function LiveGenreListing({
     );
   } else {
     results = (
-      <GenreResults
-        mediaType={mediaType}
-        genre={genre}
-        platform={platform}
-        isFiltered={isFiltered}
-        page={page}
-        listing={listing}
-        pageHref={pageHref}
-      />
+      <>
+        {listingLoad.refreshError != null && (
+          // The build's page one stays up; the visitor's own listing – their
+          // region and services – is what did not arrive.
+          <SnapshotRefreshNotice
+            className="mb-6"
+            message={`Showing saved ${mediaNoun} – the listing for your region and services could not be loaded.`}
+            onRetry={listingLoad.reload}
+            isRetrying={listingLoad.isRetrying}
+          />
+        )}
+        <GenreResults
+          mediaType={mediaType}
+          genre={genre}
+          platform={platform}
+          isFiltered={isFiltered}
+          page={page}
+          listing={listing}
+          pageHref={pageHref}
+        />
+      </>
     );
   }
 

@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import Image from "next/image";
 import { Play } from "lucide-react";
 import { VideoOverlay } from "@/components/VideoOverlay";
+import { isPlayableYouTubeVideo } from "@/lib/trailer";
 import type { Video } from "@/types/tmdb";
 
 interface MediaVideosProps {
@@ -30,7 +31,9 @@ const TYPE_BADGE_COLOR: Record<string, string> = {
 
 function sortVideos(videos: Video[]): Video[] {
   return [...videos]
-    .filter((v) => v.site === "YouTube")
+    // Only what the shared player can embed, and whose key is safe to put in
+    // the thumbnail's and the player's URL paths.
+    .filter(isPlayableYouTubeVideo)
     .sort((a, b) => {
       const ai = TYPE_ORDER.indexOf(a.type);
       const bi = TYPE_ORDER.indexOf(b.type);

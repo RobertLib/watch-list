@@ -114,6 +114,35 @@ describe("MOODS", () => {
   });
 });
 
+/**
+ * TMDB reads a comma in `with_genres` as AND and a pipe as OR. Three moods used
+ * a comma, or a single genre, where the comment above them listed genres the
+ * mood was about – asking TMDB for far less than the page described.
+ */
+describe("genre queries", () => {
+  const genreOf = (slug: string, side: "movie" | "tv") =>
+    findMood(slug)?.[side]?.genre;
+
+  it("asks for any of the genres a mood is about", () => {
+    expect(genreOf("easy-watch", "movie")).toBe("35|10751|10749");
+    expect(genreOf("easy-watch", "tv")).toBe("35|10751");
+    expect(genreOf("edge-of-your-seat", "movie")).toBe("53|9648");
+  });
+
+  it("keeps the intersection only where it is the point", () => {
+    expect(genreOf("big-and-loud", "movie")).toBe("28,12");
+  });
+
+  it("never mixes AND and OR in one expression, which TMDB gives no precedence for", () => {
+    for (const mood of MOODS) {
+      for (const filters of [mood.movie, mood.tv]) {
+        const genre = filters?.genre ?? "";
+        expect(genre.includes(",") && genre.includes("|")).toBe(false);
+      }
+    }
+  });
+});
+
 describe("findMood", () => {
   it("finds a mood by its slug", () => {
     const first = MOODS[0];

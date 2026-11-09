@@ -30,9 +30,8 @@ vi.mock("./tmdb-cache", () => ({
 }));
 
 const { getCachedMovieDetails } = await import("./tmdb-cache");
-const { pickRatingDuel, sanitizeSeenIds, settleRatingDuel } = await import(
-  "./rating-duel-data"
-);
+const { isPoolExhausted, pickRatingDuel, sanitizeSeenIds, settleRatingDuel } =
+  await import("./rating-duel-data");
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -159,4 +158,40 @@ describe("settleRatingDuel", () => {
       expect(await settleRatingDuel(rating, 2, "higher")).toBeNull();
     },
   );
+});
+
+// Last in the file: a film ruled out stays ruled out for the module's lifetime,
+// as it does for a page's.
+describe("isPoolExhausted", () => {
+  beforeEach(() => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+  });
+
+  it("is false while any film is still to be drawn", () => {
+    expect(isPoolExhausted([])).toBe(false);
+    expect(isPoolExhausted([1, 2])).toBe(false);
+  });
+
+  it("is true once every film has been shown", () => {
+    expect(isPoolExhausted([1, 2, 3])).toBe(true);
+  });
+
+  it("counts a film TMDB ruled out, so a run can end instead of retrying forever", async () => {
+    vi.mocked(getCachedMovieDetails).mockImplementationOnce(async () => {
+      throw new Error("TMDB API error: 404 Not Found");
+    });
+
+    // Film 3 is gone upstream; drawing the last film fails and rules it out.
+    expect(await pickRatingDuel([1, 2], false)).toBeNull();
+    expect(isPoolExhausted([1, 2])).toBe(true);
+  });
+
+  it("does not count a film behind a transient failure", async () => {
+    vi.mocked(getCachedMovieDetails).mockImplementationOnce(async () => {
+      throw new Error("TMDB API error: 503 Service Unavailable");
+    });
+
+    await expect(pickRatingDuel([1, 3], false)).rejects.toThrow("503");
+    expect(isPoolExhausted([1, 3])).toBe(false);
+  });
 });

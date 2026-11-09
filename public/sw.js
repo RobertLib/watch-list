@@ -48,7 +48,7 @@
 // though, and cannot be: a code-only deploy leaves this file byte-identical, so
 // `install` never re-runs for it. `/offline` is refreshed on activation and
 // then opportunistically after navigations (see `refreshOfflinePage`).
-const VERSION = "v10";
+const VERSION = "v11";
 const SHELL_CACHE = `shell-${VERSION}`;
 const STATIC_CACHE = `static-${VERSION}`;
 const IMAGE_CACHE = `images-${VERSION}`;
@@ -116,21 +116,54 @@ const OFFLINE_URL = "/offline";
 // visit and want offline.
 const MAX_IMAGE_ENTRIES = 200;
 
-// A deploy renames most hashed assets, so the previous build's chunks linger
-// here until they are evicted – and one build is about ninety files, so a
-// couple of code-only deploys (which leave this file, and so this cache's
-// name, unchanged) fill it. What goes first is decided in `trimStaticCache`.
-const MAX_STATIC_ENTRIES = 150;
+// One build writes about 115 files under `/_next/static/` (113 when last
+// measured, 81 of them named by some route's markup), and a deploy that moves
+// a shared dependency renames nearly all of them – while a code-only deploy,
+// which leaves this file and so this cache's name unchanged, adds just the files
+// it changed. The bound has to hold two complete builds at once: the one the
+// network serves now, and the one a page saved before the deploy still names.
+// Below that, `trimStaticCache` runs out of leftovers and starts giving up the
+// chunks of saved pages, which then open offline as markup with no script.
+// Three hundred is two builds with room to grow. What goes first is decided in
+// `trimStaticCache`.
+const MAX_STATIC_ENTRIES = 300;
+
+/**
+ * Pages the build prerendered from TMDB's catalogue, rather than routes of the
+ * app itself: a title or a person at a path of its own, a genre alone or on one
+ * platform, a mood.
+ *
+ * A deploy built with a TMDB token has about 1,500 of them – 1,225 titles and
+ * people (`LIMITS` in `scripts/prebuild.mjs`), 280 genre pages and 9 moods –
+ * against 29 fixed routes, and each is an entry of its own in the page and RSC
+ * caches. The fixed routes are the ones offline is for: they fill themselves in
+ * from browser storage (the watchlist, ratings, stats, profile, calendar), and
+ * `/movie`, `/tv` and `/person` are the one shell every title not prerendered
+ * opens in. A catalogue page offline has its build-time snapshot and nothing
+ * that needs TMDB. So these are what a full page or RSC cache gives up first –
+ * and a session of browsing titles can no longer push out the home page.
+ *
+ * An RSC payload belongs to the page it was written for: `<page>.txt`, and the
+ * segment files Next writes beside it as `<page>/__next.….txt`.
+ */
+const CATALOGUE_PAGE =
+  /^\/(?:(?:movie|tv|person|mood)\/[^/]+|genres\/(?:movie|tv)\/[^/]+(?:\/[^/]+)?)$/;
+
+function isCataloguePath(pathname) {
+  return CATALOGUE_PAGE.test(pathname.replace(/(?:\/__next\.[^/]+)?\.txt$/, ""));
+}
 
 /**
  * How many page shells to keep.
  *
- * The whole app is 34 routes, so this holds every page a visitor could reach –
- * the bound is here to cap a cache, not to ration it. Insertion order is also
- * recency order here, with no `markUsed`: every online visit stores the page
- * again, and so does every RSC request for the RSC copies.
+ * Every fixed route, with room to spare, and the catalogue pages visited most
+ * recently. Catalogue pages are evicted before any fixed route (see
+ * `isCataloguePath` and `trimCache`), and among themselves in the order they
+ * were last used: a full load stores its page again, a Link transition stores
+ * its RSC payload again, and the CACHE_PAGE that follows a transition moves the
+ * page it found fresh to the back (see `touchSavedPage`).
  */
-const MAX_PAGE_ENTRIES = 40;
+const MAX_PAGE_ENTRIES = 80;
 const MAX_RSC_ENTRIES = 200;
 
 /**
@@ -307,16 +340,27 @@ self.addEventListener("activate", (event) => {
  * they were written, and `put` over an existing entry moves it to the end – so
  * with `markUsed` rewriting hits, the front of the list is what has gone unused
  * longest.
+ *
+ * The page and RSC caches give up catalogue pages first (see
+ * `isCataloguePath`), in that same order, and the app's own routes only if the
+ * catalogue pages alone are not enough.
  */
 async function trimCache(cacheName, maxEntries) {
   const cache = await caches.open(cacheName);
   const keys = await cache.keys();
+  const excess = keys.length - maxEntries;
 
-  if (keys.length <= maxEntries) return;
+  if (excess <= 0) return;
 
-  await Promise.all(
-    keys.slice(0, keys.length - maxEntries).map((key) => cache.delete(key)),
-  );
+  const expendable = cacheName === PAGE_CACHE || cacheName === RSC_CACHE
+    ? (key) => isCataloguePath(new URL(key.url).pathname)
+    : () => false;
+  const victims = [
+    ...keys.filter((key) => expendable(key)),
+    ...keys.filter((key) => !expendable(key)),
+  ].slice(0, excess);
+
+  await Promise.all(victims.map((key) => cache.delete(key)));
 }
 
 /**
@@ -404,6 +448,44 @@ function markUsed(cacheName, request, cached, event) {
       .then((cache) => cache.put(request, withSavedAt(cached.clone())))
       .catch(() => undefined),
   );
+}
+
+/**
+ * When a saved page was last used, on the copy – kept apart from when it was
+ * saved, which is what decides whether CACHE_PAGE re-fetches it.
+ */
+const USED_AT_HEADER = "X-SW-Used-At";
+
+/**
+ * Move a saved page to the back of its cache's eviction order, keeping the
+ * stamp it was saved with.
+ *
+ * A Link transition stores its RSC payload again, but not the page: the
+ * CACHE_PAGE that follows finds the copy fresh and fetches nothing. Without
+ * this, a page revisited by Link all day kept the place it was first stored in,
+ * and went before pages opened once since. Not `markUsed`, which re-stamps: the
+ * saved-at stamp is what lets CACHE_PAGE refresh a copy older than
+ * PAGE_REFRESH_INTERVAL, and a touch that reset it would keep a page that is
+ * revisited every day from ever being refreshed. At most once per
+ * RECENCY_INTERVAL, so a page is not rewritten on every route change.
+ *
+ * `copy` must be unread: its body becomes the new entry's.
+ */
+function touchSavedPage(cacheName, key, copy) {
+  const usedAt =
+    Number(copy.headers.get(USED_AT_HEADER)) || Number(copy.headers.get(SAVED_AT_HEADER)) || 0;
+  if (Date.now() - usedAt < RECENCY_INTERVAL) return Promise.resolve();
+
+  const headers = new Headers(copy.headers);
+  headers.set(USED_AT_HEADER, String(Date.now()));
+  return caches
+    .open(cacheName)
+    .then((cache) => cache.put(key, new Response(copy.body, {
+      status: copy.status,
+      statusText: copy.statusText,
+      headers,
+    })))
+    .catch(() => undefined);
 }
 
 /**
@@ -604,22 +686,38 @@ async function handleStatic(request, event) {
  *
  * It sends that header only when the request carries an `Origin`, though, and
  * without `Vary: Origin` – while letting the browser keep the file for a year.
- * So any plain `<img>` load that bypassed this worker (the first visit, before
- * it took control; a hard reload; the no-cors fallback below; an earlier
- * version of this file) leaves a copy in the HTTP cache with no CORS header,
- * and a CORS fetch answered from that copy fails, every time, with a console
- * error per poster. Hence `cache: "reload"`: the request always reaches the
- * CDN with its `Origin`, and the readable answer replaces the copy in the HTTP
- * cache too. It costs a re-download only on a miss here, which is when the
- * network was going to be asked anyway, give or take the browser's own cache.
+ * So a plain `<img>` load that bypassed this worker (the first visit, before it
+ * took control; a hard reload; the no-cors fallback below; an earlier version
+ * of this file) leaves a copy in the HTTP cache with no CORS header, and a CORS
+ * fetch answered from that copy fails.
  *
- * Should the CDN ever stop sending that header, the CORS fetch fails outright –
- * a network error, not a status – and the request falls back to the plain
+ * Every miss here used to go past the HTTP cache (`cache: "reload"`) to avoid
+ * that copy. It also avoided every good one: each poster this cache had
+ * evicted – and at MAX_IMAGE_ENTRIES a few listings evict plenty – was
+ * downloaded again in full although the browser held it for a year, which made
+ * repeat browsing heavier with this worker than without it. So the HTTP cache
+ * is asked first, and only a fetch that fails is retried past it. The retry
+ * reaches the CDN with an `Origin`, and its readable answer replaces the copy in
+ * the HTTP cache as well – so a copy without the header fails once, not on
+ * every later miss, which is what the console used to show.
+ *
+ * The trade: that one failure is still a CORS error in the console, once per
+ * poster loaded outside this worker, and it costs a round trip to the HTTP
+ * cache and no download. Going past the cache every time cost a full download
+ * per eviction, on every visit. A copy the HTTP cache holds also opens offline
+ * now, where `reload` could only fail.
+ *
+ * Should the CDN ever stop sending that header, both CORS fetches fail outright
+ * – network errors, not statuses – and the request falls back to the plain
  * fetch the browser would have made without a worker. That response is opaque
  * and is returned without being cached: better to re-fetch every poster than
  * to freeze a failure. (A network outage takes the same path, and the fallback
  * fails too, which is what an outage looked like before as well.)
  */
+function posterRequest(request, cache) {
+  return new Request(request.url, { mode: "cors", credentials: "omit", cache });
+}
+
 async function handleImage(request, event) {
   const cached = await readFromCache(IMAGE_CACHE, request);
   if (cached) {
@@ -629,11 +727,13 @@ async function handleImage(request, event) {
 
   let response;
   try {
-    response = await fetch(
-      new Request(request.url, { mode: "cors", credentials: "omit", cache: "reload" }),
-    );
+    response = await fetch(posterRequest(request, "default"));
   } catch {
-    return fetch(request);
+    try {
+      response = await fetch(posterRequest(request, "reload"));
+    } catch {
+      return fetch(request);
+    }
   }
 
   if (response.ok) {
@@ -730,30 +830,35 @@ function handleRsc(request, event) {
 const precachingPages = new Map();
 
 /**
- * Whether a cached copy was stored within `PAGE_REFRESH_INTERVAL`. A copy
- * without the stamp – one saved by an earlier worker – counts as stale, so the
- * worst case is the re-fetch that used to happen every time.
+ * Save a page the visitor just reached, and its RSC payload, unless both are
+ * already here and current.
+ *
+ * Current means stored within PAGE_REFRESH_INTERVAL. A copy without the stamp –
+ * one saved by an earlier worker – counts as stale, so the worst case is the
+ * re-fetch that used to happen every time. A page found current is still
+ * recorded as used (see `touchSavedPage`).
  */
-async function isFresh(cacheName, key) {
-  return savedWithin(await readFromCache(cacheName, key), PAGE_REFRESH_INTERVAL);
-}
-
 async function cachePage(url) {
   const rscPath = url.pathname.endsWith("/")
     ? `${url.pathname}index.txt`
     : `${url.pathname}.txt`;
   const rscRequest = new Request(url.origin + rscPath, { headers: { RSC: "1" } });
-  const [pageFresh, rscFresh] = await Promise.all([
-    isFresh(PAGE_CACHE, pageKey(url)),
-    isFresh(RSC_CACHE, pageKey(new URL(rscRequest.url))),
+  const key = pageKey(url);
+  const [pageCopy, rscCopy] = await Promise.all([
+    readFromCache(PAGE_CACHE, key),
+    readFromCache(RSC_CACHE, pageKey(new URL(rscRequest.url))),
   ]);
+  const pageFresh = savedWithin(pageCopy, PAGE_REFRESH_INTERVAL);
+  const rscFresh = savedWithin(rscCopy, PAGE_REFRESH_INTERVAL);
 
   const tasks = [];
-  if (!pageFresh) {
-    const response = await fetch(pageKey(url), { cache: "reload" });
+  if (pageFresh) {
+    tasks.push(touchSavedPage(PAGE_CACHE, key, pageCopy));
+  } else {
+    const response = await fetch(key, { cache: "reload" });
     if (!response.ok || !response.headers.get("content-type")?.toLowerCase().startsWith("text/html")) return;
     tasks.push(
-      storeInCache(PAGE_CACHE, pageKey(url), withSavedAt(response.clone()), MAX_PAGE_ENTRIES),
+      storeInCache(PAGE_CACHE, key, withSavedAt(response.clone()), MAX_PAGE_ENTRIES),
       cachePageAssets(response),
     );
   }

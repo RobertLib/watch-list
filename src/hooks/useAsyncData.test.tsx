@@ -335,14 +335,69 @@ describe("useAsyncData placeholder", () => {
     expect(result.current).toMatchObject({ data: null, isLoading: true });
   });
 
-  it("reports a failed first load as an error rather than keeping the placeholder", async () => {
+  it("keeps the placeholder on screen when the first load fails, and reports the failure beside it", async () => {
+    // Offline with the service worker's saved page, or TMDB refusing the
+    // request: the snapshot the visitor is already reading must not turn into
+    // a failure screen.
     const load = deferred<string>();
     const { result } = renderHook(() =>
       useAsyncData(() => load.promise, [], "snapshot"),
     );
+    expect(result.current).toMatchObject({ isPlaceholder: true, refreshError: null });
 
     await act(async () => { load.reject(new Error("offline")); });
-    expect(result.current).toMatchObject({ data: null, isLoading: false });
+    expect(result.current).toMatchObject({
+      data: "snapshot",
+      isLoading: false,
+      error: null,
+      isPlaceholder: true,
+      isRetrying: false,
+    });
+    expect(result.current.refreshError).toBeInstanceOf(Error);
+  });
+
+  it("keeps the failure reported while its retry is in flight, then replaces the snapshot", async () => {
+    const loads = [deferred<string>(), deferred<string>()];
+    let call = 0;
+    const { result } = renderHook(() =>
+      useAsyncData(() => loads[call++].promise, [], "snapshot"),
+    );
+    await act(async () => { loads[0].reject(new Error("offline")); });
+
+    act(() => result.current.reload());
+    expect(result.current).toMatchObject({ data: "snapshot", isLoading: false, isRetrying: true });
+    expect(result.current.refreshError).toBeInstanceOf(Error);
+
+    await act(async () => { loads[1].resolve("live"); });
+    expect(result.current).toMatchObject({
+      data: "live",
+      isPlaceholder: false,
+      refreshError: null,
+      isRetrying: false,
+    });
+  });
+
+  it("still reports a failed load as an error when there is no placeholder", async () => {
+    const load = deferred<string>();
+    const { result } = renderHook(() => useAsyncData(() => load.promise, [], null));
+
+    await act(async () => { load.reject(new Error("offline")); });
+    expect(result.current).toMatchObject({ data: null, isLoading: false, refreshError: null });
+    expect(result.current.error).toBeInstanceOf(Error);
+  });
+
+  it("reports a failure as an error once a real answer has replaced the placeholder", async () => {
+    const loads = [deferred<string>(), deferred<string>()];
+    let call = 0;
+    const { result, rerender } = renderHook(
+      ({ page }) => useAsyncData(() => loads[call++].promise, [page], "snapshot"),
+      { initialProps: { page: 1 } },
+    );
+    await act(async () => { loads[0].resolve("page one"); });
+
+    rerender({ page: 2 });
+    await act(async () => { loads[1].reject(new Error("offline")); });
+    expect(result.current).toMatchObject({ data: null, isPlaceholder: false });
     expect(result.current.error).toBeInstanceOf(Error);
   });
 });

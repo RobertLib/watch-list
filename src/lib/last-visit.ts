@@ -9,6 +9,7 @@ import {
   withProfileStorage,
 } from "./profile-storage";
 import { applyStorageTransaction } from "./storage-transaction";
+import { todayLocal } from "./dates";
 
 /**
  * When this profile was last here.
@@ -201,11 +202,17 @@ export function isGapWorthShowing(
   return now.getTime() - parsed >= MIN_GAP_HOURS * 3_600_000;
 }
 
-/** "yesterday", "3 days ago" – the phrasing a person would use. */
+/**
+ * "yesterday", "3 days ago" – the phrasing a person would use.
+ *
+ * Counted in calendar days where the visitor is, not in elapsed 24-hour
+ * periods: a visit at 22:00 and a return at 08:00 the next morning is
+ * "yesterday", although only ten hours have passed. Counting periods called
+ * every gap under a day "earlier today" – and the strip only appears after a
+ * gap of hours, so that was most of them.
+ */
 export function describeGap(previous: string, now: Date = new Date()): string {
-  const days = Math.floor(
-    (now.getTime() - Date.parse(previous)) / 86_400_000,
-  );
+  const days = calendarDaysBetween(new Date(previous), now);
 
   if (days <= 0) return "earlier today";
   if (days === 1) return "yesterday";
@@ -214,4 +221,13 @@ export function describeGap(previous: string, now: Date = new Date()): string {
   if (days < 60) return `${Math.round(days / 7)} weeks ago`;
 
   return `${Math.round(days / 30)} months ago`;
+}
+
+/** Local calendar days from `from` to `to`; zero on the same day. */
+function calendarDaysBetween(from: Date, to: Date): number {
+  return Math.round(
+    (Date.parse(`${todayLocal(to)}T00:00:00.000Z`) -
+      Date.parse(`${todayLocal(from)}T00:00:00.000Z`)) /
+      86_400_000,
+  );
 }

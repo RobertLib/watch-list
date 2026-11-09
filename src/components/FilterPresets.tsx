@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { AdvancedFiltersPanel } from "./AdvancedFiltersPanel";
 import {
@@ -19,6 +20,7 @@ export function FilterPresets({ type, presets }: FilterPresetsProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const selectedPreset = searchParams.get("preset");
+  const idPrefix = useId();
 
   // A preset replaces every other filter – picking the active one again clears it.
   const handlePresetSelect = (preset: FilterPreset) => {
@@ -42,6 +44,12 @@ export function FilterPresets({ type, presets }: FilterPresetsProps) {
           role="group"
           aria-labelledby="quick-filters-heading"
         >
+          {/* Named by the preset's visible name and described by its visible
+              description. An `aria-label` ("Apply … filter preset") used to
+              replace both, so the description was never read and a voice
+              command naming what is on the button matched nothing; whether it
+              is applied is what `aria-pressed` says. The name is not a heading:
+              a heading inside a button is invalid, and announced as neither. */}
           {presets.map((preset) => (
             <button
               key={preset.id}
@@ -52,14 +60,21 @@ export function FilterPresets({ type, presets }: FilterPresetsProps) {
                   : "border-gray-700 bg-gray-800/50 hover:border-gray-600 hover:bg-gray-800"
               }`}
               aria-pressed={selectedPreset === preset.id}
-              aria-label={
-                selectedPreset === preset.id
-                  ? `Remove ${preset.name} filter preset`
-                  : `Apply ${preset.name} filter preset`
-              }
+              aria-labelledby={`${idPrefix}-${preset.id}-name`}
+              aria-describedby={`${idPrefix}-${preset.id}-description`}
             >
-              <h4 className="font-medium text-white mb-1">{preset.name}</h4>
-              <p className="text-sm text-gray-400">{preset.description}</p>
+              <span
+                id={`${idPrefix}-${preset.id}-name`}
+                className="block font-medium text-white mb-1"
+              >
+                {preset.name}
+              </span>
+              <span
+                id={`${idPrefix}-${preset.id}-description`}
+                className="block text-sm text-gray-400"
+              >
+                {preset.description}
+              </span>
             </button>
           ))}
         </div>

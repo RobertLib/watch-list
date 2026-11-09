@@ -25,7 +25,7 @@ nothing runs on a server at request time. See [Architecture](#architecture).
 - **Named lists** — Lists of your own beyond the watchlist ("October horror", "films to show my dad"), each shareable as a link
 - **Your stats** — Hours watched, top genres, decades you live in, a histogram of your own scores, achievements, a yearly target and a year in review worth sharing
 - **Profiles** — More than one person per browser, with separate watchlists, ticks, ratings, streaks and "since you were last here" (see [how personal data is stored](#how-personal-data-is-stored))
-- **Puzzle archive & a second game** — Every daily puzzle that has run is still playable, with a streak calendar and badges; plus "higher or lower", an endless run on TMDb ratings
+- **Puzzle archive & a second game** — Every daily puzzle that has run is still playable, with a streak calendar and badges; plus "higher or lower", a run on TMDb ratings that lasts until a wrong answer or the last film in its pool
 - **Since you were last here** — The home page opens with what aired while you were away, rather than looking identical to the last visit. Each profile has its own last visit, so someone who follows nothing cannot acknowledge another person's interval. Every followed title is checked in bounded batches before the visit is acknowledged. Unreadable saved titles or a failed or cancelled check keep the previous interval available for retry, including after the connection returns
 - **Offline & installable** — A service worker keeps the app usable with no connection, or one too slow to answer: pages visited before load from cache and fill themselves in from browser storage, and the app's own assets and posters are served from cache
 - **Your own ratings** — Score anything out of ten; rating a title marks it watched. Highly rated titles pull harder on your recommendations and poorly rated ones stop feeding them altogether
@@ -268,12 +268,12 @@ What the migration cost, in full:
 
 ### How personal data is stored
 
-Profile data stays at stable storage addresses; switching changes only the shared active-profile pointer. Profile operations, edits to personal data and settings, and backup restores share a browser lock. Each read-modify-write reads the latest data after acquiring the lock, so changes in different tabs preserve one another. Backup export holds the same lock while reading its complete snapshot; only an unreadable roster, active pointer or owner marker stops it. Actions wait for storage before reporting success; legacy cookie migration uses the same lock. Saving a shared list or marking and rating a title keeps its related edits together under that lock. Writes belong to the profile whose data was rendered, even if another tab switches before its storage event arrives. Deleted profiles reject late writes, and obsolete active-profile pointers resolve to the default profile. Existing live keys retain their original owner through an immutable marker, and older parked profile data remains readable until individual stores are edited. Each edit or clear replaces its readable older field in the same storage transaction, releasing space before saving the current value and preserving unrelated stores. A refused write attempts to restore the exact previous values; if the browser also refuses recovery, readers refresh from actual storage. Unreadable older copies remain available for recovery. Switching to a profile never reads its stores, so an unreadable one behaves as it would for the active profile: it renders empty, refuses edits, and can be cleared.
+Profile data stays at stable storage addresses; switching changes only the shared active-profile pointer. Profile operations, edits to personal data and settings, and backup restores share a browser lock. Each read-modify-write runs under that lock and reads storage afresh, so edits in different tabs normally preserve one another. Browsers deliver one tab's localStorage writes to other tabs asynchronously, so two edits made within milliseconds of each other in different tabs can still, rarely, lose the earlier one. Backup export holds the same lock while reading its complete snapshot; only an unreadable roster, active pointer or owner marker stops it. Actions wait for storage before reporting success; legacy cookie migration uses the same lock. Saving a shared list or marking and rating a title keeps its related edits together under that lock. Writes belong to the profile whose data was rendered, even if another tab switches before its storage event arrives. Deleted profiles reject late writes, and obsolete active-profile pointers resolve to the default profile. Existing live keys retain their original owner through an immutable marker, and older parked profile data remains readable until individual stores are edited. Each edit or clear replaces its readable older field in the same storage transaction, releasing space before saving the current value and preserving unrelated stores. A refused write attempts to restore the exact previous values; if the browser also refuses recovery, readers refresh from actual storage. Unreadable older copies remain available for recovery. Switching to a profile never reads its stores, so an unreadable one behaves as it would for the active profile: it renders empty, refuses edits, and can be cleared.
 Profile deletion commits one persistent deletion marker before cleaning up its roster entry or stored data. If the browser refuses that marker, the profile and its data remain included in backups. Once the marker is saved, readers treat the deletion as complete even if cleanup fails; stale tabs cannot revive the removed profile.
 
 Personal-data edits require a successful read of the current store before deriving the new value. A refused read aborts the edit and leaves the saved history intact; empty fallbacks used for rendering are never saved as though they were the current data. Clearing a store derives nothing from it, so an explicit clear succeeds even over unreadable data.
 
-When Web Locks are unavailable, including on non-localhost HTTP, IndexedDB transactions provide storage coordination. Tabs with Web Locks take this shared gate too, so both paths coordinate. The coordination database stores no personal data; a refused lock or transaction prevents the edit. When IndexedDB is absent, native Web Locks alone still coordinate the operations.
+When Web Locks are unavailable, including on non-localhost HTTP, IndexedDB transactions provide storage coordination. Tabs with Web Locks take this shared gate too, so both paths coordinate. The coordination database stores no personal data; a refused lock or transaction prevents the edit. When IndexedDB is absent or unusable, native Web Locks alone still coordinate the operations.
 
 ## SEO
 
@@ -288,8 +288,10 @@ own HTML file, with its content in it.
   the fixed sections of `/movies` and `/tv-shows`, and `/people`. A
   crawler reads titles, headings and links there, not skeletons. In the browser
   the same snapshot is what the page starts from (`useAsyncData`'s
-  placeholder), and the visitor's own region replaces it once it loads. The
-  deploy workflow rebuilds daily so the snapshots stay current.
+  placeholder), and the visitor's own region replaces it once it loads. If that
+  load fails – offline, rate-limited, TMDb blocked – the snapshot stays on
+  screen with a small "Try again" notice rather than being replaced by an error.
+  The deploy workflow rebuilds daily so the snapshots stay current.
 - **The best-known titles are pages of their own.** Before each build,
   `scripts/prebuild.mjs` picks about 650 films and 325 series (the most-voted,
   plus this month's popular releases with a vote floor) and 250 people (popular,
@@ -299,11 +301,14 @@ own HTML file, with its content in it.
   "Fight Club (1999) – Where to Watch", and its backdrop as the social card. The
   snapshot is cut to what the first render shows (`src/lib/title-details.ts`):
   a page carries it four times on disk, and a Pages site may be at most 1 GB.
-  The list ships in the bundle as compact ids (`src/lib/prerendered-titles.ts`),
-  so every title link — in the HTML and in the browser alike — points at the
-  path when the page exists and at `?id=` when it does not. A path the build did
-  not write (a renamed title, an old id-first slug) is a 404 that sends the
-  visitor to `?id=`, never to another path.
+  The list ships in the bundle as compact ids, each with a two-character hash of
+  its slug (`src/lib/prerendered-titles.ts`), so every title link — in the HTML
+  and in the browser alike — points at the path only when its slug is the one
+  the build wrote, and at `?id=` otherwise: a title renamed since it was saved
+  goes straight to the query page. Titles with no Latin letters in their name
+  get a bare-id path. A path the build did not write (an old id-first slug, or
+  the roughly one in 1,300 renamed slugs whose hash collides) is a 404 that
+  sends the visitor to `?id=`, never to another path.
 - **Prerendered pages hydrate without mismatches.** What they render cannot
   depend on the visitor: numbers and dates are formatted in `en-US` and UTC, a
   living person's age waits for the browser's own day, and a visitor outside
@@ -465,15 +470,20 @@ There is no server cache any more, so all of it is in the tab:
   late still replaces the copy for next time. Navigation preload starts each
   page's request while the worker is still starting up.
   A copy may be a deployment behind, naming chunks the host no longer serves, so
-  the static cache (150 entries — a build is about 90 files) gives up first what
-  no saved page or payload names, least recently used first, and touches the
-  chunks a saved page needs only when that is not enough, oldest page first.
+  the static cache (300 entries — a build is about 115 files, and it holds two
+  builds at once) gives up first what no saved page or payload names, least
+  recently used first, and touches the chunks a saved page needs only when that
+  is not enough, oldest page first.
   Posters go least recently used first, so the watchlist's own outlast a
-  browsing session.
+  browsing session. A poster the worker no longer holds is asked of the
+  browser's HTTP cache first, and fetched past it only when that copy cannot be
+  read as CORS.
   The worker registers once the page has loaded and the browser is idle; the app
   then saves the current page's HTML and assets, and does the same after every
   client-side navigation, so visiting a page through the menu makes it available
-  offline. A page saved within the last day is not fetched again for that: the
+  offline. Prerendered title, person, genre and mood pages are evicted before
+  the app's own routes, so browsing titles never pushes out the home page or the
+  watchlist. A page saved within the last day is not fetched again for that: the
   copy a full load or a Link transition has just stored is already current, and
   fetching it again would spend the visitor's data and the host's bandwidth on an
   identical file. Static React Server Component payloads use the same

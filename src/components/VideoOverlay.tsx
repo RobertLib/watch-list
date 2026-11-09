@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { X, Loader2 } from "lucide-react";
 import { Video } from "@/types/tmdb";
 import { useHydrated } from "@/hooks/useHydrated";
+import { isPlayableYouTubeVideo } from "@/lib/trailer";
 
 interface VideoOverlayProps {
   isOpen: boolean;
@@ -191,11 +192,13 @@ export function VideoOverlay({
             />
             <span className="sr-only">Loading video...</span>
           </div>
-        ) : video?.site === "YouTube" ? (
+        ) : video && isPlayableYouTubeVideo(video) ? (
           <iframe
             // youtube-nocookie, matching the other trailer player: the two are
             // the same feature reached from two places, and only one of them
-            // used to spare the visitor YouTube's tracking cookies.
+            // used to spare the visitor YouTube's tracking cookies. The key is
+            // checked to be an id (`isPlayableYouTubeVideo`), because it lands
+            // in the path, where a `/` or `?` of its own would change the URL.
             src={`https://www.youtube-nocookie.com/embed/${video.key}?autoplay=1&rel=0`}
             title={video.name}
             className="w-full h-full"

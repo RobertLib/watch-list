@@ -78,7 +78,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // A title page with no snapshot is `noindex` (`title-metadata.ts`), and a
   // build without TMDB access has no list to read – so this is empty exactly
-  // when those pages would be.
+  // when those pages would be. The one exception is deliberate: a title TMDB
+  // started answering 404 for in the minutes between the prebuild and its page
+  // (`buildTimeLoad`'s `missingIsNull`) is still listed until the next daily
+  // build drops it. Checking every title's snapshot here would cost up to
+  // another request per title per build, for a case that rare.
   const titles = KINDS.flatMap((kind) =>
     prerenderedTitles(kind).map(({ slug }) => ({
       path: `/${kind}/${slug}`,

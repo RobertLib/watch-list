@@ -347,6 +347,33 @@ describe("getTitleFacts", () => {
   });
 
   /**
+   * TMDB leaves `episode_run_time` empty for many current series, and every
+   * ticked episode of those used to count as zero minutes.
+   */
+  it("falls back to the latest aired episode's runtime, then the next one's", async () => {
+    const episode = (runtime: number | null) =>
+      ({ runtime }) as TVShowDetails["last_episode_to_air"];
+    vi.mocked(getCachedTVShowDetails).mockImplementation(async (id: number) =>
+      id === 2
+        ? show({ id: 2, episode_run_time: [], last_episode_to_air: episode(48), next_episode_to_air: episode(55) })
+        : id === 3
+          ? show({ id: 3, episode_run_time: [], last_episode_to_air: episode(0), next_episode_to_air: episode(55) })
+          : show({ id, episode_run_time: [], last_episode_to_air: null, next_episode_to_air: null }),
+    );
+
+    const facts = await getTitleFacts([
+      { id: 2, mediaType: "tv" },
+      { id: 3, mediaType: "tv" },
+      { id: 4, mediaType: "tv" },
+    ]);
+
+    expect(facts["tv-2"].runtime).toBe(48);
+    // Zero is TMDB's "unknown", so the scheduled episode decides.
+    expect(facts["tv-3"].runtime).toBe(55);
+    expect(facts["tv-4"].runtime).toBeNull();
+  });
+
+  /**
    * A list of runtimes is TMDB's way of saying the format changed. The first is
    * the usual one, and the usual one is what an hours-watched total wants.
    */

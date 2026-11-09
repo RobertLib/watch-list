@@ -11,6 +11,7 @@ const ACTIVE_KEY = "active-profile";
 const ROSTER_KEY = "profiles";
 const DEFAULT_ID = "default";
 const STORE_PREFIX = "profile-store:";
+const PARKED_PREFIX = "profile-data:";
 export const DELETED_PROFILE_PREFIX = "profile-deleted:";
 
 export const MAX_PROFILES = 5;
@@ -32,15 +33,23 @@ export const DEFAULT_PROFILE: Profile = {
  * A name as the switcher can show it. Control and format characters become
  * spaces first, so a name made only of zero-width characters is blank – the
  * same as one made of spaces – rather than an invisible row.
+ *
+ * Idempotent: a stored name sanitizes to itself. The cut used to come last, so
+ * it could end a name on a space, or on the first half of a surrogate pair –
+ * which a second pass then removed. A roster holding such a name read as
+ * repaired (non-canonical), and every roster edit refused to start from it.
  */
 export function sanitizeProfileName(value: unknown): string {
   if (typeof value !== "string") return "";
 
-  return value
+  let name = value
     .replace(/[\p{C}]/gu, " ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, MAX_PROFILE_NAME_LENGTH);
+  // Never keep half of a character the cut went through.
+  if (/[\uD800-\uDBFF]$/.test(name)) name = name.slice(0, -1);
+  return name.trimEnd();
 }
 
 /** Ids are cut, not refused, the same way everywhere a roster entry is read. */
@@ -174,6 +183,39 @@ export function initializeProfileStorage(): void {
   }
 }
 
+/**
+ * `initializeProfileStorage` for an operation that only releases storage: a
+ * clear, or a profile deletion.
+ *
+ * Writing the marker is the first write of every operation, so a browser that
+ * reached its quota before the marker existed (an install from before it was
+ * introduced) refused every clear and every deletion – exactly the operations
+ * that would make room. The marker only has to exist before the active pointer
+ * changes, and none of these change it: until it is written, the legacy owner
+ * still resolves from that same unchanged pointer. So a refused marker write is
+ * tolerated here; an invalid marker or pointer is not.
+ */
+export function initializeProfileStorageForRelease(): void {
+  try {
+    initializeProfileStorage();
+  } catch (error) {
+    const storage = window.localStorage;
+    // An existing marker that failed validation, or a refused read, still stops it.
+    if (storage.getItem(PROFILE_STORAGE_OWNER_KEY) !== null) throw error;
+    validateOwner(storage.getItem(ACTIVE_KEY) || DEFAULT_ID);
+    console.error("Releasing storage before its owner marker could be written:", error);
+  }
+}
+
+/** After a release made room, the marker that could not be written before. */
+export function initializeProfileStorageAfterRelease(): void {
+  try {
+    initializeProfileStorage();
+  } catch (error) {
+    console.error("Error writing the profile storage owner marker:", error);
+  }
+}
+
 export function getLegacyProfileStorageOwner(): string {
   const storage = window.localStorage;
   return validateOwner(storage.getItem(PROFILE_STORAGE_OWNER_KEY)
@@ -278,11 +320,15 @@ export function writeProfileStore(
   // impossible to clear at all, reported only as refused storage. The explicit
   // request replaces the current value; an unreadable parked copy stays behind
   // the explicit empty value below, as it does for any other edit.
-  if (!(options.clear ?? value === null)) {
+  const clear = options.clear ?? value === null;
+  if (!clear) {
     const previous = readProfileStore(key, profileId, true);
     if (previous !== null) JSON.parse(previous);
   }
-  initializeProfileStorage();
+  // A clear is how a full browser makes room, so a marker it cannot write yet
+  // must not refuse it (see `initializeProfileStorageForRelease`).
+  if (clear) initializeProfileStorageForRelease();
+  else initializeProfileStorage();
   if (!isProfileStorageOwnerAvailable(profileId)) {
     throw new Error("This profile was removed; reload before saving");
   }
@@ -329,6 +375,7 @@ export function writeProfileStore(
     storage.removeItem(address);
     throw new Error("This profile was removed while saving");
   }
+  if (clear) initializeProfileStorageAfterRelease();
 }
 
 /**
@@ -439,6 +486,49 @@ export function profileStoreChanges(
   // map must not override that explicit deletion with a partially cleaned slot.
   if (!options.restoringProfile) addParkedStoreCleanup(changes, keys, profileId);
   return changes;
+}
+
+/**
+ * Every profile id that owns a namespaced store or a parked slot in storage,
+ * whatever the roster says.
+ *
+ * The roster is normally the list of who exists, but not when it cannot be
+ * parsed or the normalizer had to drop entries: their people still have data
+ * at these addresses, and a backup or restore that trusted the repaired roster
+ * left it out or left it behind. `storeKeys` limits namespaced addresses to the
+ * stores a profile owns; `withContent` skips stores holding only a clear's
+ * explicit "null". The original owner's bare keys are not addresses of this
+ * kind – the caller knows who that is.
+ */
+export function profileIdsInStorage(
+  storeKeys: readonly string[],
+  options: { withContent?: boolean } = {},
+): Set<string> {
+  const ids = new Set<string>();
+  const storage = window.localStorage;
+  for (let index = 0; index < storage.length; index++) {
+    const key = storage.key(index);
+    if (key === null) continue;
+    let id: string;
+    if (key.startsWith(STORE_PREFIX)) {
+      const rest = key.slice(STORE_PREFIX.length);
+      // The id is URI-encoded, so the first colon ends it.
+      const separator = rest.indexOf(":");
+      if (separator <= 0 || !storeKeys.includes(rest.slice(separator + 1))) continue;
+      if (options.withContent && storage.getItem(key) === "null") continue;
+      try {
+        id = decodeURIComponent(rest.slice(0, separator));
+      } catch {
+        continue;
+      }
+    } else if (key.startsWith(PARKED_PREFIX)) {
+      id = key.slice(PARKED_PREFIX.length);
+    } else {
+      continue;
+    }
+    if (id && sanitizeProfileId(id) === id) ids.add(id);
+  }
+  return ids;
 }
 
 export function isProfileStoreEvent(eventKey: string | null, key: string): boolean {

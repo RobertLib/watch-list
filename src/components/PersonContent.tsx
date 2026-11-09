@@ -12,6 +12,7 @@ import { WikipediaInsights } from "@/components/WikipediaInsights";
 import { StructuredData } from "@/components/StructuredData";
 import { LoadFailureNotice } from "@/components/LoadFailureNotice";
 import { NotFoundNotice, isNotFoundError } from "@/components/NotFoundNotice";
+import { SnapshotRefreshNotice } from "@/components/SnapshotRefreshNotice";
 import { PersonDetailSkeleton } from "@/components/skeletons";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
@@ -109,7 +110,7 @@ function PersonDetail({
   const id = extractIdFromSlug(slug);
   const today = useLocalDay();
 
-  const { data, isLoading, error, reload } = useAsyncData(
+  const { data, isLoading, error, reload, refreshError, isRetrying } = useAsyncData(
     async () => (id ? loadPersonPage(id) : null),
     [id],
     snapshot,
@@ -150,7 +151,10 @@ function PersonDetail({
     );
   }
 
-  if (!data) {
+  // A 404 behind the build's snapshot is an answer too: the person has left
+  // TMDB since the build. Any other failure leaves the snapshot readable, with
+  // a retry beside it (below).
+  if (!data || isNotFoundError(refreshError)) {
     return (
       <NotFoundNotice
         title="Person not found"
@@ -286,6 +290,14 @@ function PersonDetail({
             { label: details.name, href: "#" },
           ]}
         />
+        {refreshError != null && (
+          <SnapshotRefreshNotice
+            className="mt-4"
+            message="Showing a saved copy of this page – the latest details could not be loaded."
+            onRetry={reload}
+            isRetrying={isRetrying}
+          />
+        )}
 
         <div className="grid md:grid-cols-3 gap-8 mt-6">
           {/* Sidebar */}

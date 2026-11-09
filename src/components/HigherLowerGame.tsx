@@ -26,9 +26,10 @@ import { isProfileStoreEvent, withProfileStorage } from "@/lib/profile-storage";
 import { withProfileRosterLock } from "@/lib/profile-roster-lock";
 import { getImageUrl } from "@/lib/tmdb-image";
 import { cn } from "@/lib/utils";
-import type {
-  DuelFilm,
-  RatedFilm,
+import {
+  isPoolExhausted,
+  type DuelFilm,
+  type RatedFilm,
 } from "@/lib/rating-duel-data";
 import { movieHref } from "@/lib/routes";
 
@@ -39,6 +40,8 @@ type Phase =
   | "judging"
   | "revealed"
   | "over"
+  /** Every film in the pool has been shown: the run ends on a right answer. */
+  | "complete"
   | "error"
   | "next-error";
 
@@ -163,7 +166,7 @@ export function HigherLowerGame() {
   useEffect(() => {
     if (focusNext.current === "result") {
       if (phase === "revealed") nextRoundRef.current?.focus();
-      else if (phase === "over") playAgainRef.current?.focus();
+      else if (phase === "over" || phase === "complete") playAgainRef.current?.focus();
       else return;
     } else if (focusNext.current === "choices") {
       if (phase !== "playing") return;
@@ -265,8 +268,9 @@ export function HigherLowerGame() {
     void loadNextChallenger();
   }
 
-  // Retrying a failed load keeps the promoted film, streak and seen list. Only
-  // a wrong answer ends the run; an unavailable opponent does not.
+  // Retrying a failed load keeps the promoted film, streak and seen list. A
+  // wrong answer ends the run, and so does running out of films – an
+  // unavailable opponent does not.
   async function loadNextChallenger() {
     if (profileId.current !== getActiveProfileId()) return;
 
@@ -279,7 +283,15 @@ export function HigherLowerGame() {
       const duel = await getRatingDuel(seen.current, false);
       if (!isCurrent()) return;
       if (!duel) {
-        setPhase("next-error");
+        // A pool with nothing left to draw is the end of the run, not an
+        // error: "Try again" could never succeed there. Anything else – an
+        // outage, a rate limit – is worth retrying.
+        if (isPoolExhausted(seen.current)) {
+          focusNext.current = "result";
+          setPhase("complete");
+        } else {
+          setPhase("next-error");
+        }
         return;
       }
 
@@ -352,7 +364,9 @@ export function HigherLowerGame() {
           ? `Correct. ${challenger.title} scored ${revealed.toFixed(1)}. Streak ${streak}.`
           : phase === "over" && challenger && revealed !== null
             ? `That one went the other way. ${challenger.title} scored ${revealed.toFixed(1)}. You got ${streak} right${beatBest ? " – a new best" : ""}.`
-            : ""}
+            : phase === "complete"
+              ? `You have seen every film in the game. Final score ${streak}${beatBest ? " – a new best" : ""}.`
+              : ""}
       </p>
 
       {(phase === "playing" || phase === "judging") && challenger && (
@@ -403,6 +417,26 @@ export function HigherLowerGame() {
             className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
           >
             Next round
+          </button>
+        </div>
+      )}
+
+      {phase === "complete" && (
+        <div className="rounded-xl border border-green-500/40 bg-green-500/10 p-5 text-center space-y-3">
+          <p className="text-green-300 font-semibold">
+            That was every film in the game.
+          </p>
+          <p className="text-gray-400 text-sm">
+            Final score {streak}
+            {beatBest && " – a new best."}
+          </p>
+          <button
+            ref={playAgainRef}
+            onClick={restart}
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+          >
+            <RotateCcw className="w-4 h-4" aria-hidden="true" />
+            Play again
           </button>
         </div>
       )}

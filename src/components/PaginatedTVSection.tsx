@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { TVShow } from "@/types/tmdb";
 import { MediaSection } from "./MediaSection";
-import { LoadMoreButton } from "./LoadMoreButton";
+import { SnapshotAwareLoadMore, type SnapshotState } from "./AsyncDiscoverySection";
 import { convertTVShowToMediaItem } from "@/lib/media-converters";
 import { MAX_TMDB_PAGE, sanitizePage } from "@/lib/discover-filters";
 
@@ -15,6 +15,8 @@ interface PaginatedTVSectionProps {
   initialTVShows: TVShow[];
   initialPage?: number;
   initialTotalPages?: number;
+  /** From `AsyncDiscoverySection`: whether the first page is the build's snapshot. */
+  snapshot?: SnapshotState;
 }
 
 export function PaginatedTVSection({
@@ -23,6 +25,7 @@ export function PaginatedTVSection({
   initialTVShows,
   initialPage = 1,
   initialTotalPages = 1,
+  snapshot,
 }: PaginatedTVSectionProps) {
   const [tvShows, setTVShows] = useState<TVShow[]>(initialTVShows);
   const [currentPage, setCurrentPage] = useState(sanitizePage(initialPage));
@@ -65,9 +68,9 @@ export function PaginatedTVSection({
         emptyMessage="No TV shows found."
       />
       {hasNextPage && tvShows.length > 0 && (
-        <LoadMoreButton onLoadMore={loadMore}>
+        <SnapshotAwareLoadMore snapshot={snapshot} onLoadMore={loadMore}>
           Load More TV Shows
-        </LoadMoreButton>
+        </SnapshotAwareLoadMore>
       )}
     </div>
   );

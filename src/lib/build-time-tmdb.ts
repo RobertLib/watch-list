@@ -104,6 +104,10 @@ async function withSlot<T>(task: () => Promise<T>): Promise<T> {
   }
 }
 
+function isNotFound(error: unknown): boolean {
+  return error instanceof Error && /TMDB API error: 404\b/.test(error.message);
+}
+
 /**
  * Run one build-time load, or fail the build with a message that says which.
  *
@@ -115,6 +119,7 @@ async function withSlot<T>(task: () => Promise<T>): Promise<T> {
 async function buildTimeLoad<T>(
   what: string,
   load: () => Promise<T>,
+  { missingIsNull = false }: { missingIsNull?: boolean } = {},
 ): Promise<T | null> {
   if (!buildTimeTmdbAvailable()) return null;
 
@@ -129,9 +134,21 @@ async function buildTimeLoad<T>(
       return await withSlot(load);
     } catch (error) {
       lastError = error;
-      // A 404 is an answer: the title is gone, and asking again will not
-      // bring it back.
-      if (error instanceof Error && /TMDB API error: 404\b/.test(error.message)) break;
+      // A 404 is an answer, and asking again will not change it.
+      if (isNotFound(error)) {
+        // For a title it means the title left TMDB between the prebuild that
+        // chose it and this render – rare, and no reason to fail a deployment
+        // of twelve hundred others. Its page is built without a snapshot,
+        // which makes it the `noindex` shell the browser fills in (and fails
+        // to, with "not found"); the next build does not choose it. Anything
+        // else that 404s – a listing, a list – is a broken request, and fails
+        // the build like any other failure.
+        if (missingIsNull) {
+          console.warn(`${what} is gone from TMDB (404); building its page without a snapshot.`);
+          return null;
+        }
+        break;
+      }
     }
   }
 
@@ -205,26 +222,35 @@ export async function getHomeSnapshot(): Promise<Record<HomeRow, MediaItem[]> | 
 /**
  * A title page's snapshot: the details the browser would load, cut down to
  * what the first render shows (`title-details.ts`). Wrapped in `cache` because
- * the page's metadata reads it as well.
+ * the page's metadata reads it as well. `null` for a title TMDB answers 404
+ * for (see `buildTimeLoad`).
  */
 export const getMovieSnapshot = cache(
   (id: number): Promise<MovieDetails | null> =>
-    buildTimeLoad(`film ${id}`, async () =>
-      movieSnapshot(await tmdbApi.getMovieDetails(id, MOVIE_APPENDED_SECTIONS)),
+    buildTimeLoad(
+      `film ${id}`,
+      async () =>
+        movieSnapshot(await tmdbApi.getMovieDetails(id, MOVIE_APPENDED_SECTIONS)),
+      { missingIsNull: true },
     ),
 );
 
 export const getTVSnapshot = cache(
   (id: number): Promise<TVShowDetails | null> =>
-    buildTimeLoad(`series ${id}`, async () =>
-      tvSnapshot(await tmdbApi.getTVShowDetails(id, TV_APPENDED_SECTIONS)),
+    buildTimeLoad(
+      `series ${id}`,
+      async () =>
+        tvSnapshot(await tmdbApi.getTVShowDetails(id, TV_APPENDED_SECTIONS)),
+      { missingIsNull: true },
     ),
 );
 
 export const getPersonSnapshot = cache(
   (id: number): Promise<PersonPageData | null> =>
-    buildTimeLoad(`person ${id}`, async () =>
-      personSnapshot(await loadPersonPage(id)),
+    buildTimeLoad(
+      `person ${id}`,
+      async () => personSnapshot(await loadPersonPage(id)),
+      { missingIsNull: true },
     ),
 );
 

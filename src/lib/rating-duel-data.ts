@@ -88,6 +88,14 @@ function toDuelFilm(
 }
 
 /**
+ * Pool films TMDB has definitively ruled out this session: removed (404), or
+ * with no score to compare. Remembered so that a retry does not draw them again,
+ * and so that `isPoolExhausted` can tell a pool that is used up from one that is
+ * merely unreachable for the moment. Transport failures are never recorded here.
+ */
+const unplayableIds = new Set<number>();
+
+/**
  * A pool entry that is not in `exclude`, or null once the pool is used up.
  *
  * Random rather than a walk through the pool: unlike the daily puzzle, two people
@@ -95,10 +103,27 @@ function toDuelFilm(
  * a long run predictable.
  */
 function randomPoolId(exclude: Set<number>): number | null {
-  const candidates = PUZZLE_POOL.filter((entry) => !exclude.has(entry.id));
+  const candidates = PUZZLE_POOL.filter(
+    (entry) => !exclude.has(entry.id) && !unplayableIds.has(entry.id),
+  );
   if (candidates.length === 0) return null;
 
   return candidates[Math.floor(Math.random() * candidates.length)].id;
+}
+
+/**
+ * Whether no film is left to draw for a run that has shown `seenIds`.
+ *
+ * What lets the game end a run that has gone through the whole pool, instead
+ * of offering a "Try again" that can never succeed. Every other reason the next
+ * round fails to load – an outage, a rate limit – is worth retrying, and leaves
+ * this false.
+ */
+export function isPoolExhausted(seenIds: readonly number[]): boolean {
+  const seen = new Set(seenIds);
+  return PUZZLE_POOL.every(
+    (entry) => seen.has(entry.id) || unplayableIds.has(entry.id),
+  );
 }
 
 async function loadRated(id: number): Promise<RatedFilm | null> {
@@ -121,6 +146,7 @@ async function pickPlayable(exclude: Set<number>): Promise<RatedFilm | null> {
     try {
       const film = await loadRated(id);
       if (film) return film;
+      unplayableIds.add(id);
     } catch (error) {
       // A removed film can be replaced. Other failures already exhausted the
       // transport's retries or Retry-After budget; a different id must not
@@ -128,6 +154,7 @@ async function pickPlayable(exclude: Set<number>): Promise<RatedFilm | null> {
       if (!(error instanceof Error && /^TMDB API error: 404\b/.test(error.message))) {
         throw error;
       }
+      unplayableIds.add(id);
     }
   }
 

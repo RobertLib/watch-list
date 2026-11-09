@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Movie } from "@/types/tmdb";
 import { MediaSection } from "./MediaSection";
-import { LoadMoreButton } from "./LoadMoreButton";
+import { SnapshotAwareLoadMore, type SnapshotState } from "./AsyncDiscoverySection";
 import { convertMovieToMediaItem } from "@/lib/media-converters";
 import { MAX_TMDB_PAGE, sanitizePage } from "@/lib/discover-filters";
 
@@ -15,6 +15,8 @@ interface PaginatedMovieSectionProps {
   initialMovies: Movie[];
   initialPage?: number;
   initialTotalPages?: number;
+  /** From `AsyncDiscoverySection`: whether the first page is the build's snapshot. */
+  snapshot?: SnapshotState;
 }
 
 export function PaginatedMovieSection({
@@ -23,6 +25,7 @@ export function PaginatedMovieSection({
   initialMovies,
   initialPage = 1,
   initialTotalPages = 1,
+  snapshot,
 }: PaginatedMovieSectionProps) {
   const [movies, setMovies] = useState<Movie[]>(initialMovies);
   const [currentPage, setCurrentPage] = useState(sanitizePage(initialPage));
@@ -65,7 +68,9 @@ export function PaginatedMovieSection({
         emptyMessage="No movies found."
       />
       {hasNextPage && movies.length > 0 && (
-        <LoadMoreButton onLoadMore={loadMore}>Load More Movies</LoadMoreButton>
+        <SnapshotAwareLoadMore snapshot={snapshot} onLoadMore={loadMore}>
+          Load More Movies
+        </SnapshotAwareLoadMore>
       )}
     </div>
   );

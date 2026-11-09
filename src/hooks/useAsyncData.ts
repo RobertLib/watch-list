@@ -16,6 +16,22 @@ export interface AsyncState<T> {
    * reload of an app whose whole state lives in this tab.
    */
   reload: () => void;
+  /**
+   * True while `data` is the build's snapshot rather than an answer loaded in
+   * this browser – before the first load settles, and after it failed (see
+   * `refreshError`).
+   */
+  isPlaceholder: boolean;
+  /**
+   * Set when a load failed while the build's snapshot was on screen. The
+   * snapshot stays – `data` is still the snapshot and `error` stays null, so a
+   * page that checks `error` keeps rendering it – and this is the failure, for
+   * a page that wants to offer a retry beside the content rather than in place
+   * of it. Kept while that retry is in flight (see `isRetrying`).
+   */
+  refreshError: unknown;
+  /** True while a retry of a failed snapshot refresh is in flight. */
+  isRetrying: boolean;
 }
 
 /** What a load settled with, and which deps and attempt it was started for. */
@@ -26,7 +42,14 @@ interface Settled<T> {
   error: unknown;
 }
 
-const LOADING = { data: null, isLoading: true, error: null } as const;
+const LOADING = {
+  data: null,
+  isLoading: true,
+  error: null,
+  isPlaceholder: false,
+  refreshError: null,
+  isRetrying: false,
+} as const;
 
 function sameDeps(a: readonly unknown[], b: readonly unknown[]) {
   return a.length === b.length && a.every((value, i) => Object.is(value, b[i]));
@@ -49,10 +72,16 @@ function sameDeps(a: readonly unknown[], b: readonly unknown[]) {
  * build wrote into the page (`build-time-tmdb.ts`). It is what the prerendered
  * HTML was rendered with, so hydration finds the same markup instead of a
  * skeleton, and the visitor reads the listing while their own region's copy
- * loads. Only before anything has settled, though – once a real answer has
- * been on screen, a later load shows the loading state like any other, because
- * the snapshot describes page one of the default view and nothing else. The
- * caller passes it only while it is asking for that view.
+ * loads. Only until a real answer has been on screen, though – after that, a
+ * later load shows the loading state like any other, because the snapshot
+ * describes page one of the default view and nothing else. The caller passes
+ * it only while it is asking for that view.
+ *
+ * A load that fails while the snapshot is up leaves it up. The visitor was
+ * already reading it – offline, with the service worker serving the saved
+ * page, or with TMDB refusing the request – and replacing content with "could
+ * not load" took away something that was there to show nothing at all. The
+ * failure is reported as `refreshError` instead, for a retry offered beside it.
  */
 export function useAsyncData<T>(
   load: (signal: AbortSignal) => Promise<T>,
@@ -60,6 +89,10 @@ export function useAsyncData<T>(
   placeholder?: T | null,
 ): AsyncState<T> {
   const [settled, setSettled] = useState<Settled<T> | null>(null);
+
+  // Whether a load has ever answered successfully. Until one has, the snapshot
+  // is the best thing to show – before the first answer and after a failure.
+  const [hasAnswered, setHasAnswered] = useState(false);
 
   // Bumped by `reload`, and a dependency of the effect below – which is the
   // whole mechanism for running the load again.
@@ -83,7 +116,9 @@ export function useAsyncData<T>(
 
     load(controller.signal).then(
       (data) => {
-        if (!cancelled) setSettled({ ...request, data, error: null });
+        if (cancelled) return;
+        setSettled({ ...request, data, error: null });
+        setHasAnswered(true);
       },
       (error) => {
         if (cancelled) return;
@@ -107,16 +142,39 @@ export function useAsyncData<T>(
   // transition, and its cleanup runs after the commit, so the previous load
   // could still settle in between and put the old film's details on the new
   // film's page until the new load answered.
-  if (
-    !settled ||
-    settled.deps !== currentDeps ||
-    settled.attempt !== attempt
-  ) {
-    if (!settled && placeholder != null) {
-      return { data: placeholder, isLoading: false, error: null, reload };
-    }
-    return { ...LOADING, reload };
+  const sameDepsResult =
+    settled !== null && settled.deps === currentDeps ? settled : null;
+  const current =
+    sameDepsResult !== null && sameDepsResult.attempt === attempt
+      ? sameDepsResult
+      : null;
+
+  if (!hasAnswered && placeholder != null && (!current || current.error != null)) {
+    // A retry of a failed refresh is in flight when the last result for these
+    // deps failed and a newer attempt has not settled yet: the failure stays
+    // reported until the retry answers, so the retry control does not vanish
+    // under the pointer (or the keyboard focus) that pressed it.
+    const retrying = !current && sameDepsResult?.error != null;
+    return {
+      data: placeholder,
+      isLoading: false,
+      error: null,
+      reload,
+      isPlaceholder: true,
+      refreshError: current?.error ?? (retrying ? sameDepsResult?.error : null),
+      isRetrying: retrying,
+    };
   }
 
-  return { data: settled.data, isLoading: false, error: settled.error, reload };
+  if (!current) return { ...LOADING, reload };
+
+  return {
+    data: current.data,
+    isLoading: false,
+    error: current.error,
+    reload,
+    isPlaceholder: false,
+    refreshError: null,
+    isRetrying: false,
+  };
 }

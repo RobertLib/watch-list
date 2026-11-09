@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Play, Info } from "lucide-react";
 import { MediaItem } from "@/types/tmdb";
 import { VideoOverlay } from "./VideoOverlay";
@@ -13,7 +13,6 @@ interface HeroButtonsProps {
 }
 
 export function HeroButtons({ featuredItem }: HeroButtonsProps) {
-  const router = useRouter();
   const { isOpen, video, isLoading, openVideo, closeVideo } = useVideoOverlay();
 
   // Get the correct title for both movies and TV shows
@@ -28,12 +27,13 @@ export function HeroButtons({ featuredItem }: HeroButtonsProps) {
     await openVideo(featuredItem.id, mediaType);
   };
 
-  const handleMoreInfoClick = () => {
-    const slug = createSlug(title, featuredItem.id);
-    const path =
-      mediaHref(featuredItem.media_type, slug);
-    router.push(path);
-  };
+  // A link, not a button that pushed the route: it goes somewhere, so it has an
+  // address – one that opens in a new tab, shows on hover and is in the
+  // prerendered page for a crawler to follow into the title.
+  const detailHref = mediaHref(
+    featuredItem.media_type,
+    createSlug(title, featuredItem.id),
+  );
 
   return (
     <>
@@ -50,14 +50,15 @@ export function HeroButtons({ featuredItem }: HeroButtonsProps) {
           {isLoading ? "Loading..." : "Play"}
         </button>
 
-        <button
-          onClick={handleMoreInfoClick}
+        <Link
+          href={detailHref}
+          prefetch={false}
           className="flex items-center justify-center gap-2 bg-gray-600/70 text-white px-4 sm:px-6 lg:px-8 py-2.5 sm:py-3 rounded-md font-semibold hover:bg-gray-600/90 transition-colors backdrop-blur-sm text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-black"
           aria-label={`View more information about ${title}`}
         >
           <Info className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
           More Info
-        </button>
+        </Link>
       </div>
 
       <VideoOverlay

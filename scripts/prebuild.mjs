@@ -37,6 +37,7 @@
  */
 
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import nextEnv from "@next/env";
 
 const CACHE_DIR = new URL("../.next/cache/", import.meta.url);
@@ -88,6 +89,13 @@ const keep = {
 
 const MAX_IN_FLIGHT = 6;
 const RETRIES = 4;
+/**
+ * The longest `Retry-After` honoured. TMDB's rate limit clears in seconds; a
+ * value of minutes or hours (a misbehaving proxy, a date in the far future)
+ * would otherwise hold the whole build – and the deploy behind it – for that
+ * long, where waiting the cap and retrying fails it in good time instead.
+ */
+const MAX_RETRY_AFTER_MS = 60_000;
 
 rmSync(new URL("fetch-cache", CACHE_DIR), { recursive: true, force: true });
 mkdirSync(CACHE_DIR, { recursive: true });
@@ -95,7 +103,10 @@ mkdirSync(CACHE_DIR, { recursive: true });
 // npm does not load `.env` for a script; Next's own loader reads the same files
 // in the same order `next build` will, and the environment itself (CI's secret)
 // still wins over all of them.
-nextEnv.loadEnvConfig(new URL("..", import.meta.url).pathname, false);
+// `fileURLToPath`, not `.pathname`: the latter stays percent-encoded – a
+// checkout under "My Projects" became `My%20Projects`, a directory with no
+// `.env` in it, and the build quietly prerendered no titles.
+nextEnv.loadEnvConfig(fileURLToPath(new URL("..", import.meta.url)), false);
 const token = process.env.NEXT_PUBLIC_TMDB_API_TOKEN;
 
 if (!token) {
@@ -149,7 +160,11 @@ async function tmdb(path, params) {
       throw new Error(`prebuild: ${url} answered ${response.status}`);
     }
     const retryAfter = Number(response.headers.get("retry-after"));
-    await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 500 * 2 ** attempt);
+    await sleep(
+      Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1000, MAX_RETRY_AFTER_MS)
+        : 500 * 2 ** attempt,
+    );
   }
 }
 

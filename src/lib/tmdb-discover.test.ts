@@ -452,6 +452,25 @@ describe("the rest of the filter bar", () => {
     expect(params.get("first_air_date.lte")).toBe("2026-12-31");
   });
 
+  it("sends each date window only to the endpoint it belongs to", () => {
+    // The sanitised filters carry both pairs whatever the media type.
+    const dates = {
+      primaryReleaseDateGte: "2026-01-01",
+      primaryReleaseDateLte: "2026-12-31",
+      firstAirDateGte: "2025-01-01",
+      firstAirDateLte: "2025-12-31",
+    };
+    const movie = paramsOf(buildFilteredUrl("/discover/movie", {}, dates));
+    const tv = paramsOf(buildFilteredUrl("/discover/tv", {}, dates));
+
+    expect(movie.get("primary_release_date.gte")).toBe("2026-01-01");
+    expect(movie.has("first_air_date.gte")).toBe(false);
+    expect(movie.has("first_air_date.lte")).toBe(false);
+    expect(tv.get("first_air_date.lte")).toBe("2025-12-31");
+    expect(tv.has("primary_release_date.gte")).toBe(false);
+    expect(tv.has("primary_release_date.lte")).toBe(false);
+  });
+
   it("leaves out every filter that was not set", () => {
     const params = paramsOf(buildFilteredUrl("/discover/movie", { page: 2 }));
 

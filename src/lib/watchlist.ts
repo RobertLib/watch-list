@@ -1,6 +1,6 @@
 "use client";
 
-import { getLegacyProfileStorageOwner, getProfileStorageOwner, isProfileStorageOwnerAvailable, readProfileStore, withProfileStorage, writeProfileStore } from "./profile-storage";
+import { getLegacyProfileStorageOwner, getProfileStorageOwner, initializeProfileStorage, isProfileStorageOwnerAvailable, readProfileStore, withProfileStorage, writeProfileStore } from "./profile-storage";
 import { withProfileRosterLock } from "./profile-roster-lock";
 
 import {
@@ -27,6 +27,17 @@ export const WATCHLIST_STORAGE_KEY = "watchlist";
 // Where the list used to live. Read once so existing visitors keep their titles.
 const WATCHLIST_COOKIE_NAME = "watchlist";
 
+/**
+ * Where a legacy cookie the app cannot parse is kept once the list moves on.
+ *
+ * Such a cookie used to be the store's only copy, so every edit refused to save
+ * over it and every profile switch refused to start – with nothing telling the
+ * visitor that only "Clear all" would get them out. Its text is moved here
+ * instead (the original owner's data, like the other bare keys), the list
+ * carries on empty, and a backup names it with the text kept for recovery.
+ */
+export const WATCHLIST_COOKIE_RECOVERY_KEY = "watchlist-cookie-unreadable";
+
 function readCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
 
@@ -45,14 +56,110 @@ function deleteCookie(name: string): void {
 }
 
 /**
+ * The legacy cookie still waiting to be read, or null. A cookie whose text was
+ * already kept under `WATCHLIST_COOKIE_RECOVERY_KEY` is settled even when it
+ * cannot be deleted (one set for a parent domain, say).
+ */
+function pendingCookieText(): string | null {
+  const cookieData = readCookie(WATCHLIST_COOKIE_NAME);
+  if (!cookieData) return null;
+  return cookieData === window.localStorage.getItem(WATCHLIST_COOKIE_RECOVERY_KEY)
+    ? null
+    : cookieData;
+}
+
+function parseWatchlistCookie(cookieData: string): WatchlistItem[] {
+  return sanitizeStoredWatchlist(JSON.parse(decodeURIComponent(cookieData)));
+}
+
+/**
  * Read the legacy fallback without writing. A render, export or storage-event
  * handler must not race a mutation that holds the shared browser lock.
  */
 function readWatchlistCookie(): WatchlistItem[] {
-  const cookieData = readCookie(WATCHLIST_COOKIE_NAME);
-  if (!cookieData) return [];
+  const cookieData = pendingCookieText();
+  return cookieData ? parseWatchlistCookie(cookieData) : [];
+}
 
-  return sanitizeStoredWatchlist(JSON.parse(decodeURIComponent(cookieData)));
+function readableText(cookieData: string): string {
+  try {
+    return decodeURIComponent(cookieData);
+  } catch {
+    return cookieData;
+  }
+}
+
+/**
+ * For a backup of the original owner: the pending cookie's text when it cannot
+ * be parsed, so the export keeps it rather than naming a store with no text.
+ */
+export function unreadableWatchlistCookieText(): string | null {
+  try {
+    const cookieData = pendingCookieText();
+    if (!cookieData) return null;
+    try {
+      parseWatchlistCookie(cookieData);
+      return null;
+    } catch {
+      return readableText(cookieData);
+    }
+  } catch {
+    return null;
+  }
+}
+
+/** For a backup of the original owner: an unreadable cookie's kept text. */
+export function retiredWatchlistCookieText(): string | null {
+  const kept = window.localStorage.getItem(WATCHLIST_COOKIE_RECOVERY_KEY);
+  return kept === null ? null : readableText(kept);
+}
+
+/**
+ * Move an unparseable legacy cookie's text into storage, so the list can carry
+ * on without it. Only with the roster lock held and the original owner bound,
+ * and only while no stored list has replaced the cookie.
+ *
+ * False when it does not apply or cannot be done: a readable cookie, a stored
+ * list, another owner, or an earlier kept copy with different text (neither is
+ * ever overwritten). Throws when the browser refuses the write, leaving the
+ * cookie as the only copy.
+ */
+function retireUnreadableCookie(): boolean {
+  const owner = getProfileStorageOwner();
+  if (owner !== getLegacyProfileStorageOwner()) return false;
+  if (readProfileStore(WATCHLIST_STORAGE_KEY, owner, true) !== null) return false;
+  const cookieData = pendingCookieText();
+  if (cookieData === null) return false;
+  try {
+    parseWatchlistCookie(cookieData);
+    return false;
+  } catch {
+    // Unreadable: keep its text below.
+  }
+
+  const storage = window.localStorage;
+  if (storage.getItem(WATCHLIST_COOKIE_RECOVERY_KEY) !== null) return false;
+  // The kept text is the original owner's bare-key data; pin who that is first.
+  initializeProfileStorage();
+  if (!isProfileStorageOwnerAvailable(owner)) return false;
+  storage.setItem(WATCHLIST_COOKIE_RECOVERY_KEY, cookieData);
+  try {
+    deleteCookie(WATCHLIST_COOKIE_NAME);
+  } catch {
+    // Its text is kept, so `pendingCookieText` already treats it as settled.
+  }
+  return true;
+}
+
+/** A strict read for an edit, retiring an unparseable legacy cookie first. */
+function readWatchlistForEdit(): WatchlistItem[] {
+  try {
+    return getWatchlist({ strict: true });
+  } catch (error) {
+    // An unreadable *stored* list stays refused: it is still the only copy.
+    if (!retireUnreadableCookie()) throw error;
+    return getWatchlist({ strict: true });
+  }
 }
 
 /**
@@ -66,7 +173,7 @@ export function migrateWatchlist(): Promise<boolean> {
   try {
     // Ordinary mounts have nothing to migrate. These reads change no storage,
     // so they do not need to queue behind another tab's mutations or restore.
-    if (readCookie(WATCHLIST_COOKIE_NAME) === null || owner !== getLegacyProfileStorageOwner()) {
+    if (pendingCookieText() === null || owner !== getLegacyProfileStorageOwner()) {
       return Promise.resolve(true);
     }
   } catch (error) {
@@ -86,7 +193,7 @@ function persistWatchlistCookie({ ignoreRemovedOwner = false } = {}): boolean {
   try {
     const owner = getProfileStorageOwner();
     if (owner !== getLegacyProfileStorageOwner()) return true;
-    if (readCookie(WATCHLIST_COOKIE_NAME) === null) return true;
+    if (pendingCookieText() === null) return true;
     if (!isProfileStorageOwnerAvailable(owner)) {
       if (!ignoreRemovedOwner) return false;
       // The immutable marker still belongs to this removed owner, so surviving
@@ -100,11 +207,23 @@ function persistWatchlistCookie({ ignoreRemovedOwner = false } = {}): boolean {
       return true;
     }
 
-    // Strict parsing retains malformed data for a later export or recovery.
-    // A newer stored list, including [], must never be replaced by the cookie.
-    const list = getWatchlist({ strict: true });
-    if (readProfileStore(WATCHLIST_STORAGE_KEY, owner, true) === null && !saveWatchlist(list)) {
-      return false;
+    // A newer stored list, including [], must never be replaced by the cookie –
+    // and is the only thing read when it exists, readable or not: an unreadable
+    // stored list is already a store's own problem (edits refuse, a clear
+    // replaces it) and must not block switching away from it as well.
+    if (readProfileStore(WATCHLIST_STORAGE_KEY, owner, true) === null) {
+      let list: WatchlistItem[];
+      try {
+        list = readWatchlistCookie();
+      } catch {
+        // Unparseable: keep its text for recovery and let the list carry on.
+        // A browser refusing that write throws, keeping the cookie in place.
+        // An earlier kept copy with different text is not overwritten; this
+        // cookie then simply stays where it is, still the original owner's.
+        retireUnreadableCookie();
+        return true;
+      }
+      if (!saveWatchlist(list)) return false;
     }
 
     deleteCookie(WATCHLIST_COOKIE_NAME);
@@ -190,7 +309,7 @@ export function addManyToWatchlist(
 
 function addToProfileWatchlist(item: Omit<WatchlistItem, "addedAt">): ListWriteResult {
   try {
-    const currentWatchlist = getWatchlist({ strict: true });
+    const currentWatchlist = readWatchlistForEdit();
 
     // Check if item already exists
     const exists = currentWatchlist.some(
@@ -226,7 +345,7 @@ export function removeFromWatchlist(
 /** For compound actions already holding the roster lock and an owner scope. */
 export function removeFromWatchlistUnderLock(id: number, mediaType: "movie" | "tv"): ListWriteResult {
   try {
-    const currentWatchlist = getWatchlist({ strict: true });
+    const currentWatchlist = readWatchlistForEdit();
     const updatedWatchlist = currentWatchlist.filter(
       (item) => !(item.id === id && item.mediaType === mediaType),
     );
@@ -279,6 +398,12 @@ function clearProfileWatchlist(): boolean {
         deleteCookie(WATCHLIST_COOKIE_NAME);
       } catch {
         // The stored empty list already prevents any further cookie migration.
+      }
+      try {
+        // A clear replaces an unreadable store, and this was one.
+        window.localStorage.removeItem(WATCHLIST_COOKIE_RECOVERY_KEY);
+      } catch (error) {
+        console.error("Error removing an unreadable legacy watchlist:", error);
       }
     }
     return true;

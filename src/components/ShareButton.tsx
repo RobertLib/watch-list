@@ -31,10 +31,13 @@ export function ShareButton({ title, url }: ShareButtonProps) {
     function handleKeyDown(e: KeyboardEvent) {
       // Escape during IME composition cancels the composition, not the panel.
       if (e.key !== "Escape" || e.isComposing) return;
+      // This Escape is spent on the panel: prevented, so the header's own
+      // Escape handling (search bar, menu) leaves its layers alone – one key,
+      // one layer closed.
+      e.preventDefault();
       // Focus inside the panel would be lost when it unmounts; focus anywhere
       // else on the page is the visitor's and stays where it is.
       if (panelRef.current?.contains(document.activeElement)) {
-        e.preventDefault();
         triggerRef.current?.focus();
       }
       setOpen(false);

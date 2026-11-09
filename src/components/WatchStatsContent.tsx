@@ -355,8 +355,8 @@ function GoalPanel({
   const [draft, setDraft] = useState("52");
   const year = today.slice(0, 4);
 
-  // A goal set last year is history: it is shown as finished rather than as a
-  // bar nobody can move any more.
+  // A goal set last year is history: rather than a bar nobody can move any
+  // more, the panel offers to set this year's target, as it does with no goal.
   const isCurrentYear = goal?.year === year;
 
   if (!goal || !isCurrentYear) {

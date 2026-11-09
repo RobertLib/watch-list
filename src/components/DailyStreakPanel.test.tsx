@@ -94,3 +94,26 @@ describe("daily record dates", () => {
     expect(screen.queryByText("1", { selector: "span" })).toBeNull();
   });
 });
+
+describe("the calendar legend", () => {
+  /**
+   * The red square is a day played and lost; it was labelled "Missed", and the
+   * grey one – a day really skipped – "Never played".
+   */
+  it("names each swatch the way its squares' tooltips do", () => {
+    vi.setSystemTime(new Date("2026-10-05T10:00:00.000Z"));
+    render(<DailyStreakPanel />);
+
+    expect(screen.queryByText("Missed")).toBeNull();
+    expect(screen.queryByText("Never played")).toBeNull();
+    for (const label of [
+      "Solved",
+      "Played, not solved",
+      "Caught up later",
+      "Caught up later, not solved",
+      "Not played",
+    ]) {
+      expect(screen.getByText(label)).toBeTruthy();
+    }
+  });
+});

@@ -281,6 +281,35 @@ describe("the tab in the URL fragment", () => {
 
     expect(screen.getByTestId("card").textContent).toBe("Fight Club");
   });
+
+  /**
+   * Next navigates with `history.pushState`, which fires no `hashchange`. On
+   * `/watchlist#watched` the header's "Watchlist" link pushes `/watchlist`, and
+   * the Watched tab stayed selected under a URL that names To Watch. The
+   * Navigation API's `currententrychange` fires for every same-document URL
+   * change, `pushState` included; jsdom has no Navigation API, so it is stood
+   * in for here.
+   */
+  it("follows a navigation that drops the fragment without a hashchange", async () => {
+    const navigation = new EventTarget();
+    vi.stubGlobal("navigation", navigation);
+    seed({ watchlist: [saved("Fight Club", 550)], watched: [seen("Heat", 949)] });
+    const view = await renderPage();
+
+    await setFragment("#watched");
+    expect(screen.getByTestId("card").textContent).toBe("Heat");
+
+    await act(async () => {
+      window.history.pushState(null, "", window.location.pathname);
+      navigation.dispatchEvent(new Event("currententrychange"));
+    });
+    expect(screen.getByTestId("card").textContent).toBe("Fight Club");
+
+    // And lets go of the API with the page.
+    const remove = vi.spyOn(navigation, "removeEventListener");
+    view.unmount();
+    expect(remove).toHaveBeenCalledWith("currententrychange", expect.any(Function));
+  });
 });
 
 describe("clearing a list", () => {

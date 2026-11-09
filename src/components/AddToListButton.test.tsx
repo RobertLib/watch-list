@@ -520,3 +520,23 @@ describe("AddToListButton", () => {
     expect(screen.getByRole("button", { name: isMember ? "On 1 list" : "Add to list" })).not.toBeNull();
   });
 });
+
+/**
+ * A disclosure, like Share: `aria-haspopup="true"` announced a menu, and the
+ * picker is not one – no menu role, no arrow keys.
+ */
+describe("what the trigger tells a screen reader", () => {
+  it("says it is expanded and which panel it opened, without promising a menu", async () => {
+    render(<AddToListButton item={item} />);
+    const trigger = screen.getByRole("button", { name: "Add to list" });
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(trigger.hasAttribute("aria-controls")).toBe(false);
+    expect(trigger.hasAttribute("aria-haspopup")).toBe(false);
+
+    await click(trigger);
+
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    const panel = document.getElementById(trigger.getAttribute("aria-controls")!);
+    expect(panel?.contains(screen.getByRole("textbox", { name: "New list name" }))).toBe(true);
+  });
+});

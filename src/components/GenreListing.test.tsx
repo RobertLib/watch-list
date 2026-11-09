@@ -149,7 +149,7 @@ describe("GenreListing pagination recovery", () => {
   });
 
   it("keeps genre filters while replacing an unavailable page with the last valid page", async () => {
-    state.query = "page=20&year=2020&with_genre=12";
+    state.query = "page=20&year=2020&with_genre=12&provider=8";
     api.discoverMoviesByGenre.mockImplementation(async (_id: number, page: number) => ({
       results: page === 2 ? [title] : [], total_pages: 2, total_results: 21,
     }));
@@ -161,6 +161,8 @@ describe("GenreListing pagination recovery", () => {
     expect(target.searchParams.get("page")).toBe("2");
     expect(target.searchParams.get("year")).toBe("2020");
     expect(target.searchParams.get("with_genre")).toBe("12");
+    // The service the visitor filtered to, which the correction used to drop.
+    expect(target.searchParams.get("provider")).toBe("8");
     expect(target.searchParams.has("genre")).toBe(false);
     expect(screen.queryByText(/No action/)).toBeNull();
 

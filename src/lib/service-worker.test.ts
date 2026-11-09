@@ -163,8 +163,21 @@ function cachedPaths(app: ReturnType<typeof worker>, cacheName: string) {
   return [...(app.buckets.get(cacheName)?.keys() ?? [])].map((url) => new URL(url).pathname);
 }
 
-const STATIC_CACHE = "static-v10";
-const IMAGE_CACHE = "images-v10";
+/** A constant as the shipped worker declares it, so a bump is one edit. */
+function declared(pattern: RegExp): string {
+  const match = pattern.exec(workerSource);
+  if (!match) throw new Error(`sw.js no longer declares ${pattern}`);
+  return match[1];
+}
+
+const VERSION = declared(/const VERSION = "(v\d+)";/);
+const STATIC_CACHE = `static-${VERSION}`;
+const IMAGE_CACHE = `images-${VERSION}`;
+const PAGE_CACHE = `pages-${VERSION}`;
+const RSC_CACHE = `rsc-${VERSION}`;
+const MAX_STATIC = Number(declared(/const MAX_STATIC_ENTRIES = (\d+);/));
+const MAX_PAGES = Number(declared(/const MAX_PAGE_ENTRIES = (\d+);/));
+const MAX_RSC = Number(declared(/const MAX_RSC_ENTRIES = (\d+);/));
 const HOUR = 60 * 60 * 1000;
 
 function addWatchlist(app: ReturnType<typeof worker>) {
@@ -221,15 +234,56 @@ describe("service worker offline routes", () => {
     expect(app.fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("fetches posters as CORS past the HTTP cache, whose copy may lack the CORS header", async () => {
+  it("fetches a poster it does not hold as CORS, from the browser's HTTP cache first", async () => {
     const app = worker();
     app.add("/t/p/w500/poster.jpg", "POSTER", "image/jpeg");
-    await app.request("https://image.tmdb.org/t/p/w500/poster.jpg", "no-cors");
+    const poster = await app.request("https://image.tmdb.org/t/p/w500/poster.jpg", "no-cors");
+    expect(await poster.response!.text()).toBe("POSTER");
 
+    expect(app.fetch).toHaveBeenCalledTimes(1);
     const sent = app.fetch.mock.calls[0][0] as Request;
     expect(sent.mode).toBe("cors");
     expect(sent.credentials).toBe("omit");
-    expect(sent.cache).toBe("reload");
+    expect(sent.cache).toBe("default");
+  });
+
+  it("goes past the HTTP cache once when its copy fails CORS, and keeps the readable answer", async () => {
+    const app = worker();
+    const url = "https://image.tmdb.org/t/p/w500/poster.jpg";
+    app.add("/t/p/w500/poster.jpg", "POSTER", "image/jpeg");
+    const network = app.fetch.getMockImplementation()!;
+    // An `<img>` loaded outside the worker left a copy with no CORS header.
+    app.fetch.mockImplementation(async (request) => {
+      if (request instanceof Request && request.mode === "cors" && request.cache === "default") {
+        throw new TypeError("CORS header missing");
+      }
+      return network(request);
+    });
+
+    const poster = await app.request(url, "no-cors");
+    expect(await poster.response!.text()).toBe("POSTER");
+    expect(app.fetch.mock.calls.map(([request]) => (request as Request).cache))
+      .toEqual(["default", "reload"]);
+
+    app.offline();
+    const offline = await app.request(url, "no-cors");
+    expect(await offline.response!.text()).toBe("POSTER");
+  });
+
+  it("falls back to the plain request, uncached, when the CDN refuses CORS altogether", async () => {
+    const app = worker();
+    const url = "https://image.tmdb.org/t/p/w500/poster.jpg";
+    app.add("/t/p/w500/poster.jpg", "POSTER", "image/jpeg");
+    const network = app.fetch.getMockImplementation()!;
+    app.fetch.mockImplementation(async (request) => {
+      if (request instanceof Request && request.mode === "cors") throw new TypeError("no CORS");
+      return network(request);
+    });
+
+    const poster = await app.request(url, "no-cors");
+    expect(await poster.response!.text()).toBe("POSTER");
+    expect(app.fetch).toHaveBeenCalledTimes(3);
+    expect(cachedPaths(app, IMAGE_CACHE)).toEqual([]);
   });
 
   it.each(["static-v4", "static-v5", "static-v6"])(
@@ -413,8 +467,8 @@ describe("service worker offline routes", () => {
 });
 
 /**
- * One build is about ninety static files and the cache holds 150, so two or
- * three code-only deploys – which keep this cache's name – fill it. What it
+ * One build is about 115 static files and the cache holds two builds and some,
+ * so a few code-only deploys – which keep this cache's name – fill it. What it
  * gives up then decides whether a saved page still opens offline.
  */
 describe("service worker cache eviction", () => {
@@ -441,8 +495,8 @@ describe("service worker cache eviction", () => {
       "/_next/static/chunks/link-only.hash.js",
     ]) await app.request(path);
 
-    await fillStatic(app, "later-deploys", 200);
-    expect(app.buckets.get(STATIC_CACHE)!.size).toBe(150);
+    await fillStatic(app, "later-deploys", MAX_STATIC + 50);
+    expect(app.buckets.get(STATIC_CACHE)!.size).toBe(MAX_STATIC);
 
     app.offline();
     const page = await app.request("/watchlist", "navigate");
@@ -461,9 +515,11 @@ describe("service worker cache eviction", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       const app = worker();
+      // Two pages that together name more chunks than the cache holds.
+      const perPage = Math.ceil((MAX_STATIC * 2) / 3);
       const page = (name: string) =>
         `<!doctype html><script src="/_next/static/chunks/shared.js"></script>${
-          Array.from({ length: 100 }, (_, index) =>
+          Array.from({ length: perPage }, (_, index) =>
             `<script src="/_next/static/chunks/${name}-${index}.js"></script>`).join("")}`;
       app.add("/_next/static/chunks/shared.js", "SHARED", "application/javascript");
       app.add("/old", page("old"), "text/html");
@@ -471,16 +527,16 @@ describe("service worker cache eviction", () => {
 
       await app.request("/old", "navigate");
       await app.request("/_next/static/chunks/shared.js");
-      await fillStatic(app, "old", 100);
+      await fillStatic(app, "old", perPage);
       vi.setSystemTime(Date.now() + 2 * HOUR);
       await app.request("/new", "navigate");
-      await fillStatic(app, "new", 100);
+      await fillStatic(app, "new", perPage);
 
       const kept = new Set(cachedPaths(app, STATIC_CACHE));
-      expect(kept.size).toBe(150);
+      expect(kept.size).toBe(MAX_STATIC);
       // Stored first of all, but named by the newest page too.
       expect(kept.has("/_next/static/chunks/shared.js")).toBe(true);
-      expect(Array.from({ length: 100 }, (_, index) =>
+      expect(Array.from({ length: perPage }, (_, index) =>
         kept.has(`/_next/static/chunks/new-${index}.js`)).every(Boolean)).toBe(true);
     } finally {
       vi.useRealTimers();
@@ -500,14 +556,14 @@ describe("service worker cache eviction", () => {
       ]);
 
       vi.setSystemTime(Date.now() + 2 * HOUR);
-      await fillStatic(app, "filler", 148);
+      await fillStatic(app, "filler", MAX_STATIC - 2);
       // The runtime chunk, used again on a later visit.
       const used = await app.request("/_next/static/chunks/first-0.js");
       expect(await used.response!.text()).toBe("first");
       await fillStatic(app, "next-deploy", 2);
 
       const kept = cachedPaths(app, STATIC_CACHE);
-      expect(kept).toHaveLength(150);
+      expect(kept).toHaveLength(MAX_STATIC);
       expect(kept).toContain("/_next/static/chunks/first-0.js");
       expect(kept).not.toContain("/_next/static/chunks/first-1.js");
       expect(kept).not.toContain("/_next/static/chunks/filler-0.js");
@@ -537,6 +593,133 @@ describe("service worker cache eviction", () => {
       app.offline();
       const watchlistPoster = await app.request(poster(0));
       expect(await watchlistPoster.response!.text()).toBe("POSTER_0");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the app's own pages while a session browses more prerendered titles than fit", async () => {
+    const app = worker();
+    const own = ["/", "/watchlist", "/stats", "/movie", "/genres/movie", "/daily/archive"];
+    for (const path of own) {
+      app.add(path, `<!doctype html><body>PAGE ${path}</body>`, "text/html");
+      await app.request(path, "navigate");
+    }
+    // Titles, people, genres on a platform and moods: the build's catalogue.
+    const catalogue = Array.from({ length: MAX_PAGES + 70 }, (_, index) =>
+      [`/movie/film-${index}`, `/tv/series-${index}`, `/person/someone-${index}`,
+        `/genres/tv/drama-18/netflix-${index}`, `/mood/mood-${index}`][index % 5]);
+    for (const path of catalogue) {
+      app.add(path, `<!doctype html><body>PAGE ${path}</body>`, "text/html");
+      await app.request(path, "navigate");
+    }
+
+    const kept = cachedPaths(app, PAGE_CACHE);
+    expect(kept).toHaveLength(MAX_PAGES);
+    expect(kept.slice(0, own.length)).toEqual(own);
+    // The most recent catalogue pages fill the rest.
+    expect(kept.slice(own.length)).toEqual(catalogue.slice(-(MAX_PAGES - own.length)));
+
+    app.offline();
+    const home = await app.request("/", "navigate");
+    expect(await home.response!.text()).toContain("PAGE /");
+  });
+
+  it("gives up catalogue payloads, segment files included, before the app's own", async () => {
+    const app = worker();
+    app.add("/watchlist.txt", "WATCHLIST_RSC", "text/plain");
+    app.add("/watchlist/__next._tree.txt", "WATCHLIST_TREE", "text/plain");
+    await app.request("/watchlist.txt?_rsc=a", "cors", { RSC: "1" });
+    await app.request("/watchlist/__next._tree.txt?_rsc=a");
+    for (let index = 0; index < MAX_RSC; index++) {
+      const page = `/movie/film-${index}`;
+      app.add(`${page}.txt`, "RSC", "text/plain");
+      app.add(`${page}/__next.movie.$d$slug.__PAGE__.txt`, "SEGMENT", "text/plain");
+      await app.request(`${page}.txt?_rsc=b`, "cors", { RSC: "1" });
+      await app.request(`${page}/__next.movie.$d$slug.__PAGE__.txt?_rsc=b`);
+    }
+
+    const kept = cachedPaths(app, RSC_CACHE);
+    expect(kept).toHaveLength(MAX_RSC);
+    expect(kept.slice(0, 2)).toEqual(["/watchlist.txt", "/watchlist/__next._tree.txt"]);
+    app.offline();
+    const transition = await app.request("/watchlist.txt?_rsc=c", "cors", { RSC: "1" });
+    expect(await transition.response!.text()).toBe("WATCHLIST_RSC");
+  });
+
+  it("counts a Link revisit as a use of the saved page, keeping the stamp that refreshes it", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const app = worker();
+      for (const path of ["/movie/revisited-1", "/movie/opened-once-2"]) {
+        app.add(path, `<!doctype html><body>PAGE ${path}</body>`, "text/html");
+        app.add(`${path}.txt`, "RSC", "text/plain");
+        await app.request(path, "navigate");
+      }
+      const savedAt = () => app.buckets.get(PAGE_CACHE)!
+        .get(new URL("/movie/revisited-1", ORIGIN).href)!.headers.get("X-SW-Saved-At");
+      const stamp = savedAt();
+
+      // Straight after a full load the copy is current: nothing is rewritten.
+      await app.cachePage("/movie/revisited-1");
+      expect(cachedPaths(app, PAGE_CACHE)).toEqual(["/movie/revisited-1", "/movie/opened-once-2"]);
+
+      // A Link transition hours later: the payload is fetched, the page is not.
+      vi.setSystemTime(Date.now() + 2 * HOUR);
+      app.fetch.mockClear();
+      await app.request("/movie/revisited-1.txt?_rsc=link", "cors", { RSC: "1" });
+      await app.cachePage("/movie/revisited-1");
+      expect(app.fetch.mock.calls.map(([request]) =>
+        new URL(typeof request === "string" ? request : request.url, ORIGIN).pathname,
+      )).toEqual(["/movie/revisited-1.txt"]);
+      expect(cachedPaths(app, PAGE_CACHE)).toEqual(["/movie/opened-once-2", "/movie/revisited-1"]);
+      expect(savedAt()).toBe(stamp);
+
+      // So the page opened once is what browsing gives up first.
+      for (let index = 0; index < MAX_PAGES - 1; index++) {
+        app.add(`/tv/series-${index}`, "<!doctype html><body>SERIES</body>", "text/html");
+        await app.request(`/tv/series-${index}`, "navigate");
+      }
+      const kept = cachedPaths(app, PAGE_CACHE);
+      expect(kept).toContain("/movie/revisited-1");
+      expect(kept).not.toContain("/movie/opened-once-2");
+
+      // And the kept stamp still lets a day-old copy be refreshed.
+      vi.setSystemTime(Number(stamp) + 25 * HOUR);
+      app.add("/movie/revisited-1", "<!doctype html><body>NEW</body>", "text/html");
+      await app.cachePage("/movie/revisited-1");
+      app.offline();
+      const page = await app.request("/movie/revisited-1", "navigate");
+      expect(await page.response!.text()).toContain("NEW");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("holds two complete builds of saved pages without giving up any chunk they name", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const app = worker();
+      // About what one build is: 115 files, every one named by a saved page.
+      const build = (name: string) =>
+        `<!doctype html>${Array.from({ length: 115 }, (_, index) =>
+          `<script src="/_next/static/chunks/${name}-${index}.js"></script>`).join("")}`;
+      app.add("/watchlist", build("before-deploy"), "text/html");
+      await app.request("/watchlist", "navigate");
+      await fillStatic(app, "before-deploy", 115);
+      vi.setSystemTime(Date.now() + 2 * HOUR);
+      app.add("/stats", build("after-deploy"), "text/html");
+      await app.request("/stats", "navigate");
+      await fillStatic(app, "after-deploy", 115);
+      // Chunks no saved page names: lazy routes visited, retired builds.
+      await fillStatic(app, "unnamed", MAX_STATIC);
+
+      const kept = new Set(cachedPaths(app, STATIC_CACHE));
+      expect(kept.size).toBe(MAX_STATIC);
+      for (const name of ["before-deploy", "after-deploy"]) {
+        expect(Array.from({ length: 115 }, (_, index) =>
+          kept.has(`/_next/static/chunks/${name}-${index}.js`)).every(Boolean)).toBe(true);
+      }
     } finally {
       vi.useRealTimers();
     }

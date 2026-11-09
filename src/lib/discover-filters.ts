@@ -299,8 +299,8 @@ export function sanitizeFilterOptions(
     options.withOriginalLanguage = raw.withOriginalLanguage as string;
   }
 
-  // Date bounds are not gated by media type: `buildFilteredUrl` only ever sends
-  // the pair that matches the endpoint it is building.
+  // Date bounds are not gated by media type here: `buildFilteredUrl` sends only
+  // the pair that matches the endpoint it is building, and drops the other.
   const dateFields = [
     "primaryReleaseDateGte",
     "primaryReleaseDateLte",

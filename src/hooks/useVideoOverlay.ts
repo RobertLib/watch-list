@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { tmdbApi } from "@/lib/tmdb";
-import { findYouTubeTrailer } from "@/lib/trailer";
+import { findYouTubeTrailer, isPlayableYouTubeVideo } from "@/lib/trailer";
 import type { Video } from "@/types/tmdb";
 
 // Lives in `lib/trailer.ts` so the build can call it too – a function exported
@@ -48,8 +48,9 @@ export function useVideoOverlay() {
         const trailer =
           findYouTubeTrailer(videos.results) ??
           // The shared player embeds YouTube only. A Vimeo key is not a
-          // playable fallback, even when it happens to be the first result.
-          videos.results.find((video: Video) => video.site === "YouTube");
+          // playable fallback, even when it happens to be the first result,
+          // and nor is a YouTube entry whose key is not an id at all.
+          videos.results.find((video: Video) => isPlayableYouTubeVideo(video));
 
         setVideo(trailer ?? null);
       } catch (error) {
