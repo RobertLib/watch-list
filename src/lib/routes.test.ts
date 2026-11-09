@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { encodePrerenderedIds } from "./prerendered-titles";
 import {
   SITE_URL,
   absoluteMediaUrl,
@@ -12,18 +13,23 @@ import {
   movieHref,
   personHref,
   sharedListHref,
+  titleQueryHref,
   tvHref,
 } from "./routes";
 
 /**
  * These build every internal link in the app, and the static export can only
- * serve the handful of paths that existed at build time. A path form no route
- * answers – `/movie/fight-club-550` rather than `/movie?id=…` – is a 404 that
- * type checking cannot see, which is why the shapes are pinned here.
+ * serve the paths that existed at build time. A path form no route answers – a
+ * `/movie/<slug>` the build did not prerender – is a 404 that type checking
+ * cannot see, which is why the shapes are pinned here.
  */
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("title links", () => {
-  it("addresses a title by query string, not by path", () => {
+  it("addresses a title the build did not prerender by query string", () => {
     expect(movieHref("550-fight-club")).toBe("/movie?id=550-fight-club");
     expect(tvHref("1396-breaking-bad")).toBe("/tv?id=1396-breaking-bad");
   });
@@ -60,26 +66,71 @@ describe("dailyHref", () => {
   });
 });
 
+/**
+ * The build prerenders the best-known titles at a path of their own, and a link
+ * points there only when that page exists: in the id list the build inlined,
+ * and at the slug the build wrote it under – `createSlug(name, id)`, ending in
+ * its id. Anything else goes to the query page, which exists for every title.
+ */
+describe("prerendered title links", () => {
+  const prerender = () =>
+    vi.stubEnv(
+      "PRERENDERED_TITLE_IDS",
+      encodePrerenderedIds({ movie: [550], tv: [1396], person: [31] }),
+    );
+
+  it("points a prerendered title, series or person at its path", () => {
+    prerender();
+    expect(movieHref("fight-club-550")).toBe("/movie/fight-club-550");
+    expect(tvHref("breaking-bad-1396")).toBe("/tv/breaking-bad-1396");
+    expect(personHref("tom-hanks-31")).toBe("/person/tom-hanks-31");
+    expect(absoluteMediaUrl("movie", "fight-club-550")).toBe(
+      `${SITE_URL}/movie/fight-club-550`,
+    );
+  });
+
+  it("keeps the query page for a slug the build did not write", () => {
+    prerender();
+    // A bare id, and the old site's id-first order: neither is a file.
+    expect(movieHref("550")).toBe("/movie?id=550");
+    expect(movieHref("550-fight-club")).toBe("/movie?id=550-fight-club");
+    // The same id under the other kind is not a page either.
+    expect(personHref("someone-550")).toBe("/person?id=someone-550");
+  });
+
+  it("keeps collections on the query page", () => {
+    prerender();
+    expect(collectionHref("the-dark-knight-collection-263")).toBe(
+      "/collection?id=the-dark-knight-collection-263",
+    );
+  });
+
+  it("offers the query page explicitly, for redirects that must not land on a path", () => {
+    prerender();
+    expect(titleQueryHref("movie", "fight-club-550")).toBe("/movie?id=fight-club-550");
+  });
+});
+
 describe("moodHref", () => {
-  it("leaves page one out of the URL", () => {
-    expect(moodHref("cosy-sunday")).toBe("/mood?id=cosy-sunday");
-    expect(moodHref("cosy-sunday", 1)).toBe("/mood?id=cosy-sunday");
+  it("puts the mood in the path and leaves page one out", () => {
+    expect(moodHref("cosy-sunday")).toBe("/mood/cosy-sunday");
+    expect(moodHref("cosy-sunday", 1)).toBe("/mood/cosy-sunday");
   });
 
   it("carries any later page", () => {
-    expect(moodHref("cosy-sunday", 3)).toBe("/mood?id=cosy-sunday&page=3");
+    expect(moodHref("cosy-sunday", 3)).toBe("/mood/cosy-sunday?page=3");
   });
 });
 
 describe("genreHref", () => {
-  it("puts the media type in the path and the genre in the query", () => {
-    expect(genreHref("movie", "horror")).toBe("/genres/movie?genre=horror");
-    expect(genreHref("tv", "drama")).toBe("/genres/tv?genre=drama");
+  it("puts the media type and the genre in the path", () => {
+    expect(genreHref("movie", "horror-27")).toBe("/genres/movie/horror-27");
+    expect(genreHref("tv", "drama-18")).toBe("/genres/tv/drama-18");
   });
 
-  it("carries a platform", () => {
-    expect(genreHref("movie", "horror", { provider: "netflix" })).toBe(
-      "/genres/movie?genre=horror&provider=netflix",
+  it("puts a platform in the path too", () => {
+    expect(genreHref("movie", "horror-27", { provider: "netflix" })).toBe(
+      "/genres/movie/horror-27/netflix",
     );
   });
 
@@ -87,23 +138,30 @@ describe("genreHref", () => {
     // `buildDiscoverFilterQuery` hands back a leading "?", and appending that
     // would put a second question mark in the URL – everything after it is then
     // part of the previous parameter's value rather than a parameter of its own.
-    const href = genreHref("movie", "horror", {
+    const href = genreHref("movie", "horror-27", {
       filterQuery: "?year=2026&sort=vote_average.desc",
     });
 
     expect(href.match(/\?/g)).toHaveLength(1);
+    expect(href.split("?")[0]).toBe("/genres/movie/horror-27");
 
     const params = new URLSearchParams(href.split("?")[1]);
-    expect(params.get("genre")).toBe("horror");
     expect(params.get("year")).toBe("2026");
     expect(params.get("sort")).toBe("vote_average.desc");
   });
 
-  it("lets the genre win over one carried in the filter query", () => {
-    const href = genreHref("movie", "horror", { filterQuery: "?genre=comedy" });
-    const params = new URLSearchParams(href.split("?")[1]);
+  it("drops the query-addressed genre and platform the path now carries", () => {
+    const href = genreHref("movie", "horror-27", {
+      filterQuery: "?genre=comedy-35&provider=hulu&page=2",
+    });
 
-    expect(params.getAll("genre")).toEqual(["horror"]);
+    expect(href).toBe("/genres/movie/horror-27?page=2");
+  });
+
+  it("leaves no question mark when there is nothing to carry", () => {
+    expect(genreHref("tv", "drama-18", { filterQuery: "?" })).toBe(
+      "/genres/tv/drama-18",
+    );
   });
 });
 

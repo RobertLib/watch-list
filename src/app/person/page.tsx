@@ -10,8 +10,8 @@ export const metadata: Metadata = pageMetadata({
 });
 
 /**
- * One person's page. Addressed by `?id=`, like every other title in the
- * catalogue, for the same reason: a static export has no route per person.
+ * Anyone's page, by `?id=` – a static export has no route per person. The
+ * best-known people have a prerendered path of their own (`person/[slug]`).
  */
 export default function Page() {
   return <PersonContent />;

@@ -7,119 +7,78 @@ import { ArrowLeft } from "lucide-react";
 import { MediaSection } from "@/components/MediaSection";
 import { LoadingSection } from "@/components/LoadingSpinner";
 import { LoadFailureNotice } from "@/components/LoadFailureNotice";
-import { NotFoundNotice } from "@/components/NotFoundNotice";
 import { useAsyncData } from "@/hooks/useAsyncData";
-import { useDocumentTitle } from "@/hooks/useDocumentTitle";
-import { useCanonicalUrl } from "@/hooks/useCanonicalUrl";
 import { useSettingsKey } from "@/hooks/useSettings";
-import { tmdbDiscoverApi } from "@/lib/tmdb-discover";
-import {
-  convertMovieToMediaItem,
-  convertTVShowToMediaItem,
-} from "@/lib/media-converters";
-import { findMood, MOODS, type Mood } from "@/lib/moods";
-import { absoluteUrl, moodHref } from "@/lib/routes";
+import { MOODS, type Mood } from "@/lib/moods";
+import { MAX_MOOD_PAGE, loadMoodPicks, type MoodPicksPage } from "@/lib/mood-data";
+import { moodHref } from "@/lib/routes";
 
-// How deep the pager goes. The value of these pages is the first screenful.
-const MAX_PAGE = 10;
-
-function parsePage(raw: string | undefined) {
-  return Math.max(1, Math.min(parseInt(raw ?? "1", 10) || 1, MAX_PAGE));
+function parsePage(raw: string | null) {
+  return Math.max(1, Math.min(parseInt(raw ?? "1", 10) || 1, MAX_MOOD_PAGE));
 }
 
-/** One mood's picks – `?id=cozy`. The list of moods lives at `/moods`. */
-export function MoodContent() {
+interface MoodContentProps {
+  /** Resolved by the page from `moods.ts`; the path names it. */
+  mood: Mood;
+  /** Page one, loaded at build time – or `null` for a build without TMDB. */
+  snapshot: MoodPicksPage | null;
+}
+
+/**
+ * One mood's picks – `/mood/easy-watch`. The list of moods lives at `/moods`.
+ *
+ * Built like `GenreListing`: the page number comes from the query string, which
+ * the prerender cannot read, so the Suspense fallback is the prerendered page –
+ * page one, from the build's snapshot – and the live half starts from the same
+ * snapshot in the browser.
+ */
+export function MoodContent({ mood, snapshot }: MoodContentProps) {
   return (
-    <Suspense fallback={<MoodSkeleton />}>
-      <MoodPicks />
+    <Suspense
+      fallback={
+        snapshot ? (
+          <MoodPicksView mood={mood} page={1} picks={snapshot} />
+        ) : (
+          <MoodSkeleton mood={mood} />
+        )
+      }
+    >
+      <MoodPicks mood={mood} snapshot={snapshot} />
     </Suspense>
   );
 }
 
-function MoodSkeleton({ mood }: { mood?: Mood }) {
+function MoodSkeleton({ mood }: { mood: Mood }) {
   return (
     <div className="container mx-auto px-6 lg:px-8 py-8">
-      <div className="mb-8">
-        {mood ? (
-          <h1 className="text-4xl font-bold text-white mb-3">
-            <span aria-hidden="true" className="mr-2">
-              {mood.emoji}
-            </span>
-            {mood.label}
-          </h1>
-        ) : (
-          <div className="h-10 w-64 bg-gray-700 rounded animate-pulse" />
-        )}
-      </div>
+      <MoodHeading mood={mood} page={1} />
       <LoadingSection count={12} />
     </div>
   );
 }
 
-function MoodPicks() {
+function MoodPicks({ mood, snapshot }: MoodContentProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const settingsKey = useSettingsKey();
-  const mood = findMood(searchParams.get("id") ?? "");
-  const page = parsePage(searchParams.get("page") ?? undefined);
+  const page = parsePage(searchParams.get("page"));
 
-  useDocumentTitle(mood ? `${mood.label} – What to Watch` : null);
-  // Page two of a mood is its own URL rather than a duplicate of page one.
-  useCanonicalUrl(mood ? absoluteUrl(moodHref(mood.slug, page)) : null);
-
-  const { data, isLoading, error, reload } = useAsyncData(async () => {
-    if (!mood) return null;
-
-    // Both halves are fetched together where the mood has a television side; a
-    // failure in either leaves the other section available and offers a retry.
-    const [movieResult, showResult] = await Promise.allSettled([
-      tmdbDiscoverApi.discoverMovies(page, mood.movie),
-      mood.tv
-        ? tmdbDiscoverApi.discoverTVShows(page, mood.tv)
-        : Promise.resolve(null),
-    ]);
-
-    return {
-      movies:
-        movieResult.status === "fulfilled"
-          ? movieResult.value.results.map(convertMovieToMediaItem)
-          : [],
-      shows:
-        showResult.status === "fulfilled" && showResult.value
-          ? showResult.value.results.map(convertTVShowToMediaItem)
-          : [],
-      moviesFailed: movieResult.status === "rejected",
-      showsFailed: showResult.status === "rejected",
-      totalPages: Math.min(MAX_PAGE, Math.max(
-        1,
-        movieResult.status === "fulfilled" ? movieResult.value.total_pages : 0,
-        showResult.status === "fulfilled" && showResult.value
-          ? showResult.value.total_pages : 0,
-      )),
-    };
-  }, [mood?.slug, page, settingsKey]);
+  const { data, isLoading, error, reload } = useAsyncData(
+    () => loadMoodPicks(mood, page),
+    [mood.slug, page, settingsKey],
+    page === 1 ? snapshot : null,
+  );
 
   // A shared link or a settings change can leave the URL beyond the catalogue's
   // last page. Only correct it once both listings have answered: a failed half
   // may still have later pages. Keep the skeleton until the valid page loads.
   const correctionHref =
-    mood && data && !data.moviesFailed && !data.showsFailed && page > data.totalPages
+    data && !data.moviesFailed && !data.showsFailed && page > data.totalPages
       ? moodHref(mood.slug, data.totalPages)
       : null;
   useEffect(() => {
     if (correctionHref) router.replace(correctionHref, { scroll: false });
   }, [correctionHref, router]);
-
-  if (!mood) {
-    return (
-      <NotFoundNotice
-        title="Mood not found"
-        description="That is not one of the moods on offer. Pick another kind of evening."
-        backHref="/moods"
-        backLabel="All moods"
-      />
-    );
-  }
 
   if (error) {
     return <LoadFailureNotice title="Could not load this mood" onRetry={reload} />;
@@ -127,33 +86,54 @@ function MoodPicks() {
 
   if (isLoading || !data || correctionHref) return <MoodSkeleton mood={mood} />;
 
-  const { movies, shows, moviesFailed, showsFailed, totalPages } = data;
+  return <MoodPicksView mood={mood} page={page} picks={data} onRetry={reload} />;
+}
+
+function MoodHeading({ mood, page }: { mood: Mood; page: number }) {
+  return (
+    <div className="mb-8">
+      <Link
+        href="/moods"
+        prefetch={false}
+        className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-white transition-colors mb-4"
+      >
+        <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+        All moods
+      </Link>
+      <h1 className="text-4xl font-bold text-white mb-3">
+        <span aria-hidden="true" className="mr-2">
+          {mood.emoji}
+        </span>
+        {mood.label}
+      </h1>
+      <p className="text-gray-400 text-lg max-w-2xl">
+        {mood.description}
+        {page > 1 && ` – page ${page}`}
+      </p>
+    </div>
+  );
+}
+
+function MoodPicksView({
+  mood,
+  page,
+  picks,
+  onRetry,
+}: {
+  mood: Mood;
+  page: number;
+  picks: MoodPicksPage;
+  /** Absent in the prerender, where a failed half never gets this far. */
+  onRetry?: () => void;
+}) {
+  const { movies, shows, moviesFailed, showsFailed, totalPages } = picks;
 
   return (
     <div className="container mx-auto px-6 lg:px-8 py-8">
-      <div className="mb-8">
-        <Link
-          href="/moods"
-          prefetch={false}
-          className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-white transition-colors mb-4"
-        >
-          <ArrowLeft className="w-4 h-4" aria-hidden="true" />
-          All moods
-        </Link>
-        <h1 className="text-4xl font-bold text-white mb-3">
-          <span aria-hidden="true" className="mr-2">
-            {mood.emoji}
-          </span>
-          {mood.label}
-        </h1>
-        <p className="text-gray-400 text-lg max-w-2xl">
-          {mood.description}
-          {page > 1 && ` – page ${page}`}
-        </p>
-      </div>
+      <MoodHeading mood={mood} page={page} />
 
       {moviesFailed ? (
-        <LoadFailureNotice title="Could not load films" onRetry={reload} compact />
+        <LoadFailureNotice title="Could not load films" onRetry={onRetry} compact />
       ) : (
         <MediaSection
           title={shows.length > 0 ? "Films" : ""}
@@ -167,7 +147,7 @@ function MoodPicks() {
       )}
 
       {showsFailed ? (
-        <LoadFailureNotice title="Could not load series" onRetry={reload} compact />
+        <LoadFailureNotice title="Could not load series" onRetry={onRetry} compact />
       ) : shows.length > 0 && (
         <div className="mt-12">
           <MediaSection

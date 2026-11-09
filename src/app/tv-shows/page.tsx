@@ -1,11 +1,8 @@
 import type { Metadata } from "next";
 import { pageMetadata } from "@/lib/page-metadata";
-import { Suspense } from "react";
 import { PageHero } from "@/components/PageHero";
-import {
-  TVShowsContent,
-  TVShowsLoadingFallback,
-} from "@/components/TVShowsContent";
+import { TVShowsContent } from "@/components/TVShowsContent";
+import { getTVSectionsSnapshot } from "@/lib/build-time-tmdb";
 
 export const metadata: Metadata = pageMetadata({
   title: "TV Shows",
@@ -14,7 +11,9 @@ export const metadata: Metadata = pageMetadata({
   path: "/tv-shows",
 });
 
-export default function TVShowsPage() {
+export default async function TVShowsPage() {
+  const snapshot = await getTVSectionsSnapshot();
+
   return (
     <div className="min-h-screen bg-black">
       <PageHero
@@ -24,11 +23,9 @@ export default function TVShowsPage() {
       />
 
       <div className="container mx-auto px-6 lg:px-8 py-8">
-        {/* The listing reads its filters from the query string, which does not
-            exist during the prerender – so the built HTML holds the skeleton. */}
-        <Suspense fallback={<TVShowsLoadingFallback />}>
-          <TVShowsContent />
-        </Suspense>
+        {/* The fixed sections are prerendered from the build's snapshot; the
+            filterable grid above them renders in the browser. */}
+        <TVShowsContent snapshot={snapshot} />
 
         {/* Editorial section – part of the prerendered shell */}
         <section

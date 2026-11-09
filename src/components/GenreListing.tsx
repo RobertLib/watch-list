@@ -1,64 +1,131 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { Suspense, useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MediaSection } from "@/components/MediaSection";
 import { WikipediaInsights } from "@/components/WikipediaInsights";
-import { DiscoverFilterBar } from "@/components/DiscoverFilterBar";
+import {
+  DiscoverFilterBar,
+  DiscoverFilterBarSkeleton,
+} from "@/components/DiscoverFilterBar";
 import { LoadingSection } from "@/components/LoadingSpinner";
 import { LoadFailureNotice } from "@/components/LoadFailureNotice";
-import { NotFoundNotice, isNotFoundError } from "@/components/NotFoundNotice";
 import { useAsyncData } from "@/hooks/useAsyncData";
-import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { useSettingsKey } from "@/hooks/useSettings";
-import { tmdbApi } from "@/lib/tmdb";
-import { tmdbDiscoverApi } from "@/lib/tmdb-discover";
-import { extractIdFromSlug } from "@/lib/utils";
 import { genreHref } from "@/lib/routes";
+import { genreSlug, genresFor } from "@/lib/genre-catalog";
 import { getGenreWikipediaContent } from "@/lib/wikipedia";
 import {
   STREAMING_LANDING_PLATFORMS,
-  findStreamingPlatform,
-  streamingPlatformProviderFilter,
+  type StreamingPlatform,
 } from "@/lib/streaming-landing";
 import {
-  convertMovieToMediaItem,
-  convertTVShowToMediaItem,
-} from "@/lib/media-converters";
+  MAX_GENRE_PAGE,
+  MAX_PLATFORM_PAGE,
+  loadGenreListing,
+  type GenreListingPage,
+} from "@/lib/genre-listing-data";
 import {
   buildDiscoverFilterQuery,
-  discoverFiltersToFilterOptions,
   hasActiveDiscoverFilters,
   parseDiscoverFilters,
+  type DiscoverFilters,
 } from "@/lib/discover-filters";
-import type { MediaType } from "@/types/tmdb";
+import type { Genre, MediaType } from "@/types/tmdb";
 
-/** How deep the pager goes. TMDB caps at 500; nothing useful lives that far in. */
-const MAX_PAGE = 20;
+interface GenreListingProps {
+  mediaType: MediaType;
+  /** Resolved by the page from `genre-catalog.ts`; the path names it. */
+  genre: Genre;
+  /** Set on a platform landing – `/genres/movie/action-28/netflix`. */
+  platform?: StreamingPlatform;
+  /**
+   * Page one of the unfiltered listing, loaded at build time – or `null` for a
+   * build without TMDB access, where the page falls back to a skeleton.
+   */
+  snapshot: GenreListingPage | null;
+}
 
-/** The same, for a genre narrowed to one platform – a much smaller catalogue. */
-const MAX_PLATFORM_PAGE = 10;
+const EMPTY_HINT = "Showing the most popular titles in this genre.";
 
 /**
  * A genre listing, optionally narrowed to one streaming platform.
  *
  * One component where there were four pages: films and series had near-identical
  * copies, and each had a second copy again for the "genre on Netflix" landing.
- * The genre and the platform are query parameters now rather than path segments,
- * which is what let those four collapse – the platform variant is this page with
- * `?provider=` set.
+ *
+ * Two renders of the same frame. The page, the filters and the region are read
+ * from the browser, and `useSearchParams` makes the prerender hand everything
+ * under the nearest Suspense boundary to the client – so the boundary's fallback
+ * is the prerendered page: the heading, the build's snapshot of page one, the
+ * links between platforms. The live half takes over in the browser, starting
+ * from that same snapshot so nothing on screen changes until the visitor's own
+ * listing arrives.
  */
-export function GenreListing({ mediaType }: { mediaType: MediaType }) {
+export function GenreListing(props: GenreListingProps) {
+  return (
+    <Suspense fallback={<PrerenderedGenreListing {...props} />}>
+      <LiveGenreListing {...props} />
+    </Suspense>
+  );
+}
+
+function PrerenderedGenreListing({
+  mediaType,
+  genre,
+  platform,
+  snapshot,
+}: GenreListingProps) {
+  const filters = parseDiscoverFilters(
+    new URLSearchParams(),
+    mediaType,
+    "with_genre",
+  );
+
+  return (
+    <GenreListingFrame
+      mediaType={mediaType}
+      genre={genre}
+      platform={platform}
+      page={1}
+      isFiltered={false}
+      totalResults={snapshot?.totalResults}
+      filterBar={
+        platform ? null : <DiscoverFilterBarSkeleton emptyHint={EMPTY_HINT} />
+      }
+      results={
+        snapshot ? (
+          <GenreResults
+            mediaType={mediaType}
+            genre={genre}
+            platform={platform}
+            isFiltered={false}
+            page={1}
+            listing={snapshot}
+            pageHref={(target) =>
+              genrePageHref(mediaType, genre, platform, filters, target)
+            }
+          />
+        ) : (
+          <LoadingSection count={18} />
+        )
+      }
+    />
+  );
+}
+
+function LiveGenreListing({
+  mediaType,
+  genre,
+  platform,
+  snapshot,
+}: GenreListingProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const settingsKey = useSettingsKey();
 
-  const genreSlug = searchParams.get("genre") ?? "";
-  const genreId = extractIdFromSlug(genreSlug);
-  const platform = findStreamingPlatform(searchParams.get("provider") ?? "");
-
-  const maxPage = platform ? MAX_PLATFORM_PAGE : MAX_PAGE;
+  const maxPage = platform ? MAX_PLATFORM_PAGE : MAX_GENRE_PAGE;
   const page = Math.max(
     1,
     Math.min(parseInt(searchParams.get("page") ?? "1", 10) || 1, maxPage),
@@ -68,86 +135,37 @@ export function GenreListing({ mediaType }: { mediaType: MediaType }) {
   const isFiltered = hasActiveDiscoverFilters(filters);
   const filtersKey = JSON.stringify(filters);
 
-  // Two loads rather than one, because they change at different rates. The
-  // genre – its name, and the others offered to combine with – is the page
-  // itself; the listing is what the filter bar acts on. As one load, every
+  // The build's snapshot is page one of the unfiltered listing, so it can only
+  // stand in for that view – and a platform landing ignores the filters.
+  const showsSnapshotView = page === 1 && (platform !== undefined || !isFiltered);
+
+  // Only the results reload when a filter changes. The heading, the filter bar
+  // and the links around them stay exactly where they are: as one load, every
   // filter change reset the whole page to its skeleton, and the filter bar went
-  // with it: the select or chip being used was unmounted mid-interaction and
-  // focus fell to <body>. Arrow keys on a closed <select> fire `change` per
-  // step in Chrome on Windows and Linux and in Firefox, so a keyboard user
-  // could not even walk through the options. Now only the results reload.
-  const genresLoad = useAsyncData(async () => {
-    if (!genreId) return null;
-
-    const response =
-      mediaType === "movie"
-        ? await tmdbApi.getMovieGenres()
-        : await tmdbApi.getTVGenres();
-    return response.genres;
-  }, [mediaType, genreId, settingsKey]);
-
-  const listingLoad = useAsyncData(async () => {
-    if (!genreId) return null;
-
-    // A platform landing is the plain listing with one filter pinned, so the
-    // filter bar's own choices are deliberately not merged in: the page is
-    // about that platform.
-    const listing = platform
-      ? await discoverByGenre(mediaType, genreId, page, {
-          watchProviders: streamingPlatformProviderFilter(platform),
-          sortBy: "popularity.desc",
-        })
-      : await discoverByGenre(
-          mediaType,
-          genreId,
-          page,
-          discoverFiltersToFilterOptions(filters, mediaType),
-        );
-
-    return {
-      items: listing.results.map((item) =>
-        mediaType === "movie"
-          ? convertMovieToMediaItem(item as never)
-          : convertTVShowToMediaItem(item as never),
-      ),
-      totalPages: Math.min(listing.total_pages, maxPage),
-      totalResults: listing.total_results,
-    };
-  }, [mediaType, genreId, page, platform?.slug, filtersKey, settingsKey]);
-
-  const genres = genresLoad.data;
-  const genre = genres?.find((g) => g.id === genreId) ?? null;
-  const listing = listingLoad.data;
-
-  const noun = mediaType === "movie" ? "Movies" : "TV Shows";
-
-  useDocumentTitle(
-    genre
-      ? platform
-        ? `${genre.name} ${noun} on ${platform.name}`
-        : `${genre.name} ${noun}`
-      : null,
+  // with it – the select being used was unmounted mid-interaction and focus fell
+  // to <body>. Arrow keys on a closed <select> fire `change` per step in Chrome
+  // on Windows and Linux and in Firefox, so a keyboard user could not even walk
+  // through the options.
+  const listingLoad = useAsyncData(
+    () =>
+      loadGenreListing({ mediaType, genreId: genre.id, page, platform, filters }),
+    [mediaType, genre.id, page, platform?.slug, filtersKey, settingsKey],
+    showsSnapshotView ? snapshot : null,
   );
+  const listing = listingLoad.data;
 
   // Only on the first page, and only for the plain listing: the encyclopaedia
   // entry for a genre says nothing about page four or about one platform.
   const { data: wikiContent } = useAsyncData(
     async () =>
-      genre && page === 1 && !platform
+      page === 1 && !platform
         ? getGenreWikipediaContent(genre.name, mediaType)
         : null,
-    [genre?.id, page, platform?.slug, mediaType],
+    [genre.id, page, platform?.slug, mediaType],
   );
 
   const pageHref = (target: number) =>
-    platform
-      ? genreHref(mediaType, genreSlug, {
-          provider: platform.slug,
-          filterQuery: target > 1 ? `?page=${target}` : "",
-        })
-      : genreHref(mediaType, genreSlug, {
-          filterQuery: buildDiscoverFilterQuery(filters, target, "with_genre"),
-        });
+    genrePageHref(mediaType, genre, platform, filters, target);
 
   // A region/platform change can shrink the catalogue below the page in the
   // URL. Keep loading until the replacement URL loads an available page: an
@@ -162,51 +180,7 @@ export function GenreListing({ mediaType }: { mediaType: MediaType }) {
   // Only the results wait on these. The heading, the filter bar and the links
   // around them stay exactly where they are.
   const resultsPending = listingLoad.isLoading || correctionHref !== null;
-
-  // Until the genre is known there is no page to show: not even its title.
-  if (genresLoad.isLoading) {
-    return (
-      <div className="min-h-screen bg-black pt-20">
-        <div className="container mx-auto px-6 lg:px-8 py-8">
-          <LoadingSection count={18} />
-        </div>
-      </div>
-    );
-  }
-
-  // A miss and a failure are different pages. TMDB answering 404 means the
-  // title is not there; TMDB not answering – a rate limit, a timeout, an
-  // outage – means it may well be, and deserves a "try again" rather than a
-  // "does not exist".
-  if (genresLoad.error && !isNotFoundError(genresLoad.error)) {
-    return (
-      <LoadFailureNotice
-        title="Could not load this genre"
-        description="TMDB did not answer. It may be a connection problem, or the service may be busy."
-        onRetry={() => {
-          genresLoad.reload();
-          // An outage usually took both; retry the listing only if it did.
-          if (listingLoad.error) listingLoad.reload();
-        }}
-      />
-    );
-  }
-
-  if (!genre) {
-    return (
-      <NotFoundNotice
-        title="Genre not found"
-        description="That genre does not exist, or the link is incomplete."
-        backHref="/genres"
-        backLabel="Browse genres"
-      />
-    );
-  }
-
-  const genreLower = genre.name.toLowerCase();
   const mediaNoun = mediaType === "movie" ? "movies" : "TV shows";
-  // Offered as the "combine with" options in the filter bar
-  const otherGenres = (genres ?? []).filter((g) => g.id !== genreId);
 
   let results: ReactNode;
   if (resultsPending) {
@@ -223,87 +197,197 @@ export function GenreListing({ mediaType }: { mediaType: MediaType }) {
       />
     );
   } else {
-    const { items, totalPages } = listing;
     results = (
-      <>
-        <MediaSection
-          title=""
-          items={items}
-          size="medium"
-          showViewToggle
-          emptyMessage={
-            platform
-              ? `No ${genreLower} ${mediaNoun} are streaming on ${platform.name} in your region right now.`
-              : isFiltered
-                ? `No ${genreLower} ${mediaNoun} match these filters. Try loosening them.`
-                : `No ${genreLower} ${mediaNoun} found.`
-          }
-          className="mb-0"
-        />
-
-        {totalPages > 1 && (
-          <nav
-            aria-label="Pagination"
-            className="flex items-center justify-center gap-4 mt-12"
-          >
-            {page > 1 && (
-              <Link
-                href={pageHref(page - 1)}
-                prefetch={false}
-                className="px-5 py-2 rounded-lg bg-gray-800 text-white hover:bg-gray-700 transition-colors"
-              >
-                ← Previous
-              </Link>
-            )}
-            <span className="text-gray-400 text-sm">
-              Page {page} of {totalPages}
-            </span>
-            {page < totalPages && (
-              <Link
-                href={pageHref(page + 1)}
-                prefetch={false}
-                className="px-5 py-2 rounded-lg bg-gray-800 text-white hover:bg-gray-700 transition-colors"
-              >
-                Next →
-              </Link>
-            )}
-          </nav>
-        )}
-      </>
+      <GenreResults
+        mediaType={mediaType}
+        genre={genre}
+        platform={platform}
+        isFiltered={isFiltered}
+        page={page}
+        listing={listing}
+        pageHref={pageHref}
+      />
     );
   }
 
-  const totalResults = listing?.totalResults;
+  return (
+    <GenreListingFrame
+      mediaType={mediaType}
+      genre={genre}
+      platform={platform}
+      page={page}
+      isFiltered={isFiltered}
+      totalResults={listing?.totalResults}
+      filterBar={
+        platform ? null : (
+          <DiscoverFilterBar
+            type={mediaType}
+            // Offered as the "combine with" options.
+            genres={genresFor(mediaType).filter((g) => g.id !== genre.id)}
+            genreParamKey="with_genre"
+            genreLabel="Combine With"
+            genreAllLabel="No Second Genre"
+            totalResults={listing?.totalResults}
+            resultsPending={resultsPending}
+            emptyHint={EMPTY_HINT}
+          />
+        )
+      }
+      results={results}
+      wikiContent={wikiContent}
+    />
+  );
+}
+
+/** A page of this listing, keeping the filters – or only the page, on a landing. */
+function genrePageHref(
+  mediaType: MediaType,
+  genre: Genre,
+  platform: StreamingPlatform | undefined,
+  filters: DiscoverFilters,
+  target: number,
+): string {
+  return platform
+    ? genreHref(mediaType, genreSlug(genre), {
+        provider: platform.slug,
+        filterQuery: target > 1 ? `?page=${target}` : "",
+      })
+    : genreHref(mediaType, genreSlug(genre), {
+        filterQuery: buildDiscoverFilterQuery(filters, target, "with_genre"),
+      });
+}
+
+function GenreResults({
+  mediaType,
+  genre,
+  platform,
+  isFiltered,
+  page,
+  listing,
+  pageHref,
+}: {
+  mediaType: MediaType;
+  genre: Genre;
+  platform?: StreamingPlatform;
+  isFiltered: boolean;
+  page: number;
+  listing: GenreListingPage;
+  pageHref: (target: number) => string;
+}) {
+  const genreLower = genre.name.toLowerCase();
+  const mediaNoun = mediaType === "movie" ? "movies" : "TV shows";
+  const { items, totalPages } = listing;
+
+  return (
+    <>
+      <MediaSection
+        title=""
+        items={items}
+        size="medium"
+        showViewToggle
+        emptyMessage={
+          platform
+            ? `No ${genreLower} ${mediaNoun} are streaming on ${platform.name} in your region right now.`
+            : isFiltered
+              ? `No ${genreLower} ${mediaNoun} match these filters. Try loosening them.`
+              : `No ${genreLower} ${mediaNoun} found.`
+        }
+        className="mb-0"
+      />
+
+      {totalPages > 1 && (
+        <nav
+          aria-label="Pagination"
+          className="flex items-center justify-center gap-4 mt-12"
+        >
+          {page > 1 && (
+            <Link
+              href={pageHref(page - 1)}
+              prefetch={false}
+              className="px-5 py-2 rounded-lg bg-gray-800 text-white hover:bg-gray-700 transition-colors"
+            >
+              ← Previous
+            </Link>
+          )}
+          <span className="text-gray-400 text-sm">
+            Page {page} of {totalPages}
+          </span>
+          {page < totalPages && (
+            <Link
+              href={pageHref(page + 1)}
+              prefetch={false}
+              className="px-5 py-2 rounded-lg bg-gray-800 text-white hover:bg-gray-700 transition-colors"
+            >
+              Next →
+            </Link>
+          )}
+        </nav>
+      )}
+    </>
+  );
+}
+
+function GenreListingFrame({
+  mediaType,
+  genre,
+  platform,
+  page,
+  isFiltered,
+  totalResults,
+  filterBar,
+  results,
+  wikiContent,
+}: {
+  mediaType: MediaType;
+  genre: Genre;
+  platform?: StreamingPlatform;
+  page: number;
+  isFiltered: boolean;
+  totalResults: number | undefined;
+  filterBar: ReactNode;
+  results: ReactNode;
+  wikiContent?: Awaited<ReturnType<typeof getGenreWikipediaContent>> | null;
+}) {
+  const slug = genreSlug(genre);
+  const noun = mediaType === "movie" ? "Movies" : "TV Shows";
+  const genreLower = genre.name.toLowerCase();
+  const mediaNoun = mediaType === "movie" ? "movies" : "TV shows";
 
   return (
     <div className="min-h-screen bg-black pt-20">
       <div className="container mx-auto px-6 lg:px-8 py-8">
-        {platform && (
-          <nav
-            aria-label="Breadcrumb"
-            className="flex flex-wrap items-center gap-2 text-sm text-gray-400 mb-6"
+        <nav
+          aria-label="Breadcrumb"
+          className="flex flex-wrap items-center gap-2 text-sm text-gray-400 mb-6"
+        >
+          <Link
+            href="/genres"
+            prefetch={false}
+            className="hover:text-white transition-colors"
           >
-            <Link
-              href="/genres"
-              prefetch={false}
-              className="hover:text-white transition-colors"
-            >
-              Genres
-            </Link>
-            <span className="text-gray-600">/</span>
-            <Link
-              href={genreHref(mediaType, genreSlug)}
-              prefetch={false}
-              className="hover:text-white transition-colors"
-            >
-              {genre.name} {noun}
-            </Link>
-            <span className="text-gray-600">/</span>
+            Genres
+          </Link>
+          <span className="text-gray-600">/</span>
+          {platform ? (
+            <>
+              <Link
+                href={genreHref(mediaType, slug)}
+                prefetch={false}
+                className="hover:text-white transition-colors"
+              >
+                {genre.name} {noun}
+              </Link>
+              <span className="text-gray-600">/</span>
+              <span className="text-gray-300 font-medium" aria-current="page">
+                {platform.name}
+              </span>
+            </>
+          ) : (
             <span className="text-gray-300 font-medium" aria-current="page">
-              {platform.name}
+              {genre.name} {noun}
             </span>
-          </nav>
-        )}
+          )}
+        </nav>
 
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-white mb-4">
@@ -315,7 +399,7 @@ export function GenreListing({ mediaType }: { mediaType: MediaType }) {
               ? totalResults === undefined
                 ? `${genre.name} ${mediaNoun} streaming on ${platform.name}`
                 : totalResults > 0
-                  ? `${totalResults.toLocaleString()} ${genreLower} ${
+                  ? `${totalResults.toLocaleString("en-US")} ${genreLower} ${
                       totalResults === 1
                         ? mediaNoun.replace(/s$/, "")
                         : mediaNoun
@@ -328,19 +412,7 @@ export function GenreListing({ mediaType }: { mediaType: MediaType }) {
           </p>
         </div>
 
-        {!platform && (
-          <DiscoverFilterBar
-            type={mediaType}
-            genres={otherGenres}
-            genreParamKey="with_genre"
-            genreLabel="Combine With"
-            genreAllLabel="No Second Genre"
-            totalResults={totalResults}
-            resultsPending={resultsPending}
-            emptyHint="Showing the most popular titles in this genre."
-            keepParams={{ genre: genreSlug }}
-          />
-        )}
+        {filterBar}
 
         {results}
 
@@ -357,7 +429,7 @@ export function GenreListing({ mediaType }: { mediaType: MediaType }) {
             ).map((p) => (
               <Link
                 key={p.slug}
-                href={genreHref(mediaType, genreSlug, { provider: p.slug })}
+                href={genreHref(mediaType, slug, { provider: p.slug })}
                 prefetch={false}
                 className="px-3 py-1.5 rounded-full bg-gray-800 text-gray-300 text-sm hover:bg-gray-700 hover:text-white transition-colors"
               >
@@ -375,15 +447,4 @@ export function GenreListing({ mediaType }: { mediaType: MediaType }) {
       </div>
     </div>
   );
-}
-
-function discoverByGenre(
-  mediaType: MediaType,
-  genreId: number,
-  page: number,
-  options: Parameters<typeof tmdbDiscoverApi.discoverMoviesByGenre>[2],
-) {
-  return mediaType === "movie"
-    ? tmdbDiscoverApi.discoverMoviesByGenre(genreId, page, options)
-    : tmdbDiscoverApi.discoverTVShowsByGenre(genreId, page, options);
 }

@@ -44,10 +44,20 @@ function sameDeps(a: readonly unknown[], b: readonly unknown[]) {
  * `load` receives a signal that is aborted once its result can no longer be
  * shown: when the deps change, on `reload`, or when the page unmounts. Passing
  * it on to the TMDB transport releases requests nobody else is waiting for.
+ *
+ * `placeholder` is what to show until the first load settles: the snapshot the
+ * build wrote into the page (`build-time-tmdb.ts`). It is what the prerendered
+ * HTML was rendered with, so hydration finds the same markup instead of a
+ * skeleton, and the visitor reads the listing while their own region's copy
+ * loads. Only before anything has settled, though – once a real answer has
+ * been on screen, a later load shows the loading state like any other, because
+ * the snapshot describes page one of the default view and nothing else. The
+ * caller passes it only while it is asking for that view.
  */
 export function useAsyncData<T>(
   load: (signal: AbortSignal) => Promise<T>,
   deps: readonly unknown[],
+  placeholder?: T | null,
 ): AsyncState<T> {
   const [settled, setSettled] = useState<Settled<T> | null>(null);
 
@@ -102,6 +112,9 @@ export function useAsyncData<T>(
     settled.deps !== currentDeps ||
     settled.attempt !== attempt
   ) {
+    if (!settled && placeholder != null) {
+      return { data: placeholder, isLoading: false, error: null, reload };
+    }
     return { ...LOADING, reload };
   }
 

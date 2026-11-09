@@ -1,13 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
-import {
-  collectionHref,
-  genreHref,
-  movieHref,
-  personHref,
-  tvHref,
-} from "@/lib/routes";
+import { collectionHref, genreHref, titleQueryHref } from "@/lib/routes";
+import { findGenreById, genreSlug } from "@/lib/genre-catalog";
+import { findStreamingPlatform } from "@/lib/streaming-landing";
 import { extractIdFromSlug } from "@/lib/utils";
 
 /**
@@ -17,7 +13,9 @@ import { extractIdFromSlug } from "@/lib/utils";
  * later `/movie/send-help-1198994` – and the sitemap submitted hundreds of them,
  * with `/person/…`, `/collection/…`, `/genres/movie/action-28` and a handful of
  * listing pages beside them. Every one of those is still out there, in search
- * results, bookmarks and other people's posts, and GitHub Pages answers each
+ * results, bookmarks and other people's posts. The genres, and the best-known
+ * titles and people, are paths again – prerendered, so those URLs answer
+ * themselves when the slug is the canonical one. GitHub Pages answers the rest
  * with `404.html`, because no file of that name exists. That page is the one
  * place left that can still read such a URL, so it reads it and moves the
  * visitor to the page that took its place.
@@ -36,12 +34,23 @@ const SLUG = "[a-z0-9]+(?:-[a-z0-9]+)*";
 const MAX_SLUG_LENGTH = 200;
 
 const ENTITY_PATH = new RegExp(`^/(movie|tv|person|collection)/(${SLUG})/?$`, "i");
-const GENRE_PATH = new RegExp(`^/genres/(movie|tv)/(${SLUG})/?$`, "i");
+const GENRE_PATH = new RegExp(
+  `^/genres/(movie|tv)/(${SLUG})(?:/(${SLUG}))?/?$`,
+  "i",
+);
 
+/**
+ * Always the query-string page. The best-known titles have paths of their own
+ * again, so a title path that reached this 404 is one the build did not emit –
+ * a title outside the prerendered set, or a slug other than the canonical one –
+ * and the page `movieHref` would pick could be that same missing path. The query
+ * page exists for every title, reads any slug, and canonicalises to the path
+ * where there is one.
+ */
 const ENTITY_HREF: Record<string, (slug: string) => string> = {
-  movie: movieHref,
-  tv: tvHref,
-  person: personHref,
+  movie: (slug) => titleQueryHref("movie", slug),
+  tv: (slug) => titleQueryHref("tv", slug),
+  person: (slug) => titleQueryHref("person", slug),
   collection: collectionHref,
 };
 
@@ -75,11 +84,34 @@ export function legacyPathTarget(pathname: string): string | null {
   }
 
   const genre = GENRE_PATH.exec(pathname);
-  if (genre && isTitleSlug(genre[2])) {
-    return genreHref(genre[1].toLowerCase() === "movie" ? "movie" : "tv", genre[2]);
-  }
+  if (genre) return genrePathTarget(genre);
 
   return null;
+}
+
+/**
+ * Genre pages are paths again – `/genres/movie/action-28` – and the build emits
+ * one per genre under its canonical slug, so a genre path that reached the 404
+ * is a slug that is not canonical: the old site's `action-movies-28`, a
+ * trailing slash, a capital letter, a platform that is not a landing. Read the
+ * id and send the visitor to the page that genre has now; drop the platform if
+ * it is not one of ours. Never back to the path that just failed, which with
+ * real paths on both sides would be a redirect loop.
+ */
+function genrePathTarget(match: RegExpExecArray): string | null {
+  if (!isTitleSlug(match[2])) return null;
+
+  const mediaType = match[1].toLowerCase() === "movie" ? "movie" : "tv";
+  const found = findGenreById(mediaType, extractIdFromSlug(match[2]));
+  if (!found) return null;
+
+  const platform = match[3]
+    ? findStreamingPlatform(match[3].toLowerCase())
+    : undefined;
+  const target = genreHref(mediaType, genreSlug(found), {
+    provider: platform?.slug,
+  });
+  return target === match[0] ? null : target;
 }
 
 function isTitleSlug(slug: string): boolean {

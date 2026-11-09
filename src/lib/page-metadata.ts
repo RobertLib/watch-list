@@ -84,6 +84,13 @@ interface PageMetadataOptions {
    * pages a crawler would otherwise try to enumerate.
    */
   noindex?: boolean;
+  /**
+   * The page's own picture for its social card – a film's backdrop, a person's
+   * portrait – in place of the site's. Absolute, like `SITE_SHARE_IMAGE`.
+   */
+  image?: { url: string; width: number; height: number; alt: string };
+  /** Open Graph's type, where the page is more than a `website`. */
+  type?: "video.movie" | "video.tv_show" | "profile";
 }
 
 export function pageMetadata({
@@ -91,6 +98,8 @@ export function pageMetadata({
   description,
   path,
   noindex,
+  image,
+  type,
 }: PageMetadataOptions): Metadata {
   return {
     title,
@@ -104,6 +113,8 @@ export function pageMetadata({
     // along too – see `SITE_OPEN_GRAPH`.
     openGraph: {
       ...SITE_OPEN_GRAPH,
+      ...(type ? { type } : {}),
+      ...(image ? { images: [image] } : {}),
       title,
       description,
       ...(path ? { url: absoluteUrl(path) } : {}),

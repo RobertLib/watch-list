@@ -5,10 +5,12 @@ import { useEffect } from "react";
 /**
  * Maintain `<link rel="canonical">` for a page addressed by query string.
  *
- * The counterpart to `useDocumentTitle`, and it exists for the same reason: a
- * title's real canonical is `/movie?id=fight-club-550`, which the build cannot
- * know – there is no build-time list of every film on TMDB, which is the whole
- * reason these pages are query-addressed in the first place.
+ * The counterpart to `useDocumentTitle`, and it exists for the same reason: the
+ * `/movie?id=…` shell is one file for every film, so the build cannot know which
+ * one a URL names. The canonical it sets is whatever `routes.ts` builds for the
+ * title – the prerendered path where the build wrote one, the query page
+ * otherwise. On a prerendered page the tag is already in the HTML, and this only
+ * writes the same URL into it again.
  *
  * Setting it from the browser reaches exactly the audience that can see the page
  * at all. These pages are an empty shell until JS fills them in, so a crawler

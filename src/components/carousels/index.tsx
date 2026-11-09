@@ -5,13 +5,8 @@ import { CarouselSkeleton } from "@/components/skeletons";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { useSettingsKey } from "@/hooks/useSettings";
 import { useLocalDay } from "@/hooks/useLocalDay";
-import { tmdbDiscoverApi } from "@/lib/tmdb-discover";
-import {
-  convertMovieToMediaItem,
-  convertTrendingToMediaItem,
-  convertTVShowToMediaItem,
-} from "@/lib/media-converters";
-import type { MediaItem, Movie, TVShow } from "@/types/tmdb";
+import { loadHomeRow, type HomeRow } from "@/lib/home-rows";
+import type { MediaItem } from "@/types/tmdb";
 
 /**
  * The rows on the home page.
@@ -21,6 +16,10 @@ import type { MediaItem, Movie, TVShow } from "@/types/tmdb";
  * await became an effect, and the boundary became a loading branch. What made
  * them collapse into one is the settings key – every row reloads on a region or
  * platform change, which is a dependency they all share.
+ *
+ * Each row takes the build's snapshot of itself (`build-time-tmdb.ts`), which
+ * is what the prerendered home page shows and what the browser starts from
+ * until the visitor's own region answers.
  */
 /**
  * Where a row sits in its page's outline. The home page groups most rows under
@@ -28,24 +27,29 @@ import type { MediaItem, Movie, TVShow } from "@/types/tmdb";
  */
 interface CarouselPlacement {
   headingLevel?: 2 | 3;
+  /** Page one of the row, loaded at build time; `null` or absent for none. */
+  snapshot?: MediaItem[] | null;
 }
 
-function DiscoverCarousel<T>({
+function DiscoverCarousel({
   title,
   titleWidth,
-  load,
-  convert,
+  row,
   reloadKey,
   headingLevel,
+  snapshot,
 }: CarouselPlacement & {
   title: string;
   titleWidth: string;
-  load: () => Promise<{ results: T[] }>;
-  convert: (item: T) => MediaItem;
+  row: HomeRow;
   reloadKey?: string;
 }) {
   const settingsKey = useSettingsKey();
-  const { data, isLoading } = useAsyncData(load, [settingsKey, reloadKey]);
+  const { data, isLoading } = useAsyncData(
+    () => loadHomeRow(row),
+    [row, settingsKey, reloadKey],
+    snapshot,
+  );
 
   if (isLoading) return <CarouselSkeleton titleWidth={titleWidth} />;
   // A row that failed is left out rather than shown as an error: it is one of
@@ -53,117 +57,103 @@ function DiscoverCarousel<T>({
   if (!data) return null;
 
   return (
-    <MediaCarousel
-      title={title}
-      items={data.results.map(convert)}
-      headingLevel={headingLevel}
-    />
+    <MediaCarousel title={title} items={data} headingLevel={headingLevel} />
   );
 }
 
-function MovieCarousel(props: CarouselPlacement & {
-  title: string;
-  titleWidth: string;
-  load: () => Promise<{ results: Movie[] }>;
-}) {
-  return <DiscoverCarousel {...props} convert={convertMovieToMediaItem} />;
-}
-
-function TVCarousel(props: CarouselPlacement & {
-  title: string;
-  titleWidth: string;
-  load: () => Promise<{ results: TVShow[] }>;
-  reloadKey?: string;
-}) {
-  return <DiscoverCarousel {...props} convert={convertTVShowToMediaItem} />;
-}
-
-export function TrendingCarousel() {
+export function TrendingCarousel({ snapshot }: CarouselPlacement = {}) {
   return (
     <DiscoverCarousel
       title="Trending This Week"
       titleWidth="w-52"
-      load={() => tmdbDiscoverApi.getTrending("all", "week")}
-      convert={convertTrendingToMediaItem}
+      row="trending"
+      snapshot={snapshot}
     />
   );
 }
 
-export function NowPlayingCarousel({ headingLevel }: CarouselPlacement = {}) {
+export function NowPlayingCarousel({ headingLevel, snapshot }: CarouselPlacement = {}) {
   return (
-    <MovieCarousel
+    <DiscoverCarousel
       title="Now Playing in Theaters"
       titleWidth="w-64"
       headingLevel={headingLevel}
-      load={() => tmdbDiscoverApi.getNowPlayingMovies()}
+      row="nowPlaying"
+      snapshot={snapshot}
     />
   );
 }
 
-export function PopularMoviesCarousel({ headingLevel }: CarouselPlacement = {}) {
+export function PopularMoviesCarousel({ headingLevel, snapshot }: CarouselPlacement = {}) {
   return (
-    <MovieCarousel
+    <DiscoverCarousel
       title="Popular Movies"
       titleWidth="w-48"
       headingLevel={headingLevel}
-      load={() => tmdbDiscoverApi.getPopularMovies()}
+      row="popularMovies"
+      snapshot={snapshot}
     />
   );
 }
 
-export function UpcomingMoviesCarousel({ headingLevel }: CarouselPlacement = {}) {
+export function UpcomingMoviesCarousel({ headingLevel, snapshot }: CarouselPlacement = {}) {
   return (
-    <MovieCarousel
+    <DiscoverCarousel
       title="Coming Soon to Theaters"
       titleWidth="w-60"
       headingLevel={headingLevel}
-      load={() => tmdbDiscoverApi.getUpcomingMovies()}
+      row="upcomingMovies"
+      snapshot={snapshot}
     />
   );
 }
 
-export function TopRatedMoviesCarousel({ headingLevel }: CarouselPlacement = {}) {
+export function TopRatedMoviesCarousel({ headingLevel, snapshot }: CarouselPlacement = {}) {
   return (
-    <MovieCarousel
+    <DiscoverCarousel
       title="Top Rated Movies"
       titleWidth="w-56"
       headingLevel={headingLevel}
-      load={() => tmdbDiscoverApi.getTopRatedMovies()}
+      row="topRatedMovies"
+      snapshot={snapshot}
     />
   );
 }
 
-export function AiringTodayCarousel({ headingLevel }: CarouselPlacement = {}) {
+export function AiringTodayCarousel({ headingLevel, snapshot }: CarouselPlacement = {}) {
   const day = useLocalDay();
   return (
-    <TVCarousel
+    <DiscoverCarousel
       title="Airing Today"
       titleWidth="w-36"
       headingLevel={headingLevel}
-      load={() => tmdbDiscoverApi.getAiringTodayTVShows()}
+      row="airingToday"
       reloadKey={day}
+      snapshot={snapshot}
     />
   );
 }
 
-export function PopularTVShowsCarousel({ headingLevel }: CarouselPlacement = {}) {
+export function PopularTVShowsCarousel({ headingLevel, snapshot }: CarouselPlacement = {}) {
   return (
-    <TVCarousel
+    <DiscoverCarousel
       title="Popular TV Shows"
       titleWidth="w-52"
       headingLevel={headingLevel}
-      load={() => tmdbDiscoverApi.getPopularTVShows()}
+      row="popularTVShows"
+      snapshot={snapshot}
     />
   );
 }
 
-export function TopRatedTVShowsCarousel({ headingLevel }: CarouselPlacement = {}) {
+export function TopRatedTVShowsCarousel({ headingLevel, snapshot }: CarouselPlacement = {}) {
   return (
-    <TVCarousel
+    <DiscoverCarousel
       title="Top Rated TV Shows"
       titleWidth="w-56"
       headingLevel={headingLevel}
-      load={() => tmdbDiscoverApi.getTopRatedTVShows()}
+      row="topRatedTVShows"
+      snapshot={snapshot}
     />
   );
 }

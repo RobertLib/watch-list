@@ -24,7 +24,6 @@ vi.mock("next/link", () => ({
 }));
 
 const { GenresProvider, useGenres } = await import("./GenresContext");
-const { GenresContent } = await import("@/components/GenresContent");
 const { GenreTags } = await import("@/components/GenreTags");
 
 /**
@@ -35,6 +34,29 @@ const { GenreTags } = await import("@/components/GenreTags");
  * page view – including `/about`, `/profile` and `/offline`, which never name a
  * genre. Asking is what starts the fetch, and asking twice must not fetch twice.
  */
+
+/**
+ * A consumer with the failure handling a genre list needs: a retry for the list
+ * that failed, and the list that did not left on screen. The genre pages used to
+ * be this consumer; they read `genre-catalog.ts` now, but the filter panel and
+ * the genre tags still read the context, and its retry contract is the same.
+ */
+function GenreLists() {
+  const { movieGenres, tvGenres, loading, movieFailed, tvFailed, requestGenres } = useGenres();
+  const list = (failed: boolean, label: string, genres: Genre[]) => {
+    if (!failed) {
+      return <ul>{genres.map((genre) => <li key={genre.id}>{genre.name}</li>)}</ul>;
+    }
+    if (loading) return <p role="status">Retrying {label} genres…</p>;
+    return (
+      <div>
+        <p>Could not load {label} genres</p>
+        <button onClick={requestGenres}>Try again</button>
+      </div>
+    );
+  };
+  return <>{list(movieFailed, "movie", movieGenres)}{list(tvFailed, "TV show", tvGenres)}</>;
+}
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <GenresProvider>{children}</GenresProvider>
@@ -221,13 +243,12 @@ describe("GenresProvider", () => {
 
   it("shows a retryable failure rather than claiming a failed list is empty", async () => {
     getTVGenres.mockRejectedValueOnce(new Error("Offline"));
-    render(<GenresProvider><GenresContent /></GenresProvider>);
+    render(<GenresProvider><GenreLists /></GenresProvider>);
     await screen.findByText("Could not load TV show genres");
-    expect(screen.getByRole("link", { name: "Action Movies" })).toBeTruthy();
-    expect(screen.queryByText("No genres found.")).toBeNull();
+    expect(screen.getByText("Action")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Try again/ }));
-    await screen.findByRole("link", { name: "Sci-Fi & Fantasy TV Shows" });
+    await screen.findByText("Sci-Fi & Fantasy");
     expect(screen.queryByText("Could not load TV show genres")).toBeNull();
     expect(getMovieGenres).toHaveBeenCalledTimes(1);
     expect(getTVGenres).toHaveBeenCalledTimes(2);
@@ -245,7 +266,7 @@ describe("GenresProvider", () => {
   it("keeps successful genre tags visible while the other list retries", async () => {
     getMovieGenres.mockRejectedValueOnce(new Error("Offline"));
     render(<GenresProvider>
-      <GenresContent />
+      <GenreLists />
       <GenreTags genreIds={[10765]} mediaType="tv" />
     </GenresProvider>);
     await screen.findByText("Could not load movie genres");

@@ -54,8 +54,12 @@ export function LanguageSupport({ translations }: LanguageSupportProps) {
       }
     }
 
+    // The locale is pinned, as in `regions-data.ts`: with none, the order is
+    // the runtime's – English in the build that prerenders a title page, the
+    // visitor's own in the browser that hydrates it – and the two orders of the
+    // same list are a hydration mismatch.
     return [...byCode.values()].sort((a, b) =>
-      a.name.localeCompare(b.name),
+      a.name.localeCompare(b.name, "en"),
     );
   }, [translations]);
 

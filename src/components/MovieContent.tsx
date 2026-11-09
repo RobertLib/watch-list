@@ -37,7 +37,9 @@ import { useSettings } from "@/hooks/useSettings";
 import { findYouTubeTrailer } from "@/hooks/useVideoOverlay";
 import { getMovieWikipediaContent } from "@/lib/wikipedia";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
-import { releaseYear, releaseYearSuffix } from "@/lib/dates";
+import { MOVIE_APPENDED_SECTIONS, moviePageTitle } from "@/lib/title-details";
+import type { MovieDetails as MovieDetailsData } from "@/types/tmdb";
+import { releaseYear } from "@/lib/dates";
 import { resolveRegionProviders } from "@/lib/media-converters";
 import { resolveMovieCertification } from "@/lib/media-certification";
 import { getRegionCode } from "@/lib/region";
@@ -49,11 +51,6 @@ import {
   personHref,
 } from "@/lib/routes";
 
-// `external_ids` is what carries the film's Wikidata id – the only thing the
-// Wikipedia panel trusts to name the right article.
-const APPENDED_SECTIONS =
-  "watch/providers,credits,videos,similar,translations,keywords,reviews,release_dates,images,external_ids";
-
 function formatRuntime(minutes: number | null): string {
   if (!minutes) return "Unknown runtime";
   const hours = Math.floor(minutes / 60);
@@ -62,31 +59,50 @@ function formatRuntime(minutes: number | null): string {
 }
 
 /**
- * A film.
+ * A film, at either of its two addresses.
  *
- * The title is named by `?id=fight-club-550` rather than by the path: a static
- * export can only serve paths that existed at build time, and TMDB's catalogue
- * is not a build-time list. `useSearchParams` is what reads it, which is why the
- * body sits behind a Suspense boundary – during the prerender there is no query
- * string to read, so the skeleton is what gets built into the HTML.
+ * `/movie/fight-club-550` is one of the films the build prerendered: the route
+ * passes the slug and the build's snapshot of the film, so the whole page is in
+ * the HTML and the browser starts from it. `/movie?id=fight-club-550` is every
+ * other film: `useSearchParams` reads the id, which is why that body sits behind
+ * a Suspense boundary – during the prerender there is no query string to read,
+ * so the skeleton is what gets built into its HTML.
  */
-export function MovieContent() {
+export function MovieContent({
+  slug,
+  snapshot = null,
+}: {
+  slug?: string;
+  snapshot?: MovieDetailsData | null;
+} = {}) {
+  if (slug !== undefined) return <MovieDetail slug={slug} snapshot={snapshot} />;
+
   return (
     <Suspense fallback={<MediaDetailSkeleton />}>
-      <MovieDetail />
+      <MovieDetailFromQuery />
     </Suspense>
   );
 }
 
-function MovieDetail() {
+function MovieDetailFromQuery() {
   const searchParams = useSearchParams();
-  const slug = searchParams.get("id") ?? "";
+  return <MovieDetail slug={searchParams.get("id") ?? ""} snapshot={null} />;
+}
+
+function MovieDetail({
+  slug,
+  snapshot,
+}: {
+  slug: string;
+  snapshot: MovieDetailsData | null;
+}) {
   const id = extractIdFromSlug(slug);
   const { region } = useSettings();
 
   const { data, isLoading, error, reload } = useAsyncData(
-    async () => (id ? tmdbApi.getMovieDetails(id, APPENDED_SECTIONS) : null),
+    async () => (id ? tmdbApi.getMovieDetails(id, MOVIE_APPENDED_SECTIONS) : null),
     [id],
+    snapshot,
   );
 
   // A second, slower source that must not hold up the page: the film renders as
@@ -101,7 +117,7 @@ function MovieDetail() {
   );
 
   useDocumentTitle(
-    data ? `${data.title}${releaseYearSuffix(data.release_date)}` : null,
+    data ? moviePageTitle(data) : null,
   );
   useCanonicalUrl(
     data ? absoluteMediaUrl("movie", createSlug(data.title, data.id)) : null,
@@ -289,7 +305,7 @@ function MovieDetail() {
                   <span className="text-yellow-400">★</span>
                   <span>{details.vote_average?.toFixed(1)}</span>
                   <span className="text-gray-300">
-                    ({details.vote_count.toLocaleString()} ratings)
+                    ({details.vote_count.toLocaleString("en-US")} ratings)
                   </span>
                 </div>
               </div>

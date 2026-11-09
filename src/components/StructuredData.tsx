@@ -2,31 +2,19 @@ import { createSlug } from "@/lib/utils";
 import { SITE_URL, absoluteMediaUrl, absoluteUrl } from "@/lib/routes";
 
 /**
- * JSON-LD, and a word about which half of it any search engine reads.
+ * JSON-LD, and a word about which of it any search engine reads.
  *
- * The static export prerenders this component wherever its caller is a Server
- * Component, so the home page, `/moods`, `/genres`, `/about` and the puzzle
- * archive all carry their payload in the HTML a plain `curl` returns. Those are
- * exactly the routes the sitemap lists, which is the set that matters.
+ * The static export prerenders this component wherever its page is rendered at
+ * build time: the home page, `/moods`, `/genres` and the genre and mood pages,
+ * `/about`, the puzzle archive – and the best-known films, series and people,
+ * which the build prerenders at a path of their own (`/movie/fight-club-550`)
+ * with their details in the HTML. There the `Movie`, `TVSeries` and `Person`
+ * payloads, and their breadcrumbs, are in what a plain `curl` returns, on pages
+ * that are indexable – so that is the markup that counts.
  *
- * The title pages cannot, and it is worth being precise about why rather than
- * treating it as an oversight to fix later. `/movie?id=550` is not a page: it is
- * one shell served for every film, and which film it names is read from the URL
- * bar by a script. There is no build step that could know the answer, and no
- * route to prerender per title – so a `Movie` payload here is assembled after
- * TMDB answers and is only ever in the DOM.
- *
- * And no search engine uses it. Those shells – `/movie`, `/tv`, `/person`,
- * `/collection` – are served with `noindex`, deliberately, so that one generic
- * shell never ranks in place of every title. Google honours a `noindex` in the
- * served HTML before rendering anything; a page it will not index is a page
- * whose script-built JSON-LD it never reads, and the canonical those pages set
- * from `useCanonicalUrl` goes unread for the same reason. The `Movie`,
- * `TVSeries`, `Person`, `MovieCollection` and breadcrumb payloads built on those
- * pages are kept because they are correct and harmless, not because they do
- * anything for search today. Moving titles into the index means giving them
- * real paths, which means giving up the static export – a trade
- * `next.config.ts` makes deliberately.
+ * Every other title is `/movie?id=…`: one shell served for every film, `noindex`
+ * so that it never ranks in place of the titles it stands for. The payload it
+ * builds once TMDB answers is correct and harmless, and nothing reads it.
  */
 /**
  * Serialise a JSON-LD payload for inlining into a <script> tag.
@@ -153,6 +141,15 @@ export function StructuredData({ type, data }: StructuredDataProps) {
       };
       break;
 
+    /**
+     * No `aggregateRating` on either title type, deliberately. The only score
+     * to give it is TMDB's, and Google's review-snippet guidelines say "don't
+     * aggregate reviews or ratings from other websites" – markup that breaks
+     * them is what a manual action for spammy structured data is for, and it
+     * would land on the whole site rather than the one page. No
+     * `dateModified` either: it was the release date again, which says nothing
+     * about when this page changed.
+     */
     case "Movie": {
       const movieTrailer = data.trailer as
         | { key: string; name: string; published_at?: string }
@@ -168,21 +165,11 @@ export function StructuredData({ type, data }: StructuredDataProps) {
           ? `https://image.tmdb.org/t/p/w500${data.poster_path}`
           : undefined,
         datePublished: data.release_date,
-        dateModified: data.release_date,
         genre: data.genres?.map((g) => g.name) || [],
         duration: data.runtime ? `PT${data.runtime}M` : undefined,
         inLanguage: data.inLanguage || undefined,
         contentRating: data.contentRating || undefined,
         sameAs: data.sameAs || undefined,
-        aggregateRating: data.vote_average
-          ? {
-              "@type": "AggregateRating",
-              ratingValue: data.vote_average,
-              ratingCount: data.vote_count,
-              bestRating: 10,
-              worstRating: 0,
-            }
-          : undefined,
         trailer: movieTrailer
           ? {
               "@type": "VideoObject",
@@ -242,8 +229,6 @@ export function StructuredData({ type, data }: StructuredDataProps) {
           ? `https://image.tmdb.org/t/p/w500${data.poster_path}`
           : undefined,
         datePublished: data.first_air_date,
-        dateModified:
-          (data.last_air_date as string | undefined) || data.first_air_date,
         endDate: isEnded && data.last_air_date ? data.last_air_date : undefined,
         genre: data.genres?.map((g) => g.name) || [],
         numberOfSeasons: data.number_of_seasons,
@@ -251,15 +236,6 @@ export function StructuredData({ type, data }: StructuredDataProps) {
         inLanguage: data.inLanguage || undefined,
         contentRating: data.contentRating || undefined,
         sameAs: data.sameAs || undefined,
-        aggregateRating: data.vote_average
-          ? {
-              "@type": "AggregateRating",
-              ratingValue: data.vote_average,
-              ratingCount: data.vote_count,
-              bestRating: 10,
-              worstRating: 0,
-            }
-          : undefined,
         trailer: tvTrailer
           ? {
               "@type": "VideoObject",

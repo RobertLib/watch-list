@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { encodePrerenderedIds } from "@/lib/prerendered-titles";
 import {
   ambiguousLeadingId,
   legacyPathTarget,
@@ -26,12 +27,56 @@ describe("legacyPathTarget", () => {
     expect(legacyPathTarget(path)).toBe(target);
   });
 
+  // Genre pages are real paths under their canonical slug, so only a slug that
+  // is not canonical can reach the 404 – and it goes to the genre its id names.
   it.each([
-    ["/genres/movie/28", "/genres/movie?genre=28"],
-    ["/genres/movie/action-28", "/genres/movie?genre=action-28"],
-    ["/genres/tv/action-adventure-10759/", "/genres/tv?genre=action-adventure-10759"],
+    ["/genres/movie/28", "/genres/movie/action-28"],
+    ["/genres/movie/action-movies-28", "/genres/movie/action-28"],
+    ["/genres/movie/Action-28", "/genres/movie/action-28"],
+    ["/genres/movie/action-28/", "/genres/movie/action-28"],
+    ["/genres/tv/action-adventure-10759/", "/genres/tv/action-adventure-10759"],
+    ["/genres/movie/horror-27/netflix/", "/genres/movie/horror-27/netflix"],
+    ["/genres/movie/horror-movies-27/netflix", "/genres/movie/horror-27/netflix"],
+    // A platform that is not a landing: the genre is still worth landing on.
+    ["/genres/movie/horror-27/tubi", "/genres/movie/horror-27"],
   ])("sends the genre page %s to %s", (path, target) => {
     expect(legacyPathTarget(path)).toBe(target);
+  });
+
+  it.each([
+    // A real page answers with itself, never with the 404 – but should one
+    // ever reach it, sending it back to itself would be a redirect loop.
+    "/genres/movie/action-28",
+    "/genres/movie/horror-27/netflix",
+    // An id TMDB has no genre for, and a film genre asked for as a series one.
+    "/genres/movie/anime-99999",
+    "/genres/tv/horror-27",
+  ])("leaves the genre path %s to the ordinary 404", (path) => {
+    expect(legacyPathTarget(path)).toBeNull();
+  });
+
+  /**
+   * The best-known titles are paths again, so a title path that reached the 404
+   * is one the build did not write – a renamed title, a slug in another order.
+   * Answering it with `movieHref` could produce that same missing path; the
+   * query page exists for every title.
+   */
+  describe("with prerendered titles", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it.each([
+      ["/movie/fight-club-550", "/movie?id=fight-club-550"],
+      ["/movie/550-fight-club", "/movie?id=550-fight-club"],
+      ["/person/tom-hanks-31/", "/person?id=tom-hanks-31"],
+    ])("sends %s to the query page, never back to a path", (path, target) => {
+      vi.stubEnv(
+        "PRERENDERED_TITLE_IDS",
+        encodePrerenderedIds({ movie: [550], tv: [], person: [31] }),
+      );
+      expect(legacyPathTarget(path)).toBe(target);
+    });
   });
 
   it.each([
@@ -138,7 +183,7 @@ describe("resolveLegacyTarget", () => {
       "/movie?id=send-help-1198994",
     );
     await expect(resolveLegacyTarget("/genres/movie/28-action-28", lookup)).resolves.toBe(
-      "/genres/movie?genre=28-action-28",
+      "/genres/movie/action-28",
     );
     await expect(resolveLegacyTarget("/movies/top-rated", lookup)).resolves.toBe("/movies");
     await expect(resolveLegacyTarget("/nonexistent", lookup)).resolves.toBeNull();

@@ -37,11 +37,9 @@ import { useSettings } from "@/hooks/useSettings";
 import { findYouTubeTrailer } from "@/hooks/useVideoOverlay";
 import { getTVWikipediaContent } from "@/lib/wikipedia";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
-import {
-  formatTmdbDate,
-  releaseYear,
-  releaseYearSuffix,
-} from "@/lib/dates";
+import { TV_APPENDED_SECTIONS, tvPageTitle } from "@/lib/title-details";
+import type { TVShowDetails } from "@/types/tmdb";
+import { formatTmdbDate, releaseYear } from "@/lib/dates";
 import { resolveRegionProviders } from "@/lib/media-converters";
 import { resolveTVCertification } from "@/lib/media-certification";
 import { getRegionCode } from "@/lib/region";
@@ -53,8 +51,6 @@ import {
   personHref,
 } from "@/lib/routes";
 
-const APPENDED_SECTIONS =
-  "watch/providers,credits,videos,similar,translations,keywords,reviews,content_ratings,external_ids,images";
 
 function formatRuntime(minutes: number[]): string {
   if (!minutes || minutes.length === 0) return "Unknown runtime";
@@ -66,27 +62,46 @@ function formatRuntime(minutes: number[]): string {
 }
 
 /**
- * A series. The mirror of the film page, and addressed the same way: the show
- * travels in `?id=`, because a static export has no route for every series TMDB
- * knows about.
+ * A series. The mirror of the film page, and addressed the same two ways: a
+ * path with the build's snapshot for the series it prerendered
+ * (`/tv/breaking-bad-1396`), and `?id=` for every other one – a static export
+ * has no route for every series TMDB knows about.
  */
-export function TVContent() {
+export function TVContent({
+  slug,
+  snapshot = null,
+}: {
+  slug?: string;
+  snapshot?: TVShowDetails | null;
+} = {}) {
+  if (slug !== undefined) return <TVDetail slug={slug} snapshot={snapshot} />;
+
   return (
     <Suspense fallback={<MediaDetailSkeleton />}>
-      <TVDetail />
+      <TVDetailFromQuery />
     </Suspense>
   );
 }
 
-function TVDetail() {
+function TVDetailFromQuery() {
   const searchParams = useSearchParams();
-  const slug = searchParams.get("id") ?? "";
+  return <TVDetail slug={searchParams.get("id") ?? ""} snapshot={null} />;
+}
+
+function TVDetail({
+  slug,
+  snapshot,
+}: {
+  slug: string;
+  snapshot: TVShowDetails | null;
+}) {
   const id = extractIdFromSlug(slug);
   const { region } = useSettings();
 
   const { data, isLoading, error, reload } = useAsyncData(
-    async () => (id ? tmdbApi.getTVShowDetails(id, APPENDED_SECTIONS) : null),
+    async () => (id ? tmdbApi.getTVShowDetails(id, TV_APPENDED_SECTIONS) : null),
     [id],
+    snapshot,
   );
 
   // Kept off the critical path: the show renders as soon as TMDB answers, and
@@ -97,7 +112,7 @@ function TVDetail() {
   );
 
   useDocumentTitle(
-    data ? `${data.name}${releaseYearSuffix(data.first_air_date)}` : null,
+    data ? tvPageTitle(data) : null,
   );
   useCanonicalUrl(
     data ? absoluteMediaUrl("tv", createSlug(data.name, data.id)) : null,
@@ -286,7 +301,7 @@ function TVDetail() {
                   <span className="text-yellow-400">★</span>
                   <span>{details.vote_average?.toFixed(1)}</span>
                   <span className="text-gray-300">
-                    ({details.vote_count.toLocaleString()} ratings)
+                    ({details.vote_count.toLocaleString("en-US")} ratings)
                   </span>
                 </div>
               </div>

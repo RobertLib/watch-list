@@ -8,7 +8,9 @@
   },
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/prebuild.mjs",
     "build": "next build --webpack",
+    "postbuild": "node scripts/postbuild.mjs",
     "start": "serve out --config ../serve.json",
     "lint": "eslint --max-warnings 0",
     "test": "vitest run",

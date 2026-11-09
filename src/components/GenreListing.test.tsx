@@ -3,9 +3,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { GenreListing } from "./GenreListing";
+import { findStreamingPlatform } from "@/lib/streaming-landing";
+import type { GenreListingPage } from "@/lib/genre-listing-data";
 import type { MediaItem, MediaType, Movie, TVShow } from "@/types/tmdb";
 
-const state = vi.hoisted(() => ({ query: "", settingsKey: "US|all|" }));
+const state = vi.hoisted(() => ({ query: "", settingsKey: "US|all|", suspend: false }));
 const replace = vi.hoisted(() => vi.fn());
 const api = vi.hoisted(() => ({
   getMovieGenres: vi.fn(),
@@ -16,7 +18,13 @@ const api = vi.hoisted(() => ({
 const router = { replace };
 
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(state.query),
+  // A prerender has no query string to read: `useSearchParams` hands the tree
+  // to the client, and the page shows its Suspense fallback. Suspending forever
+  // is how a test asks for that render.
+  useSearchParams: () => {
+    if (state.suspend) throw new Promise(() => {});
+    return new URLSearchParams(state.query);
+  },
   useRouter: () => router,
 }));
 vi.mock("next/link", () => ({
@@ -34,6 +42,7 @@ const filterBar = vi.hoisted(() => ({ mounts: 0 }));
 vi.mock("./DiscoverFilterBar", async () => {
   const { useEffect } = await import("react");
   return {
+    DiscoverFilterBarSkeleton: () => <div>Filter bar placeholder</div>,
     DiscoverFilterBar: ({ totalResults, resultsPending }: { totalResults?: number; resultsPending?: boolean }) => {
       useEffect(() => { filterBar.mounts += 1; }, []);
       return (
@@ -64,10 +73,9 @@ const title: Movie & TVShow = {
 beforeEach(() => {
   vi.clearAllMocks();
   filterBar.mounts = 0;
-  state.query = "genre=action-28&page=20";
+  state.query = "page=20";
   state.settingsKey = "US|all|";
-  api.getMovieGenres.mockResolvedValue({ genres: [{ id: 28, name: "Action" }] });
-  api.getTVGenres.mockResolvedValue({ genres: [{ id: 28, name: "Action" }] });
+  state.suspend = false;
   for (const discover of [api.discoverMoviesByGenre, api.discoverTVShowsByGenre]) {
     discover.mockReset().mockImplementation(async (_id: number, page: number) => ({
       results: page === 1 ? [title] : [], total_pages: 1, total_results: 1,
@@ -76,17 +84,38 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-async function followReplacement(view: ReturnType<typeof render>, mediaType: MediaType) {
+const action = { id: 28, name: "Action" };
+
+/** The listing as a genre route renders it: the path has already named the genre. */
+function listing(
+  mediaType: MediaType,
+  { platform, snapshot = null }: { platform?: string; snapshot?: GenreListingPage | null } = {},
+) {
+  return (
+    <GenreListing
+      mediaType={mediaType}
+      genre={action}
+      platform={platform ? findStreamingPlatform(platform) : undefined}
+      snapshot={snapshot}
+    />
+  );
+}
+
+async function followReplacement(
+  view: ReturnType<typeof render>,
+  mediaType: MediaType,
+  platform?: string,
+) {
   state.query = new URL(replace.mock.calls.at(-1)![0], "https://example.com").search;
-  await act(async () => { view.rerender(<GenreListing mediaType={mediaType} />); });
+  await act(async () => { view.rerender(listing(mediaType, { platform })); });
 }
 
 describe("GenreListing pagination recovery", () => {
   it.each(["movie", "tv"] as const)("includes the Czech Prime Video ID in the %s platform landing", async (mediaType) => {
-    state.query = "genre=action-28&provider=prime-video";
+    state.query = "";
     state.settingsKey = "CZ|all|";
 
-    await act(async () => { render(<GenreListing mediaType={mediaType} />); });
+    await act(async () => { render(listing(mediaType, { platform: "prime-video" })); });
 
     const discover = mediaType === "movie" ? api.discoverMoviesByGenre : api.discoverTVShowsByGenre;
     expect(discover).toHaveBeenCalledWith(28, 1, {
@@ -105,13 +134,13 @@ describe("GenreListing pagination recovery", () => {
       total_results: state.settingsKey.startsWith("US") ? 400 : 1,
     }));
     let view!: ReturnType<typeof render>;
-    await act(async () => { view = render(<GenreListing mediaType={mediaType} />); });
+    await act(async () => { view = render(listing(mediaType)); });
     expect(screen.getByText("Page 20 of 20")).toBeTruthy();
 
     state.settingsKey = "CZ|all|";
-    await act(async () => { view.rerender(<GenreListing mediaType={mediaType} />); });
+    await act(async () => { view.rerender(listing(mediaType)); });
 
-    expect(replace).toHaveBeenCalledExactlyOnceWith(`/genres/${mediaType}?genre=action-28`, { scroll: false });
+    expect(replace).toHaveBeenCalledExactlyOnceWith(`/genres/${mediaType}/action-28`, { scroll: false });
     expect(screen.getByText("Loading titles")).toBeTruthy();
     expect(screen.queryByText(/No action/)).toBeNull();
     await followReplacement(view, mediaType);
@@ -120,18 +149,19 @@ describe("GenreListing pagination recovery", () => {
   });
 
   it("keeps genre filters while replacing an unavailable page with the last valid page", async () => {
-    state.query = "genre=action-28&page=20&year=2020&with_genre=12";
+    state.query = "page=20&year=2020&with_genre=12";
     api.discoverMoviesByGenre.mockImplementation(async (_id: number, page: number) => ({
       results: page === 2 ? [title] : [], total_pages: 2, total_results: 21,
     }));
     let view!: ReturnType<typeof render>;
-    await act(async () => { view = render(<GenreListing mediaType="movie" />); });
+    await act(async () => { view = render(listing("movie")); });
 
     const target = new URL(replace.mock.calls.at(-1)![0], "https://example.com");
+    expect(target.pathname).toBe("/genres/movie/action-28");
     expect(target.searchParams.get("page")).toBe("2");
     expect(target.searchParams.get("year")).toBe("2020");
     expect(target.searchParams.get("with_genre")).toBe("12");
-    expect(target.searchParams.get("genre")).toBe("action-28");
+    expect(target.searchParams.has("genre")).toBe(false);
     expect(screen.queryByText(/No action/)).toBeNull();
 
     await followReplacement(view, "movie");
@@ -140,13 +170,13 @@ describe("GenreListing pagination recovery", () => {
   });
 
   it("preserves the streaming platform while recovering from an unavailable platform page", async () => {
-    state.query = "genre=action-28&provider=netflix&page=10";
+    state.query = "page=10";
     let view!: ReturnType<typeof render>;
-    await act(async () => { view = render(<GenreListing mediaType="movie" />); });
-    expect(replace).toHaveBeenCalledExactlyOnceWith("/genres/movie?genre=action-28&provider=netflix", { scroll: false });
+    await act(async () => { view = render(listing("movie", { platform: "netflix" })); });
+    expect(replace).toHaveBeenCalledExactlyOnceWith("/genres/movie/action-28/netflix", { scroll: false });
     expect(screen.queryByText(/No action/)).toBeNull();
 
-    await followReplacement(view, "movie");
+    await followReplacement(view, "movie", "netflix");
     expect(screen.getByText("Available title")).toBeTruthy();
     expect(api.discoverMoviesByGenre.mock.calls.map((call) => call[1])).toEqual([10, 1]);
     expect(api.discoverMoviesByGenre.mock.calls.at(-1)![2]).toMatchObject({ watchProviders: "8" });
@@ -155,7 +185,7 @@ describe("GenreListing pagination recovery", () => {
   it("shows the empty state only after confirming that page one has no results", async () => {
     api.discoverMoviesByGenre.mockResolvedValue({ results: [], total_pages: 0, total_results: 0 });
     let view!: ReturnType<typeof render>;
-    await act(async () => { view = render(<GenreListing mediaType="movie" />); });
+    await act(async () => { view = render(listing("movie")); });
     expect(screen.queryByText("No action movies found.")).toBeNull();
 
     await followReplacement(view, "movie");
@@ -186,9 +216,9 @@ describe("GenreListing filter changes", () => {
   const filtered = { ...title, id: 2, title: "Filtered title", name: "Filtered title" };
 
   it("keeps the filter bar mounted, and focused, while only the results reload", async () => {
-    state.query = "genre=action-28";
+    state.query = "";
     let view!: ReturnType<typeof render>;
-    await act(async () => { view = render(<GenreListing mediaType="movie" />); });
+    await act(async () => { view = render(listing("movie")); });
     expect(screen.getByText("Available title")).toBeTruthy();
     expect(filterBar.mounts).toBe(1);
 
@@ -197,8 +227,8 @@ describe("GenreListing filter changes", () => {
 
     const next = deferredPage();
     api.discoverMoviesByGenre.mockReturnValueOnce(next.promise);
-    state.query = "genre=action-28&year=2020";
-    await act(async () => { view.rerender(<GenreListing mediaType="movie" />); });
+    state.query = "year=2020";
+    await act(async () => { view.rerender(listing("movie")); });
 
     // Only the results are waiting.
     expect(screen.getByText("Loading titles")).toBeTruthy();
@@ -208,7 +238,6 @@ describe("GenreListing filter changes", () => {
     expect(screen.getByRole("combobox", { name: "Release year" })).toBe(select);
     expect(document.activeElement).toBe(select);
     expect(filterBar.mounts).toBe(1);
-    expect(api.getMovieGenres).toHaveBeenCalledTimes(1);
 
     await act(async () => { next.resolve({ results: [filtered], total_pages: 1, total_results: 1 }); });
 
@@ -221,13 +250,13 @@ describe("GenreListing filter changes", () => {
 
   it("reports a failed listing in place of the results, filters and all still there", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    state.query = "genre=action-28";
+    state.query = "";
     let view!: ReturnType<typeof render>;
-    await act(async () => { view = render(<GenreListing mediaType="movie" />); });
+    await act(async () => { view = render(listing("movie")); });
 
     api.discoverMoviesByGenre.mockRejectedValueOnce(new Error("TMDB API error: 503"));
-    state.query = "genre=action-28&year=2020";
-    await act(async () => { view.rerender(<GenreListing mediaType="movie" />); });
+    state.query = "year=2020";
+    await act(async () => { view.rerender(listing("movie")); });
 
     expect(screen.getByRole("heading", { name: "Could not load these movies" })).toBeTruthy();
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Action Movies");
@@ -242,15 +271,15 @@ describe("GenreListing filter changes", () => {
   });
 
   it("keeps the page when it moves to another page of the same genre", async () => {
-    state.query = "genre=action-28";
+    state.query = "";
     api.discoverMoviesByGenre.mockResolvedValue({ results: [title], total_pages: 3, total_results: 60 });
     let view!: ReturnType<typeof render>;
-    await act(async () => { view = render(<GenreListing mediaType="movie" />); });
+    await act(async () => { view = render(listing("movie")); });
 
     const next = deferredPage();
     api.discoverMoviesByGenre.mockReturnValueOnce(next.promise);
-    state.query = "genre=action-28&page=2";
-    await act(async () => { view.rerender(<GenreListing mediaType="movie" />); });
+    state.query = "page=2";
+    await act(async () => { view.rerender(listing("movie")); });
 
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Action Movies");
     expect(screen.getByText("Loading titles")).toBeTruthy();
@@ -259,14 +288,75 @@ describe("GenreListing filter changes", () => {
     await act(async () => { next.resolve({ results: [filtered], total_pages: 3, total_results: 60 }); });
     expect(screen.getByText("Page 2 of 3")).toBeTruthy();
   });
+});
 
-  it("gives a failed genre page its own h1", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    state.query = "genre=action-28";
-    api.getMovieGenres.mockRejectedValueOnce(new Error("TMDB API error: 503"));
-    await act(async () => { render(<GenreListing mediaType="movie" />); });
+/**
+ * The build writes page one of the unfiltered listing into the page. The
+ * prerender shows it, and the browser starts from it rather than from a
+ * skeleton – but only for the view it describes.
+ */
+describe("GenreListing build snapshot", () => {
+  const snapshotTitle = { ...title, id: 3, title: "Snapshot title", name: "Snapshot title" } as unknown as MediaItem;
+  const snapshot: GenreListingPage = { items: [snapshotTitle], totalPages: 20, totalResults: 400 };
 
-    expect(screen.getByRole("heading", { level: 1, name: "Could not load this genre" })).toBeTruthy();
+  it("prerenders the heading, the snapshot and the platform links", async () => {
+    state.suspend = true;
+    await act(async () => { render(listing("movie", { snapshot })); });
+
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Action Movies");
+    expect(screen.getByText("Snapshot title")).toBeTruthy();
+    expect(screen.getByText("Page 1 of 20")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Next →" }).getAttribute("href")).toBe(
+      "/genres/movie/action-28?page=2",
+    );
+    expect(screen.getByRole("link", { name: "Action on Netflix" }).getAttribute("href")).toBe(
+      "/genres/movie/action-28/netflix",
+    );
+    // The real bar reads the query string, which a prerender does not have.
     expect(screen.queryByText("Filters")).toBeNull();
+    expect(screen.getByText("Filter bar placeholder")).toBeTruthy();
+    expect(api.discoverMoviesByGenre).not.toHaveBeenCalled();
+  });
+
+  it("prerenders a skeleton when the build had no snapshot", async () => {
+    state.suspend = true;
+    await act(async () => { render(listing("movie")); });
+
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Action Movies");
+    expect(screen.getByText("Loading titles")).toBeTruthy();
+  });
+
+  it("counts a platform landing's titles from the snapshot", async () => {
+    state.suspend = true;
+    await act(async () => { render(listing("tv", { platform: "netflix", snapshot })); });
+
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Action TV Shows on Netflix");
+    expect(screen.getByText(/400 action TV shows streaming on Netflix/)).toBeTruthy();
+  });
+
+  it("shows the snapshot until the visitor's own listing arrives, then replaces it", async () => {
+    state.query = "";
+    const next = deferredPage();
+    api.discoverMoviesByGenre.mockReturnValueOnce(next.promise);
+    await act(async () => { render(listing("movie", { snapshot })); });
+
+    expect(screen.getByText("Snapshot title")).toBeTruthy();
+    expect(screen.queryByText("Loading titles")).toBeNull();
+
+    await act(async () => { next.resolve({ results: [title], total_pages: 1, total_results: 1 }); });
+    expect(screen.getByText("Available title")).toBeTruthy();
+    expect(screen.queryByText("Snapshot title")).toBeNull();
+  });
+
+  it.each([
+    ["a filtered view", "year=2020"],
+    ["a later page", "page=2"],
+  ])("never stands the snapshot in for %s", async (_label, query) => {
+    state.query = query;
+    api.discoverMoviesByGenre.mockReturnValueOnce(deferredPage().promise);
+    await act(async () => { render(listing("movie", { snapshot })); });
+
+    expect(screen.queryByText("Snapshot title")).toBeNull();
+    expect(screen.getByText("Loading titles")).toBeTruthy();
   });
 });

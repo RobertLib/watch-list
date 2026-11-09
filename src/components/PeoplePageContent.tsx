@@ -9,36 +9,26 @@ import { PeopleContent } from "@/components/PeopleContent";
 import { LoadFailureNotice } from "@/components/LoadFailureNotice";
 import { PeopleSkeleton } from "@/components/skeletons";
 import { useAsyncData } from "@/hooks/useAsyncData";
-import { settle } from "@/lib/settle";
+import { loadPopularPeople } from "@/lib/listing-sections";
+import type { Person } from "@/types/tmdb";
 
 /**
- * Whoever TMDB says is popular this week. Two pages, de-duplicated.
+ * `/people`: whoever TMDB says is popular this week (`loadPopularPeople`).
  *
- * The second page is settled separately: it is the tail of the grid, and losing
- * it is no reason to show nothing. A page of forty people is still the page.
+ * Starts from the build's snapshot of the list (`build-time-tmdb.ts`) where
+ * there is one, so the prerendered page names and links to everyone on it, and
+ * replaces it with this week's list once the browser has it.
  */
-export function PeoplePageContent() {
+export function PeoplePageContent({
+  snapshot = null,
+}: {
+  snapshot?: Person[] | null;
+}) {
   const {
     data: people,
     isLoading,
     reload,
-  } = useAsyncData(async () => {
-    const [page1, page2] = await Promise.all([
-      settle(tmdbApi.getPopularPeople(1), "popular people"),
-      settle(tmdbApi.getPopularPeople(2), "popular people, page 2"),
-    ]);
-
-    if (!page1 && !page2) return null;
-
-    return Array.from(
-      new Map(
-        [...(page1?.results ?? []), ...(page2?.results ?? [])].map((p) => [
-          p.id,
-          p,
-        ]),
-      ).values(),
-    );
-  }, []);
+  } = useAsyncData(loadPopularPeople, [], snapshot);
 
   if (isLoading) return <PeopleSkeleton />;
 

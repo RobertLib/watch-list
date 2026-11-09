@@ -59,11 +59,16 @@ function stripMarkdown(text: string): string {
   return (result + stripInline(plain.slice(last))).trim();
 }
 
+// In UTC, like `formatTmdbDate`: a title page is rendered at build time as well
+// as in the browser, and a review posted late in the UTC day would otherwise be
+// dated differently by the two – a hydration mismatch, and the wrong date for
+// half the world besides.
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",
     day: "numeric",
+    timeZone: "UTC",
   });
 }
 

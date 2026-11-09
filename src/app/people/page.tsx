@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { PeoplePageContent } from "@/components/PeoplePageContent";
 import { pageMetadata } from "@/lib/page-metadata";
+import { getPeopleSnapshot } from "@/lib/build-time-tmdb";
 
 export const metadata: Metadata = pageMetadata({
   title: "People",
@@ -10,6 +11,6 @@ export const metadata: Metadata = pageMetadata({
 });
 
 /** Whoever TMDB says is popular this week. Two pages, de-duplicated. */
-export default function Page() {
-  return <PeoplePageContent />;
+export default async function Page() {
+  return <PeoplePageContent snapshot={await getPeopleSnapshot()} />;
 }

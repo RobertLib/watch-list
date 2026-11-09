@@ -1,8 +1,10 @@
 # The four checks that have to pass before anything reaches main.
 #
-# No secrets: `next build` here is a static export whose pages fetch TMDB from
-# the browser, so the build never calls the API and needs no token. A fork's pull
-# request therefore gets the same checks as a branch, which is the point.
+# No secrets. Without the TMDB token `next build` skips the snapshots the deploy
+# build writes into the genre, mood and home pages (`src/lib/build-time-tmdb.ts`)
+# and prerenders those pages with skeletons instead – everything else it checks
+# is the same. A fork's pull request therefore gets the same checks as a branch,
+# which is the point.
 name: CI
 
 on:

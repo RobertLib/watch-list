@@ -277,3 +277,72 @@ describe("useAsyncData", () => {
     expect(result.current.data).toBe("current");
   });
 });
+
+/**
+ * The build writes a snapshot of page one into the prerendered HTML; the hook
+ * shows it in place of the loading state until the first real answer, so
+ * hydration finds the markup the prerender wrote – and only until then.
+ */
+describe("useAsyncData placeholder", () => {
+  it("shows the placeholder, not a loading state, until the first load settles", async () => {
+    const load = deferred<string>();
+    const { result } = renderHook(() =>
+      useAsyncData(() => load.promise, [], "snapshot"),
+    );
+
+    expect(result.current).toMatchObject({ data: "snapshot", isLoading: false, error: null });
+
+    await act(async () => { load.resolve("live"); });
+    expect(result.current).toMatchObject({ data: "live", isLoading: false });
+  });
+
+  it("keeps the placeholder across a deps change that happens before anything settled", async () => {
+    // A visitor whose region differs from the build's: the settings snapshot
+    // changes the deps straight after hydration, and the screen should not
+    // drop to a skeleton for it.
+    const loads = [deferred<string>(), deferred<string>()];
+    let call = 0;
+    const { result, rerender } = renderHook(
+      ({ region }) => useAsyncData(() => loads[call++].promise, [region], "snapshot"),
+      { initialProps: { region: "US" } },
+    );
+
+    rerender({ region: "CZ" });
+    expect(result.current).toMatchObject({ data: "snapshot", isLoading: false });
+
+    await act(async () => { loads[1].resolve("CZ titles"); });
+    expect(result.current.data).toBe("CZ titles");
+  });
+
+  it("shows the loading state for later deps once a real answer has been on screen", async () => {
+    const loads = [deferred<string>(), deferred<string>()];
+    let call = 0;
+    const { result, rerender } = renderHook(
+      ({ page }) => useAsyncData(() => loads[call++].promise, [page], "snapshot"),
+      { initialProps: { page: 1 } },
+    );
+    await act(async () => { loads[0].resolve("page one"); });
+
+    rerender({ page: 2 });
+    expect(result.current).toMatchObject({ data: null, isLoading: true });
+  });
+
+  it("treats a null placeholder as none", () => {
+    const { result } = renderHook(() =>
+      useAsyncData(() => new Promise<string>(() => {}), [], null),
+    );
+
+    expect(result.current).toMatchObject({ data: null, isLoading: true });
+  });
+
+  it("reports a failed first load as an error rather than keeping the placeholder", async () => {
+    const load = deferred<string>();
+    const { result } = renderHook(() =>
+      useAsyncData(() => load.promise, [], "snapshot"),
+    );
+
+    await act(async () => { load.reject(new Error("offline")); });
+    expect(result.current).toMatchObject({ data: null, isLoading: false });
+    expect(result.current.error).toBeInstanceOf(Error);
+  });
+});

@@ -5,6 +5,13 @@
 # Runs only after CI has passed on a push to main, so nothing reaches the site
 # that failed lint, typecheck or the test suite. `workflow_dispatch` is there for
 # redeploying by hand – after rotating the TMDB token, say.
+#
+# And once a day on a schedule, with no change at all: the genre, mood and home
+# pages carry a snapshot of TMDB taken at build time (`src/lib/build-time-tmdb.ts`),
+# and a snapshot only stays current by being taken again. A scheduled run
+# rebuilds whatever main points at, and only once CI has passed on exactly that
+# commit (see `latest`). GitHub pauses schedules in a repository with no
+# activity for sixty days; a push or a manual run starts them again.
 name: Deploy
 
 on:
@@ -13,6 +20,8 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * *"
 
 # Read-only for every job unless it says otherwise. Only `deploy` can publish:
 # `build` runs `npm ci`, which runs the install scripts of every dependency, and
@@ -33,16 +42,28 @@ jobs:
   # deployment goes ahead only for the commit main points at now. A commit that
   # is no longer the tip is not lost by this: the newer one deploys when its own
   # CI passes. A manual dispatch deploys what it was dispatched on, as before.
+  #
+  # A scheduled run has no CI run of its own behind it, so it asks: main's tip
+  # deploys only if a CI run on a push of exactly that commit succeeded. Without
+  # that, a push whose CI failed would reach the site at the next scheduled run.
+  # The commit chosen here is the one `build` checks out.
   latest:
     # `event == 'push'` as well as the branch filter above: a fork's pull request
     # from a branch that happens to be called `main` passes that filter too.
     if: >-
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
+    # `actions: read` for the scheduled run's question about CI; the rest of the
+    # workflow keeps the read-only default above.
+    permissions:
+      contents: read
+      actions: read
     outputs:
       deploy: ${{ steps.tip.outputs.deploy }}
+      sha: ${{ steps.tip.outputs.sha }}
 
     steps:
       - id: tip
@@ -50,14 +71,28 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          DISPATCH_SHA: ${{ github.sha }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          if [ "$EVENT" != "workflow_run" ]; then
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "sha=$DISPATCH_SHA" >> "$GITHUB_OUTPUT"
             echo "deploy=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           tip="$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq .object.sha)"
+          if [ "$EVENT" = "schedule" ]; then
+            passed="$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$tip&event=push&status=success&per_page=1" --jq .total_count)"
+            if [ "$passed" -gt 0 ]; then
+              echo "sha=$tip" >> "$GITHUB_OUTPUT"
+              echo "deploy=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::notice::Not rebuilding $tip: no successful CI run on a push of that commit."
+              echo "deploy=false" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
           if [ "$tip" = "$HEAD_SHA" ]; then
+            echo "sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
             echo "deploy=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::Not deploying $HEAD_SHA: main is at $tip now, and that commit deploys after its own CI run."
@@ -86,10 +121,11 @@ jobs:
 
       - uses: actions/checkout@v7
         with:
-          # The commit CI actually tested, not whatever main points at by now.
-          # (The two are the same for a CI-triggered run – see `latest` – but
-          # this is the one that was tested, so it is the one to name.)
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # The commit `latest` chose: the one CI actually tested, not whatever
+          # main points at by now. (The two are the same for a CI-triggered or
+          # scheduled run, but this is the one that was tested, so it is the
+          # one to name.)
+          ref: ${{ needs.latest.outputs.sha }}
           # Nothing after this runs git, and `npm ci` runs other people's code.
           persist-credentials: false
 
@@ -100,9 +136,12 @@ jobs:
 
       - run: npm ci
 
-      # Unlike CI, this build needs the token (see the first step). It is public
-      # in the shipped JS either way – the secret only keeps it out of the
-      # repository.
+      # Unlike CI, this build needs the token (see the first step) – the browser
+      # calls TMDB with it, and so does the build, for the snapshots it writes
+      # into the genre, mood and home pages. A TMDB failure while taking them
+      # fails the build, and the deployment already live stays live. The token
+      # is public in the shipped JS either way – the secret only keeps it out of
+      # the repository.
       #
       # The GA id is public too (it is in every page's markup), so a repository
       # variable is the natural home for it – but it is read from either kind,

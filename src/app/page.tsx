@@ -10,6 +10,7 @@ import { KeepYourDataNudge } from "@/components/KeepYourDataNudge";
 import { RecommendedForYou } from "@/components/RecommendedForYou";
 import { GenreQuickNav } from "@/components/GenreQuickNav";
 import { StructuredData } from "@/components/StructuredData";
+import { getHomeSnapshot } from "@/lib/build-time-tmdb";
 import {
   TrendingCarousel,
   NowPlayingCarousel,
@@ -31,12 +32,16 @@ export const metadata: Metadata = {
 /**
  * The home page.
  *
- * Nothing here is fetched before the HTML is served any more: the shell is
- * static, and every row below fills itself in from the browser. What that costs
- * is a moment of skeletons; what it buys is a page that is served from a CDN
- * file and asks nothing of a server.
+ * Nothing here is fetched when the page is served: it is a static file. The
+ * rows are fetched once when the site is built, and that snapshot is what the
+ * HTML carries – the titles and links a crawler reads, and what a visitor sees
+ * before the browser has loaded the rows for their own region and swapped them
+ * in. The personal rows (continue watching, the watchlist, recommendations)
+ * are the visitor's own and only ever fill in from the browser.
  */
-export default function Home() {
+export default async function Home() {
+  const rows = await getHomeSnapshot();
+
   return (
     <>
       <StructuredData type="Website" data={{}} />
@@ -100,24 +105,24 @@ export default function Home() {
 
         <RecommendedForYou />
 
-        <TrendingCarousel />
+        <TrendingCarousel snapshot={rows?.trending} />
 
         {/* Movies section. The rows under a group heading are its
             subsections, so their own titles are h3s. */}
         <div className="border-t border-gray-800/60 pt-10 space-y-12">
           <h2 className="text-3xl font-bold text-white">Movies</h2>
-          <NowPlayingCarousel headingLevel={3} />
-          <PopularMoviesCarousel headingLevel={3} />
-          <UpcomingMoviesCarousel headingLevel={3} />
-          <TopRatedMoviesCarousel headingLevel={3} />
+          <NowPlayingCarousel headingLevel={3} snapshot={rows?.nowPlaying} />
+          <PopularMoviesCarousel headingLevel={3} snapshot={rows?.popularMovies} />
+          <UpcomingMoviesCarousel headingLevel={3} snapshot={rows?.upcomingMovies} />
+          <TopRatedMoviesCarousel headingLevel={3} snapshot={rows?.topRatedMovies} />
         </div>
 
         {/* TV Shows section */}
         <div className="border-t border-gray-800/60 pt-10 space-y-12">
           <h2 className="text-3xl font-bold text-white">TV Shows</h2>
-          <AiringTodayCarousel headingLevel={3} />
-          <PopularTVShowsCarousel headingLevel={3} />
-          <TopRatedTVShowsCarousel headingLevel={3} />
+          <AiringTodayCarousel headingLevel={3} snapshot={rows?.airingToday} />
+          <PopularTVShowsCarousel headingLevel={3} snapshot={rows?.popularTVShows} />
+          <TopRatedTVShowsCarousel headingLevel={3} snapshot={rows?.topRatedTVShows} />
         </div>
 
         {/* Genre quick browse */}

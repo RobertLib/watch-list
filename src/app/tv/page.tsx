@@ -10,9 +10,9 @@ export const metadata: Metadata = pageMetadata({
 });
 
 /**
- * A series. The mirror of the film page, and addressed the same way: the show
- * travels in `?id=`, because a static export has no route for every series TMDB
- * knows about.
+ * Any series, by query string – the mirror of the film page: a static export
+ * has no route for every series TMDB knows about, and the best-known ones have
+ * a prerendered path of their own (`tv/[slug]`).
  */
 export default function Page() {
   return <TVContent />;

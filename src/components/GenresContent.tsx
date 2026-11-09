@@ -1,23 +1,12 @@
-"use client";
-
 import Link from "next/link";
-import { useGenres } from "@/contexts/GenresContext";
-import { LoadFailureNotice } from "@/components/LoadFailureNotice";
-import { Genre } from "@/types/tmdb";
-import { createSlug } from "@/lib/utils";
+import type { Genre, MediaType } from "@/types/tmdb";
 import { genreHref } from "@/lib/routes";
+import { MOVIE_GENRES, TV_GENRES, genreSlug } from "@/lib/genre-catalog";
 
-interface GenreCardProps {
-  genre: Genre;
-  type: "movie" | "tv";
-}
-
-function GenreCard({ genre, type }: GenreCardProps) {
-  const href = genreHref(type, createSlug(genre.name, genre.id));
-
+function GenreCard({ genre, type }: { genre: Genre; type: MediaType }) {
   return (
     <Link
-      href={href}
+      href={genreHref(type, genreSlug(genre))}
       prefetch={false}
       className="group block p-6 bg-gray-800 rounded-lg border border-gray-700 hover:border-blue-500 hover:bg-gray-700 transition-all duration-300"
     >
@@ -33,13 +22,15 @@ function GenreCard({ genre, type }: GenreCardProps) {
   );
 }
 
-interface GenresSectionProps {
+function GenresSection({
+  title,
+  genres,
+  type,
+}: {
   title: string;
-  genres: Genre[];
-  type: "movie" | "tv";
-}
-
-function GenresSection({ title, genres, type }: GenresSectionProps) {
+  genres: readonly Genre[];
+  type: MediaType;
+}) {
   return (
     <section className="mb-12">
       <h2 className="text-2xl font-bold text-white mb-6">{title}</h2>
@@ -48,11 +39,6 @@ function GenresSection({ title, genres, type }: GenresSectionProps) {
           <GenreCard key={`${type}-${genre.id}`} genre={genre} type={type} />
         ))}
       </div>
-      {genres.length === 0 && (
-        <div className="text-center py-8">
-          <p className="text-gray-400">No genres found.</p>
-        </div>
-      )}
     </section>
   );
 }
@@ -60,84 +46,16 @@ function GenresSection({ title, genres, type }: GenresSectionProps) {
 /**
  * Every genre TMDB knows, in two grids.
  *
- * The lists come from the context the layout loads them into: they are needed by
- * the filter bars and the quick-nav row as well, and fetching them per component
- * would be the same two requests over and over.
+ * From `genre-catalog.ts` rather than from TMDB: every genre page is a path the
+ * build emits from that same list, so it is exactly the set of links that
+ * resolve – and being in the code is what puts all of them in the prerendered
+ * HTML of `/genres`, the page a crawler finds them through.
  */
 export function GenresContent() {
-  const { movieGenres, tvGenres, loading, movieFailed, tvFailed, requestGenres } = useGenres();
-
-  if (loading && movieGenres.length === 0 && tvGenres.length === 0) {
-    return <GenresLoadingFallback />;
-  }
-
   return (
     <>
-      {movieFailed ? (
-        <GenreFailure type="movie" loading={loading} onRetry={requestGenres} />
-      ) : (
-        <GenresSection title="Movie Genres" genres={movieGenres} type="movie" />
-      )}
-      {tvFailed ? (
-        <GenreFailure type="tv" loading={loading} onRetry={requestGenres} />
-      ) : (
-        <GenresSection title="TV Show Genres" genres={tvGenres} type="tv" />
-      )}
-    </>
-  );
-}
-
-function GenreFailure({ type, loading, onRetry }: {
-  type: "movie" | "tv";
-  loading: boolean;
-  onRetry: () => void;
-}) {
-  if (loading) {
-    return <p role="status" className="text-gray-400 mb-12">Retrying {type === "movie" ? "movie" : "TV show"} genres…</p>;
-  }
-
-  return <LoadFailureNotice
-    title={`Could not load ${type === "movie" ? "movie" : "TV show"} genres`}
-    description="Check your connection and try again."
-    onRetry={onRetry}
-    compact
-  />;
-}
-
-function GenresLoadingFallback() {
-  return (
-    <>
-      <section className="mb-12">
-        <h2 className="text-2xl font-bold text-white mb-6">Movie Genres</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-          {Array.from({ length: 20 }).map((_, i) => (
-            <div key={i} className="animate-pulse">
-              <div className="p-6 bg-gray-800 rounded-lg border border-gray-700">
-                <div className="text-center">
-                  <div className="h-5 bg-gray-700 rounded mb-2"></div>
-                  <div className="h-4 bg-gray-700 rounded w-1/2 mx-auto"></div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="mb-12">
-        <h2 className="text-2xl font-bold text-white mb-6">TV Show Genres</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-          {Array.from({ length: 16 }).map((_, i) => (
-            <div key={i} className="animate-pulse">
-              <div className="p-6 bg-gray-800 rounded-lg border border-gray-700">
-                <div className="text-center">
-                  <div className="h-5 bg-gray-700 rounded mb-2"></div>
-                  <div className="h-4 bg-gray-700 rounded w-1/2 mx-auto"></div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+      <GenresSection title="Movie Genres" genres={MOVIE_GENRES} type="movie" />
+      <GenresSection title="TV Show Genres" genres={TV_GENRES} type="tv" />
     </>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { tmdbDiscoverApi } from "@/lib/tmdb-discover";
 import { PaginatedMovieSection } from "@/components/PaginatedMovieSection";
 import { FilteredMovieSection } from "@/components/FilteredMovieSection";
@@ -13,39 +14,39 @@ import {
   getUpcomingMovies,
   getTrendingMoviesWeekly,
 } from "@/lib/api";
+import {
+  MOVIE_SECTIONS,
+  type MovieSectionsSnapshot,
+} from "@/lib/listing-sections";
 
 /**
  * Everything under the banner on /movies.
  *
  * The five opening pages load independently. A failed section can be retried
  * without replacing the other listings or discarding their loaded pages.
+ *
+ * The four fixed sections start from the build's snapshot of their page one,
+ * so the prerendered page lists their titles and links to them. The filterable
+ * "Discover" grid reads its filters from the query string, so it sits behind a
+ * Suspense boundary of its own and renders in the browser only.
  */
-export function MoviesContent() {
+export function MoviesContent({
+  snapshot = null,
+}: {
+  snapshot?: MovieSectionsSnapshot | null;
+}) {
   const settingsKey = useSettingsKey();
-
-  const { data, isLoading, reload } = useAsyncData(
-    () => tmdbDiscoverApi.getPopularMovies(1),
-    [settingsKey],
-  );
 
   return (
     <>
-      {isLoading ? (
-        <LoadingSection title="Discover Movies" count={12} />
-      ) : (
-        <FilteredMovieSection
-          title="Discover Movies"
-          initialMovies={data?.results}
-          initialTotalPages={data?.total_pages}
-          initialTotalResults={data?.total_results}
-          initialLoadError={!data}
-          onInitialRetry={reload}
-        />
-      )}
+      <Suspense fallback={<LoadingSection title="Discover Movies" count={12} />}>
+        <DiscoverMovies settingsKey={settingsKey} />
+      </Suspense>
       <AsyncDiscoverySection
         title="Trending This Week"
         loadKey={settingsKey}
-        loadFirstPage={() => tmdbDiscoverApi.getTrendingMoviesWeekly(1)}
+        loadFirstPage={MOVIE_SECTIONS.trending}
+        placeholder={snapshot?.trending}
       >
         {(trending) => (
           <PaginatedMovieSection
@@ -59,7 +60,8 @@ export function MoviesContent() {
       <AsyncDiscoverySection
         title="Now Playing"
         loadKey={settingsKey}
-        loadFirstPage={() => tmdbDiscoverApi.getNowPlayingMovies(1)}
+        loadFirstPage={MOVIE_SECTIONS.nowPlaying}
+        placeholder={snapshot?.nowPlaying}
       >
         {(nowPlaying) => (
           <PaginatedMovieSection
@@ -73,7 +75,8 @@ export function MoviesContent() {
       <AsyncDiscoverySection
         title="Coming Soon"
         loadKey={settingsKey}
-        loadFirstPage={() => tmdbDiscoverApi.getUpcomingMovies(1)}
+        loadFirstPage={MOVIE_SECTIONS.upcoming}
+        placeholder={snapshot?.upcoming}
       >
         {(upcoming) => (
           <PaginatedMovieSection
@@ -87,7 +90,8 @@ export function MoviesContent() {
       <AsyncDiscoverySection
         title="Top Rated Movies"
         loadKey={settingsKey}
-        loadFirstPage={() => tmdbDiscoverApi.getTopRatedMovies(1)}
+        loadFirstPage={MOVIE_SECTIONS.topRated}
+        placeholder={snapshot?.topRated}
       >
         {(topRated) => (
           <PaginatedMovieSection
@@ -102,14 +106,22 @@ export function MoviesContent() {
   );
 }
 
-export function MoviesLoadingFallback() {
+function DiscoverMovies({ settingsKey }: { settingsKey: string }) {
+  const { data, isLoading, reload } = useAsyncData(
+    () => tmdbDiscoverApi.getPopularMovies(1),
+    [settingsKey],
+  );
+
+  if (isLoading) return <LoadingSection title="Discover Movies" count={12} />;
+
   return (
-    <>
-      <LoadingSection title="Discover Movies" count={12} />
-      <LoadingSection title="Trending This Week" count={12} />
-      <LoadingSection title="Now Playing" count={12} />
-      <LoadingSection title="Coming Soon" count={12} />
-      <LoadingSection title="Top Rated Movies" count={12} />
-    </>
+    <FilteredMovieSection
+      title="Discover Movies"
+      initialMovies={data?.results}
+      initialTotalPages={data?.total_pages}
+      initialTotalResults={data?.total_results}
+      initialLoadError={!data}
+      onInitialRetry={reload}
+    />
   );
 }

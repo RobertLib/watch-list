@@ -15,9 +15,9 @@ export const metadata: Metadata = pageMetadata({
 export default function GenresPage() {
   return (
     <div className="min-h-screen bg-black">
-      {/* The genre list itself comes from TMDB inside `GenresContent`, so only
-          the page's own identity can be prerendered here. That is still the half
-          a crawler needs: what this URL is, and where it sits in the site. */}
+      {/* Every genre link below is prerendered from `genre-catalog.ts`: this
+          page is how a crawler reaches the genre pages and their platform
+          landings. */}
       <StructuredData
         type="BreadcrumbList"
         data={{

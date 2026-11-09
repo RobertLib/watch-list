@@ -23,6 +23,32 @@ const SELECT_CLASS =
   "w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent";
 const LABEL_CLASS = "block text-sm font-medium text-gray-300 mb-2";
 
+/**
+ * The bar's footprint, for the prerendered HTML.
+ *
+ * The bar reads its state from the query string, which a prerender does not
+ * have, so a page that prerenders its listing (`GenreListing`) puts this in its
+ * place until the browser renders the real one. Same box, same grid, same six
+ * controls' height – so the listing below does not jump when the bar arrives.
+ */
+export function DiscoverFilterBarSkeleton({ emptyHint }: { emptyHint?: string }) {
+  return (
+    <div className="bg-gray-900/50 rounded-lg p-6 mb-8" aria-hidden="true">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i}>
+            <div className="h-5 w-24 mb-2 bg-gray-800 rounded animate-pulse" />
+            <div className="h-[42px] bg-gray-800 border border-gray-700 rounded-md" />
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 pt-4 border-t border-gray-700 flex flex-wrap items-center gap-2">
+        <span className="text-sm text-gray-400">{emptyHint ?? " "}</span>
+      </div>
+    </div>
+  );
+}
+
 interface DiscoverFilterBarProps {
   type: DiscoverMediaType;
   /** Options of the genre select. */

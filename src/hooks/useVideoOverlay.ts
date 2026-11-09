@@ -2,25 +2,13 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { tmdbApi } from "@/lib/tmdb";
-import { Video } from "@/types/tmdb";
+import { findYouTubeTrailer } from "@/lib/trailer";
+import type { Video } from "@/types/tmdb";
 
-/**
- * The trailer among a title's videos: an official YouTube trailer first, then
- * any YouTube trailer. Undefined when there is none – a teaser is not one.
- *
- * Shared by the lookup below and by the detail pages, which hold their videos
- * already. One rule for both is what makes a detail page's "Play Trailer" play
- * the same video as the play button on that title's poster.
- */
-export function findYouTubeTrailer(videos: Video[]): Video | undefined {
-  return (
-    videos.find(
-      (video) =>
-        video.site === "YouTube" && video.type === "Trailer" && video.official,
-    ) ??
-    videos.find((video) => video.site === "YouTube" && video.type === "Trailer")
-  );
-}
+// Lives in `lib/trailer.ts` so the build can call it too – a function exported
+// from a "use client" module is a client reference on the server. Re-exported
+// for the components and tests that already import it from here.
+export { findYouTubeTrailer } from "@/lib/trailer";
 
 export function useVideoOverlay() {
   const [isOpen, setIsOpen] = useState(false);

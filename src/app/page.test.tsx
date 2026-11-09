@@ -16,6 +16,9 @@ vi.mock("@/components/KeepYourDataNudge", () => ({ KeepYourDataNudge: () => null
 vi.mock("@/components/RecommendedForYou", () => ({ RecommendedForYou: () => null }));
 vi.mock("@/components/GenreQuickNav", () => ({ GenreQuickNav: () => null }));
 vi.mock("@/components/StructuredData", () => ({ StructuredData: () => null }));
+// The rows' build-time snapshot is TMDB; a build without it renders the same
+// outline with skeleton rows.
+vi.mock("@/lib/build-time-tmdb", () => ({ getHomeSnapshot: async () => null }));
 
 vi.mock("@/components/carousels", () => {
   // A row that renders its heading at whatever level the page asks for – the
@@ -42,8 +45,9 @@ afterEach(cleanup);
 
 // The rows under "Movies" and "TV Shows" were h2s too, which made them
 // siblings of the headings they sit under.
-it("nests the movie and TV rows under their group headings", () => {
-  render(<Home />);
+it("nests the movie and TV rows under their group headings", async () => {
+  // An async Server Component: awaited here the way the build awaits it.
+  render(await Home());
 
   const outline = screen
     .getAllByRole("heading")

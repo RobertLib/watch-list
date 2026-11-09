@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { tmdbDiscoverApi } from "@/lib/tmdb-discover";
 import { PaginatedTVSection } from "@/components/PaginatedTVSection";
 import { FilteredTVSection } from "@/components/FilteredTVSection";
@@ -13,35 +14,31 @@ import {
   getAiringTodayTVShows,
   getTrendingTVShowsWeekly,
 } from "@/lib/api";
+import { TV_SECTIONS, type TVSectionsSnapshot } from "@/lib/listing-sections";
 
-/** Everything under the banner on /tv-shows – the mirror of `MoviesContent`. */
-export function TVShowsContent() {
+/**
+ * Everything under the banner on /tv-shows – the mirror of `MoviesContent`,
+ * down to the build's snapshot for the fixed sections and a browser-only
+ * "Discover" grid.
+ */
+export function TVShowsContent({
+  snapshot = null,
+}: {
+  snapshot?: TVSectionsSnapshot | null;
+}) {
   const settingsKey = useSettingsKey();
   const day = useLocalDay();
 
-  const { data, isLoading, reload } = useAsyncData(
-    () => tmdbDiscoverApi.getPopularTVShows(1),
-    [settingsKey],
-  );
-
   return (
     <>
-      {isLoading ? (
-        <LoadingSection title="Discover TV Shows" count={12} />
-      ) : (
-        <FilteredTVSection
-          title="Discover TV Shows"
-          initialTVShows={data?.results}
-          initialTotalPages={data?.total_pages}
-          initialTotalResults={data?.total_results}
-          initialLoadError={!data}
-          onInitialRetry={reload}
-        />
-      )}
+      <Suspense fallback={<LoadingSection title="Discover TV Shows" count={12} />}>
+        <DiscoverTVShows settingsKey={settingsKey} />
+      </Suspense>
       <AsyncDiscoverySection
         title="Trending This Week"
         loadKey={settingsKey}
-        loadFirstPage={() => tmdbDiscoverApi.getTrendingTVShowsWeekly(1)}
+        loadFirstPage={TV_SECTIONS.trending}
+        placeholder={snapshot?.trending}
       >
         {(trending) => (
           <PaginatedTVSection
@@ -56,7 +53,8 @@ export function TVShowsContent() {
       <AsyncDiscoverySection
         title="Airing Today"
         loadKey={`${settingsKey}|${day}`}
-        loadFirstPage={() => tmdbDiscoverApi.getAiringTodayTVShows(1)}
+        loadFirstPage={TV_SECTIONS.airingToday}
+        placeholder={snapshot?.airingToday}
       >
         {(airingToday) => (
           <PaginatedTVSection
@@ -70,7 +68,8 @@ export function TVShowsContent() {
       <AsyncDiscoverySection
         title="Top Rated TV Shows"
         loadKey={settingsKey}
-        loadFirstPage={() => tmdbDiscoverApi.getTopRatedTVShows(1)}
+        loadFirstPage={TV_SECTIONS.topRated}
+        placeholder={snapshot?.topRated}
       >
         {(topRated) => (
           <PaginatedTVSection
@@ -85,13 +84,22 @@ export function TVShowsContent() {
   );
 }
 
-export function TVShowsLoadingFallback() {
+function DiscoverTVShows({ settingsKey }: { settingsKey: string }) {
+  const { data, isLoading, reload } = useAsyncData(
+    () => tmdbDiscoverApi.getPopularTVShows(1),
+    [settingsKey],
+  );
+
+  if (isLoading) return <LoadingSection title="Discover TV Shows" count={12} />;
+
   return (
-    <>
-      <LoadingSection title="Discover TV Shows" count={12} />
-      <LoadingSection title="Trending This Week" count={12} />
-      <LoadingSection title="Airing Today" count={12} />
-      <LoadingSection title="Top Rated TV Shows" count={12} />
-    </>
+    <FilteredTVSection
+      title="Discover TV Shows"
+      initialTVShows={data?.results}
+      initialTotalPages={data?.total_pages}
+      initialTotalResults={data?.total_results}
+      initialLoadError={!data}
+      onInitialRetry={reload}
+    />
   );
 }

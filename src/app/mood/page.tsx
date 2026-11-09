@@ -1,15 +1,17 @@
 import type { Metadata } from "next";
-import { MoodContent } from "@/components/MoodContent";
 import { pageMetadata } from "@/lib/page-metadata";
+import { LegacyMoodQueryRedirect } from "@/components/LegacyQueryRedirect";
 
 export const metadata: Metadata = pageMetadata({
   title: "Mood",
-  description:
-    "Films and series picked for how you want to feel rather than what genre they are filed under.",
+  description: "Moving you to the mood you asked for.",
   noindex: true,
 });
 
-/** One mood's picks – `?id=cozy`. The list of moods lives at `/moods`. */
+/**
+ * The old address of a mood – `?id=easy-watch` – from before each mood was a
+ * path of its own (`/mood/easy-watch`). It only moves the visitor on.
+ */
 export default function Page() {
-  return <MoodContent />;
+  return <LegacyMoodQueryRedirect />;
 }

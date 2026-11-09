@@ -4,21 +4,30 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { MediaItem, Movie, TMDBResponse, TVShow } from "@/types/tmdb";
 import { MoodContent } from "./MoodContent";
+import { findMood } from "@/lib/moods";
+import type { MoodPicksPage } from "@/lib/mood-data";
 
 const api = vi.hoisted(() => ({
   discoverMovies: vi.fn(),
   discoverTVShows: vi.fn(),
 }));
 const navigation = vi.hoisted(() => ({
-  query: "id=easy-watch",
+  /** The path segment: `/mood/easy-watch`. */
+  mood: "easy-watch",
+  query: "",
   settingsKey: "CZ|all|",
+  suspend: false,
 }));
 const replace = vi.hoisted(() => vi.fn());
 const router = { replace };
 
 vi.mock("@/lib/tmdb-discover", () => ({ tmdbDiscoverApi: api }));
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(navigation.query),
+  // Suspending forever renders the Suspense fallback – what the prerender shows.
+  useSearchParams: () => {
+    if (navigation.suspend) throw new Promise(() => {});
+    return new URLSearchParams(navigation.query);
+  },
   useRouter: () => router,
 }));
 vi.mock("next/link", () => ({
@@ -71,8 +80,10 @@ function page(totalPages: number, name: string): TMDBResponse<Movie & TVShow> {
 }
 
 beforeEach(() => {
-  navigation.query = "id=easy-watch";
+  navigation.mood = "easy-watch";
+  navigation.query = "";
   navigation.settingsKey = "CZ|all|";
+  navigation.suspend = false;
   replace.mockReset();
   api.discoverMovies.mockReset().mockResolvedValue(page(1, "A film"));
   api.discoverTVShows.mockReset().mockResolvedValue(page(1, "A series"));
@@ -83,13 +94,18 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function renderMood() {
-  await act(async () => { render(<MoodContent />); });
+/** The mood as its route renders it: the path has already named the mood. */
+function moodContent(snapshot: MoodPicksPage | null = null) {
+  return <MoodContent mood={findMood(navigation.mood)!} snapshot={snapshot} />;
+}
+
+async function renderMood(snapshot: MoodPicksPage | null = null) {
+  await act(async () => { render(moodContent(snapshot)); });
 }
 
 async function followReplacement(view: ReturnType<typeof render>) {
   navigation.query = new URL(replace.mock.calls.at(-1)![0], "https://example.com").search;
-  await act(async () => { view.rerender(<MoodContent />); });
+  await act(async () => { view.rerender(moodContent()); });
 }
 
 describe("MoodContent", () => {
@@ -99,11 +115,11 @@ describe("MoodContent", () => {
 
     expect(screen.getByText("Page 1 of 4")).toBeDefined();
     expect(screen.getByRole("link", { name: "Next →" }).getAttribute("href"))
-      .toBe("/mood?id=easy-watch&page=2");
+      .toBe("/mood/easy-watch?page=2");
   });
 
   it("shows series on a later page where the film response is empty", async () => {
-    navigation.query = "id=easy-watch&page=2";
+    navigation.query = "page=2";
     api.discoverMovies.mockResolvedValue({ ...page(1, ""), page: 2, results: [] });
     api.discoverTVShows.mockResolvedValue({ ...page(4, "Later series"), page: 2 });
     await renderMood();
@@ -161,7 +177,7 @@ describe("MoodContent", () => {
   });
 
   it("only requests films for a film-only mood", async () => {
-    navigation.query = "id=mind-bending";
+    navigation.mood = "mind-bending";
     api.discoverMovies.mockResolvedValue(page(2, "A film"));
     await renderMood();
 
@@ -171,7 +187,7 @@ describe("MoodContent", () => {
   });
 
   it("loads an available page when settings shrink the mood catalogue", async () => {
-    navigation.query = "id=easy-watch&page=4";
+    navigation.query = "page=4";
     navigation.settingsKey = "US|all|";
     for (const discover of [api.discoverMovies, api.discoverTVShows]) {
       discover.mockImplementation(async (requestedPage: number) => ({
@@ -183,13 +199,13 @@ describe("MoodContent", () => {
       }));
     }
     let view!: ReturnType<typeof render>;
-    await act(async () => { view = render(<MoodContent />); });
+    await act(async () => { view = render(moodContent()); });
     expect(screen.getByText("Page 4 of 4")).toBeDefined();
 
     navigation.settingsKey = "CZ|streaming-only|8";
-    await act(async () => { view.rerender(<MoodContent />); });
+    await act(async () => { view.rerender(moodContent()); });
 
-    expect(replace).toHaveBeenCalledExactlyOnceWith("/mood?id=easy-watch", { scroll: false });
+    expect(replace).toHaveBeenCalledExactlyOnceWith("/mood/easy-watch", { scroll: false });
     expect(screen.getByText("Loading picks")).toBeDefined();
     expect(screen.queryByText("Nothing came back for this one. Try another mood.")).toBeNull();
     await followReplacement(view);
@@ -199,7 +215,7 @@ describe("MoodContent", () => {
   });
 
   it("recovers a shared link using the last page of the combined film and series catalogues", async () => {
-    navigation.query = "id=easy-watch&page=10";
+    navigation.query = "page=10";
     api.discoverMovies.mockImplementation(async (requestedPage: number) => ({
       ...page(1, "A film"), page: requestedPage, results: [],
     }));
@@ -209,9 +225,9 @@ describe("MoodContent", () => {
       results: requestedPage === 3 ? page(3, "Last-page series").results : [],
     }));
     let view!: ReturnType<typeof render>;
-    await act(async () => { view = render(<MoodContent />); });
+    await act(async () => { view = render(moodContent()); });
 
-    expect(replace).toHaveBeenCalledExactlyOnceWith("/mood?id=easy-watch&page=3", { scroll: false });
+    expect(replace).toHaveBeenCalledExactlyOnceWith("/mood/easy-watch?page=3", { scroll: false });
     expect(screen.queryByText("Page 10 of 3")).toBeNull();
     await followReplacement(view);
     expect(screen.getByText("Last-page series")).toBeDefined();
@@ -220,12 +236,13 @@ describe("MoodContent", () => {
   });
 
   it("confirms page one before showing that a mood has no results", async () => {
-    navigation.query = "id=mind-bending&page=4";
+    navigation.mood = "mind-bending";
+    navigation.query = "page=4";
     api.discoverMovies.mockResolvedValue({ ...page(0, ""), results: [] });
     let view!: ReturnType<typeof render>;
-    await act(async () => { view = render(<MoodContent />); });
+    await act(async () => { view = render(moodContent()); });
 
-    expect(replace).toHaveBeenCalledExactlyOnceWith("/mood?id=mind-bending", { scroll: false });
+    expect(replace).toHaveBeenCalledExactlyOnceWith("/mood/mind-bending", { scroll: false });
     expect(screen.queryByText("Nothing came back for this one. Try another mood.")).toBeNull();
     await followReplacement(view);
     expect(screen.getByText("Nothing came back for this one. Try another mood.")).toBeDefined();
@@ -234,7 +251,7 @@ describe("MoodContent", () => {
   });
 
   it("does not infer the last page while one catalogue has failed", async () => {
-    navigation.query = "id=easy-watch&page=4";
+    navigation.query = "page=4";
     api.discoverMovies.mockResolvedValue({ ...page(1, ""), page: 4, results: [] });
     api.discoverTVShows.mockRejectedValue(new Error("offline"));
 
@@ -243,5 +260,49 @@ describe("MoodContent", () => {
     expect(replace).not.toHaveBeenCalled();
     expect(screen.getByText("Could not load series")).toBeDefined();
     expect(screen.getByRole("button", { name: "Try again" })).toBeDefined();
+  });
+});
+
+describe("MoodContent build snapshot", () => {
+  const snapshot: MoodPicksPage = {
+    movies: page(1, "Snapshot film").results as unknown as MediaItem[],
+    shows: page(1, "Snapshot series").results as unknown as MediaItem[],
+    moviesFailed: false,
+    showsFailed: false,
+    totalPages: 10,
+  };
+
+  it("prerenders page one from the snapshot", async () => {
+    navigation.suspend = true;
+    await renderMood(snapshot);
+
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Something easy");
+    expect(screen.getByText("Snapshot film")).toBeDefined();
+    expect(screen.getByText("Snapshot series")).toBeDefined();
+    expect(screen.getByRole("link", { name: "Next →" }).getAttribute("href"))
+      .toBe("/mood/easy-watch?page=2");
+    expect(api.discoverMovies).not.toHaveBeenCalled();
+  });
+
+  it("starts the browser from the snapshot and swaps in the visitor's own picks", async () => {
+    let resolve!: (value: TMDBResponse<Movie & TVShow>) => void;
+    api.discoverMovies.mockReturnValueOnce(new Promise((res) => { resolve = res; }));
+    await renderMood(snapshot);
+
+    expect(screen.getByText("Snapshot film")).toBeDefined();
+    expect(screen.queryByText("Loading picks")).toBeNull();
+
+    await act(async () => { resolve(page(1, "Live film")); });
+    expect(screen.getByText("Live film")).toBeDefined();
+    expect(screen.queryByText("Snapshot film")).toBeNull();
+  });
+
+  it("does not stand the snapshot in for a later page", async () => {
+    navigation.query = "page=2";
+    api.discoverMovies.mockReturnValueOnce(new Promise(() => {}));
+    await renderMood(snapshot);
+
+    expect(screen.queryByText("Snapshot film")).toBeNull();
+    expect(screen.getByText("Loading picks")).toBeDefined();
   });
 });

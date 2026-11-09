@@ -16,8 +16,14 @@ import { PersonDetailSkeleton } from "@/components/skeletons";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { useCanonicalUrl } from "@/hooks/useCanonicalUrl";
+import { useLocalDay } from "@/hooks/useLocalDay";
 import { getPersonWikipediaContent } from "@/lib/wikipedia";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
+import {
+  loadPersonPage,
+  personPageTitle,
+  type PersonPageData,
+} from "@/lib/title-details";
 import { formatTmdbDate, releaseYear, yearsBetween } from "@/lib/dates";
 import { personMovieWorks, personTVWorks } from "@/lib/person-credits";
 import {
@@ -46,44 +52,68 @@ function formatDate(dateStr: string | null): string {
   return formatTmdbDate(dateStr) ?? "Unknown";
 }
 
+/**
+ * A living person's age needs today's date, and a prerendered page cannot have
+ * it: the build's day and the visitor's are different days, and on a birthday
+ * between them the two renders would disagree – a hydration mismatch. So the
+ * age of someone alive waits for the browser's own day (`useLocalDay` is empty
+ * until then); a lifespan needs no today, and is there from the start.
+ */
 function calculateAge(
   birthday: string | null,
   deathday: string | null,
+  today: string,
 ): string | null {
   const age = deathday
     ? yearsBetween(birthday, deathday)
-    : yearsBetween(birthday);
+    : today
+      ? yearsBetween(birthday, today)
+      : null;
 
   return age === null ? null : String(age);
 }
 
 /**
- * One person's page. Addressed by `?id=`, like every other title in the
- * catalogue, for the same reason: a static export has no route per person.
+ * One person's page, addressed like a title: a path with the build's snapshot
+ * for the people it prerendered (`/person/tom-hanks-31`), `?id=` for everyone
+ * else, because a static export has no route per person.
  */
-export function PersonContent() {
+export function PersonContent({
+  slug,
+  snapshot = null,
+}: {
+  slug?: string;
+  snapshot?: PersonPageData | null;
+} = {}) {
+  if (slug !== undefined) return <PersonDetail slug={slug} snapshot={snapshot} />;
+
   return (
     <Suspense fallback={<PersonDetailSkeleton />}>
-      <PersonDetail />
+      <PersonDetailFromQuery />
     </Suspense>
   );
 }
 
-function PersonDetail() {
+function PersonDetailFromQuery() {
   const searchParams = useSearchParams();
-  const id = extractIdFromSlug(searchParams.get("id") ?? "");
+  return <PersonDetail slug={searchParams.get("id") ?? ""} snapshot={null} />;
+}
 
-  const { data, isLoading, error, reload } = useAsyncData(async () => {
-    if (!id) return null;
+function PersonDetail({
+  slug,
+  snapshot,
+}: {
+  slug: string;
+  snapshot: PersonPageData | null;
+}) {
+  const id = extractIdFromSlug(slug);
+  const today = useLocalDay();
 
-    const [details, movieCredits, tvCredits] = await Promise.all([
-      tmdbApi.getPersonDetails(id),
-      tmdbApi.getPersonMovieCredits(id),
-      tmdbApi.getPersonTVCredits(id),
-    ]);
-
-    return { details, movieCredits, tvCredits };
-  }, [id]);
+  const { data, isLoading, error, reload } = useAsyncData(
+    async () => (id ? loadPersonPage(id) : null),
+    [id],
+    snapshot,
+  );
 
   // Second source, deliberately not awaited alongside the first: the page is
   // useful without it, and Wikipedia is the slower of the two.
@@ -97,7 +127,7 @@ function PersonDetail() {
     [data?.details.id],
   );
 
-  useDocumentTitle(data ? data.details.name : null);
+  useDocumentTitle(data ? personPageTitle(data.details) : null);
   useCanonicalUrl(
     data
       ? absoluteUrl(personHref(createSlug(data.details.name, data.details.id)))
@@ -136,7 +166,7 @@ function PersonDetail() {
   const tvShows = personTVWorks(tvCredits);
   const pageUrl = absoluteUrl(personHref(createSlug(details.name, details.id)));
 
-  const age = calculateAge(details.birthday, details.deathday);
+  const age = calculateAge(details.birthday, details.deathday, today);
 
   // TMDB's list is crowd-edited and repeats itself – the same romanisation
   // entered twice, or once with a stray space. Each alias is also its row's key,
