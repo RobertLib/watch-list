@@ -22,13 +22,22 @@ import type { MediaItem, Movie, TVShow } from "@/types/tmdb";
  * them collapse into one is the settings key – every row reloads on a region or
  * platform change, which is a dependency they all share.
  */
+/**
+ * Where a row sits in its page's outline. The home page groups most rows under
+ * "Movies" and "TV Shows" headings, which makes those rows subsections.
+ */
+interface CarouselPlacement {
+  headingLevel?: 2 | 3;
+}
+
 function DiscoverCarousel<T>({
   title,
   titleWidth,
   load,
   convert,
   reloadKey,
-}: {
+  headingLevel,
+}: CarouselPlacement & {
   title: string;
   titleWidth: string;
   load: () => Promise<{ results: T[] }>;
@@ -43,10 +52,16 @@ function DiscoverCarousel<T>({
   // eight, and the page is still worth reading without it.
   if (!data) return null;
 
-  return <MediaCarousel title={title} items={data.results.map(convert)} />;
+  return (
+    <MediaCarousel
+      title={title}
+      items={data.results.map(convert)}
+      headingLevel={headingLevel}
+    />
+  );
 }
 
-function MovieCarousel(props: {
+function MovieCarousel(props: CarouselPlacement & {
   title: string;
   titleWidth: string;
   load: () => Promise<{ results: Movie[] }>;
@@ -54,7 +69,7 @@ function MovieCarousel(props: {
   return <DiscoverCarousel {...props} convert={convertMovieToMediaItem} />;
 }
 
-function TVCarousel(props: {
+function TVCarousel(props: CarouselPlacement & {
   title: string;
   titleWidth: string;
   load: () => Promise<{ results: TVShow[] }>;
@@ -74,73 +89,80 @@ export function TrendingCarousel() {
   );
 }
 
-export function NowPlayingCarousel() {
+export function NowPlayingCarousel({ headingLevel }: CarouselPlacement = {}) {
   return (
     <MovieCarousel
       title="Now Playing in Theaters"
       titleWidth="w-64"
+      headingLevel={headingLevel}
       load={() => tmdbDiscoverApi.getNowPlayingMovies()}
     />
   );
 }
 
-export function PopularMoviesCarousel() {
+export function PopularMoviesCarousel({ headingLevel }: CarouselPlacement = {}) {
   return (
     <MovieCarousel
       title="Popular Movies"
       titleWidth="w-48"
+      headingLevel={headingLevel}
       load={() => tmdbDiscoverApi.getPopularMovies()}
     />
   );
 }
 
-export function UpcomingMoviesCarousel() {
+export function UpcomingMoviesCarousel({ headingLevel }: CarouselPlacement = {}) {
   return (
     <MovieCarousel
       title="Coming Soon to Theaters"
       titleWidth="w-60"
+      headingLevel={headingLevel}
       load={() => tmdbDiscoverApi.getUpcomingMovies()}
     />
   );
 }
 
-export function TopRatedMoviesCarousel() {
+export function TopRatedMoviesCarousel({ headingLevel }: CarouselPlacement = {}) {
   return (
     <MovieCarousel
       title="Top Rated Movies"
       titleWidth="w-56"
+      headingLevel={headingLevel}
       load={() => tmdbDiscoverApi.getTopRatedMovies()}
     />
   );
 }
 
-export function AiringTodayCarousel() {
+export function AiringTodayCarousel({ headingLevel }: CarouselPlacement = {}) {
   const day = useLocalDay();
   return (
     <TVCarousel
       title="Airing Today"
       titleWidth="w-36"
+      headingLevel={headingLevel}
       load={() => tmdbDiscoverApi.getAiringTodayTVShows()}
       reloadKey={day}
     />
   );
 }
 
-export function PopularTVShowsCarousel() {
+export function PopularTVShowsCarousel({ headingLevel }: CarouselPlacement = {}) {
   return (
     <TVCarousel
       title="Popular TV Shows"
       titleWidth="w-52"
+      headingLevel={headingLevel}
       load={() => tmdbDiscoverApi.getPopularTVShows()}
     />
   );
 }
 
-export function TopRatedTVShowsCarousel() {
+export function TopRatedTVShowsCarousel({ headingLevel }: CarouselPlacement = {}) {
   return (
     <TVCarousel
       title="Top Rated TV Shows"
       titleWidth="w-56"
+      headingLevel={headingLevel}
       load={() => tmdbDiscoverApi.getTopRatedTVShows()}
     />
   );

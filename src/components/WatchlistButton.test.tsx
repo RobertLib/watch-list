@@ -103,13 +103,15 @@ describe("WatchlistButton", () => {
       fireEvent.click(button);
       fireEvent.click(button);
     });
-    expect(button.hasAttribute("disabled")).toBe(true);
+    // Busy, but never natively disabled: that would blur a focused heart.
+    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
     expect(stored()).toEqual([]);
     expect(toast.showToast).not.toHaveBeenCalled();
 
     await act(async () => { release(); await holding; });
     await waitFor(() => expect(stored()).toHaveLength(1));
-    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("false");
     expect(write.mock.calls.filter(([key]) => key === WATCHLIST_STORAGE_KEY)).toHaveLength(1);
     expect(toast.showToast).toHaveBeenCalledTimes(1);
   });

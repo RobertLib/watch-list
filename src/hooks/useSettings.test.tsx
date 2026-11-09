@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
-import { useSettings, useSettingsKey } from "./useSettings";
+import { useSettings, useSettingsActions, useSettingsKey } from "./useSettings";
+import { createProfileLockManager } from "@/test/profile-locks";
+import { PROFILE_ROSTER_LOCK } from "@/lib/profile-roster-lock";
 import {
   DEFAULT_REGION,
   REGION_KEY,
@@ -145,5 +147,32 @@ describe("useSettingsKey", () => {
     rerender();
 
     expect(result.current).toBe(before);
+  });
+});
+
+describe("useSettingsActions", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // A whole-list setter computed its list before waiting for the lock, so a
+  // platform another tab or a restore saved meanwhile was silently replaced.
+  it("changes platforms only by updating the list read under the lock", async () => {
+    vi.stubGlobal("navigator", { locks: createProfileLockManager() });
+    const { result } = renderHook(() => useSettingsActions());
+    expect(Object.keys(result.current).sort()).toEqual([
+      "setRegion", "setWatchProviderFilter", "updateSelectedProviderIds",
+    ]);
+
+    let release!: () => void;
+    const held = navigator.locks.request(PROFILE_ROSTER_LOCK, { mode: "exclusive" }, () =>
+      new Promise<void>((resolve) => { release = resolve; }));
+    await Promise.resolve();
+    const update = result.current.updateSelectedProviderIds((current) => [...current, 8]);
+    window.localStorage.setItem(SELECTED_PROVIDERS_KEY, "337");
+
+    await act(async () => { release(); await held; expect(await update).toBe(true); });
+
+    expect(window.localStorage.getItem(SELECTED_PROVIDERS_KEY)).toBe("337,8");
   });
 });

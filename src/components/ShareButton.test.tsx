@@ -213,6 +213,70 @@ describe("ShareButton", () => {
     expect(screen.queryByText("Copy link")).toBeNull();
   });
 
+  it("returns focus to Share when the close button dismisses the panel", () => {
+    renderButton();
+    openPanel();
+    const close = screen.getByRole("button", { name: "Close" });
+    close.focus();
+
+    fireEvent.click(close);
+
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Share" }));
+  });
+
+  it("says whether its panel is open, and which element that is", () => {
+    renderButton();
+    const trigger = screen.getByRole("button", { name: "Share" });
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(trigger.hasAttribute("aria-controls")).toBe(false);
+
+    openPanel();
+
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    const panel = document.getElementById(trigger.getAttribute("aria-controls")!);
+    expect(panel?.textContent).toContain("Copy link");
+
+    openPanel();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  /** Escape did nothing; the panel could only be left open behind you. */
+  it("closes on Escape and returns focus from inside the panel to Share", () => {
+    renderButton();
+    openPanel();
+    const copy = screen.getByRole("button", { name: "Copy link" });
+    copy.focus();
+
+    fireEvent.keyDown(copy, { key: "Escape" });
+
+    expect(screen.queryByText("Copy link")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Share" }));
+    expect(screen.getByRole("button", { name: "Share" }).getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("leaves focus elsewhere on the page alone when Escape closes the panel", () => {
+    renderButton();
+    openPanel();
+    const other = document.createElement("button");
+    document.body.appendChild(other);
+    other.focus();
+
+    fireEvent.keyDown(other, { key: "Escape" });
+
+    expect(screen.queryByText("Copy link")).toBeNull();
+    expect(document.activeElement).toBe(other);
+    other.remove();
+  });
+
+  it("ignores the Escape that ends an IME composition", () => {
+    renderButton();
+    openPanel();
+
+    fireEvent.keyDown(document, { key: "Escape", isComposing: true });
+
+    expect(screen.getByText("Copy link")).toBeDefined();
+  });
+
   it("closes the panel on a click outside it", () => {
     renderButton();
     openPanel();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Star, X } from "lucide-react";
 import { useRatings } from "@/hooks/useRatings";
 import { useWatched } from "@/contexts/WatchedContext";
@@ -25,11 +25,16 @@ const VALUES = Array.from(
  * you have not seen, and asking someone to press two buttons for one statement is
  * how a feature goes unused.
  *
- * Buttons carrying `role="radio"` rather than real `<input type="radio">`, which
- * is also how the platform picker is built. Native radios are checked by the
- * browser the moment their label is clicked, and React then finds a group member
- * whose state it did not set – "Mixing React and non-React radio inputs with the
- * same name". Buttons have no browser-managed checked state to disagree with.
+ * Because a score is a write with side effects – the title is marked watched,
+ * leaves the watchlist and a toast says so – moving through the stars must not
+ * save anything. The stars used to be a radio group, whose contract is that the
+ * arrow keys *select*: tabbing into an unrated title and pressing → to look
+ * around rated it 2/10, marked it watched and dropped it from the watchlist, and
+ * ← on the first star wrapped to a 10. They are now a toolbar of ordinary
+ * buttons instead – the arrows (and Home/End) only move focus and preview the
+ * score, exactly as hovering does for a mouse, and Enter or Space commits it.
+ * The saved score is the button carrying `aria-current`, so a screen reader
+ * still hears which one is in effect without the arrows claiming to change it.
  */
 export function UserRating({
   item,
@@ -42,15 +47,26 @@ export function UserRating({
   const { refreshWatched, profileId: watchedProfileId } = useWatched();
   const { refreshWatchlist, profileId: watchlistProfileId } = useWatchlist();
   const { checkProfile } = useProfileGuard();
-  const [hovered, setHovered] = useState<number | null>(null);
+  const hintId = useId();
+  // The score the stars preview instead of the saved one: the star under the
+  // pointer, or the one keyboard focus is on.
+  const [previewed, setPreviewed] = useState<number | null>(null);
+  // The star holding focus, so the single Tab stop travels with the arrows and
+  // returns to the saved score once focus leaves the row.
+  const [focusedValue, setFocusedValue] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const saving = useRef(false);
   const ratingButtons = useRef<Array<HTMLButtonElement | null>>([]);
+  // Set while focus is moved here by code rather than by the visitor, so that
+  // focus alone does not light up a score nobody chose.
+  const quietFocus = useRef(false);
 
   const current = ratingFor(item.id, item.media_type);
-  // While the pointer is over the row, the stars preview that score instead of
-  // the saved one – otherwise there is no way to tell what a click will do.
-  const shown = hovered ?? current ?? 0;
+  // While the pointer or keyboard focus is on a star, the row previews that
+  // score instead of the saved one – otherwise there is no way to tell what a
+  // click, Enter or Space will do.
+  const shown = previewed ?? current ?? 0;
+  const tabStop = focusedValue ?? current ?? MIN_RATING;
 
   async function handleRate(value: number) {
     if (saving.current || !checkProfile(profileId)) return;
@@ -95,8 +111,11 @@ export function UserRating({
     }
   }
 
-  async function handleClear() {
+  async function handleClear(event: React.MouseEvent<HTMLButtonElement>) {
     if (saving.current || !checkProfile(profileId)) return;
+    // Clearing removes this button, which would drop keyboard focus on the
+    // page body. Hand it to the stars instead, where the next score is chosen.
+    const hadFocus = document.activeElement === event.currentTarget;
     saving.current = true;
     setIsSaving(true);
     try {
@@ -105,22 +124,29 @@ export function UserRating({
         return;
       }
       toast.showToast("Rating removed", "info");
+      if (hadFocus) {
+        quietFocus.current = true;
+        ratingButtons.current[0]?.focus();
+        quietFocus.current = false;
+      }
     } finally {
       saving.current = false;
       setIsSaving(false);
     }
   }
 
+  // The toolbar pattern: one Tab stop, arrows move between the stars. Moving
+  // only previews; nothing is saved until a star is clicked or pressed with
+  // Enter or Space, which a button does natively. A scale does not wrap – ←
+  // on the first star stays there rather than jumping to a ten.
   function handleRatingKeyDown(event: React.KeyboardEvent, value: number) {
     let next: number;
     switch (event.key) {
       case "ArrowRight":
-      case "ArrowDown":
-        next = value === MAX_RATING ? MIN_RATING : value + 1;
+        next = Math.min(value + 1, MAX_RATING);
         break;
       case "ArrowLeft":
-      case "ArrowUp":
-        next = value === MIN_RATING ? MAX_RATING : value - 1;
+        next = Math.max(value - 1, MIN_RATING);
         break;
       case "Home":
         next = MIN_RATING;
@@ -133,9 +159,7 @@ export function UserRating({
     }
 
     event.preventDefault();
-    if (saving.current) return;
     ratingButtons.current[next - MIN_RATING]?.focus();
-    handleRate(next);
   }
 
   return (
@@ -148,9 +172,12 @@ export function UserRating({
               {current}/10
             </span>
             <button
+              type="button"
               onClick={handleClear}
-              disabled={isSaving}
-              className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+              // Not native `disabled`: that blurs a focused button in browsers.
+              // `handleClear` itself refuses to start a second save.
+              aria-disabled={isSaving}
+              className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-white aria-disabled:cursor-wait aria-disabled:opacity-60 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
             >
               <X className="w-3 h-3" aria-hidden="true" />
               Clear
@@ -160,11 +187,11 @@ export function UserRating({
       </div>
 
       <div
-        role="radiogroup"
+        role="toolbar"
         aria-busy={isSaving}
         aria-label={`Rate ${item.title} out of ten`}
         className="flex items-center gap-0.5"
-        onMouseLeave={() => setHovered(null)}
+        onMouseLeave={() => setPreviewed(null)}
       >
         {VALUES.map((value) => {
           const isFilled = value <= shown;
@@ -174,17 +201,26 @@ export function UserRating({
               key={value}
               ref={(button) => { ratingButtons.current[value - MIN_RATING] = button; }}
               type="button"
-              role="radio"
-              // Native disabled blurs the focused radio in browsers. Keep it
+              // Native disabled blurs the focused star in browsers. Keep it
               // focusable while the action guards reject another pending save.
               aria-disabled={isSaving}
-              aria-checked={current === value}
-              aria-label={`${value} out of 10`}
-              title={`${value} out of 10`}
-              tabIndex={value === (current ?? MIN_RATING) ? 0 : -1}
-              onMouseEnter={() => setHovered(value)}
-              onFocus={() => setHovered(value)}
-              onBlur={() => setHovered(null)}
+              // The saved score, announced as "current" – not `aria-pressed`,
+              // which would promise that pressing it again takes the score away.
+              aria-current={current === value ? "true" : undefined}
+              // Unrated, every star says what saving a score also does.
+              aria-describedby={current === null ? hintId : undefined}
+              aria-label={`Rate ${value} out of 10`}
+              title={`Rate ${value} out of 10`}
+              tabIndex={value === tabStop ? 0 : -1}
+              onMouseEnter={() => setPreviewed(value)}
+              onFocus={() => {
+                setFocusedValue(value);
+                if (!quietFocus.current) setPreviewed(value);
+              }}
+              onBlur={() => {
+                setFocusedValue(null);
+                setPreviewed(null);
+              }}
               onClick={() => handleRate(value)}
               onKeyDown={(event) => handleRatingKeyDown(event, value)}
               className="cursor-pointer aria-disabled:cursor-wait aria-disabled:opacity-60 p-0.5 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
@@ -204,7 +240,7 @@ export function UserRating({
       </div>
 
       {current === null && (
-        <p className="text-xs text-gray-500">
+        <p id={hintId} className="text-xs text-gray-500">
           Rating a title marks it watched and sharpens your recommendations.
         </p>
       )}

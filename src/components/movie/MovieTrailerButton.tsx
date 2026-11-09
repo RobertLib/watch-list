@@ -5,19 +5,14 @@ import { useVideoOverlay } from "@/hooks/useVideoOverlay";
 import { Video } from "@/types/tmdb";
 
 interface MovieTrailerButtonProps {
-  movieId: number;
   trailer?: Video;
 }
 
-export function MovieTrailerButton({
-  movieId,
-  trailer,
-}: MovieTrailerButtonProps) {
-  const { isOpen, video, isLoading, openVideo, closeVideo } = useVideoOverlay();
-
-  const handlePlayClick = async () => {
-    await openVideo(movieId, "movie");
-  };
+// Handed the trailer rather than the film's id: the page already has `videos`
+// appended to its details, so the overlay opens on the known key instead of
+// asking TMDB for the same list again – see `showVideo`.
+export function MovieTrailerButton({ trailer }: MovieTrailerButtonProps) {
+  const { isOpen, video, isLoading, showVideo, closeVideo } = useVideoOverlay();
 
   if (!trailer) return null;
 
@@ -25,11 +20,10 @@ export function MovieTrailerButton({
     <>
       <div className="mt-6">
         <button
-          onClick={handlePlayClick}
-          disabled={isLoading}
-          className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-black"
+          type="button"
+          onClick={() => showVideo(trailer)}
+          className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-black"
           aria-label="Play movie trailer"
-          aria-busy={isLoading}
         >
           <svg
             className="w-5 h-5"
@@ -39,7 +33,7 @@ export function MovieTrailerButton({
           >
             <path d="M8 5v14l11-7z" />
           </svg>
-          {isLoading ? "Loading..." : "Play Trailer"}
+          Play Trailer
         </button>
       </div>
 

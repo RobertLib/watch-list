@@ -4,7 +4,7 @@
  * The app is a static export, which can only serve paths that existed at build
  * time – and there is no build-time list of every film on TMDB. So anything the
  * catalogue names travels in the query string instead of the path: `/movie` is a
- * real page, `?id=550-fight-club` is what it renders.
+ * real page, `?id=fight-club-550` is what it renders.
  *
  * Centralised because the choice is arbitrary. Changing how a title is addressed
  * should be one edit here rather than forty template literals, and building the

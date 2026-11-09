@@ -56,8 +56,10 @@ export function HomeWatchlistPanel() {
         {/* Poster strip */}
         <div className="flex -space-x-3" aria-hidden="true">
           {recentItems.map((item) => {
+            // 40px wide, so w92 covers a 2x screen. The w500 asked for before
+            // was a full poster – nearly thirty times the pixels – per thumb.
             const posterUrl = item.posterPath
-              ? getImageUrl(item.posterPath, "w500")
+              ? getImageUrl(item.posterPath, "w92")
               : null;
             return (
               <div

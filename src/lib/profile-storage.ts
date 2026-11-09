@@ -12,8 +12,86 @@ const ROSTER_KEY = "profiles";
 const DEFAULT_ID = "default";
 const STORE_PREFIX = "profile-store:";
 export const DELETED_PROFILE_PREFIX = "profile-deleted:";
-// The roster holds at most five profiles; old/deleted owners must not accumulate.
-const MAX_SNAPSHOT_OWNERS = 5;
+
+export const MAX_PROFILES = 5;
+export const MAX_PROFILE_NAME_LENGTH = 24;
+const MAX_PROFILE_ID_LENGTH = 64;
+
+export interface Profile {
+  id: string;
+  name: string;
+}
+
+/** The initial profile for visitors who have never created another. */
+export const DEFAULT_PROFILE: Profile = {
+  id: DEFAULT_ID,
+  name: "Me",
+};
+
+/**
+ * A name as the switcher can show it. Control and format characters become
+ * spaces first, so a name made only of zero-width characters is blank – the
+ * same as one made of spaces – rather than an invisible row.
+ */
+export function sanitizeProfileName(value: unknown): string {
+  if (typeof value !== "string") return "";
+
+  return value
+    .replace(/[\p{C}]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, MAX_PROFILE_NAME_LENGTH);
+}
+
+/** Ids are cut, not refused, the same way everywhere a roster entry is read. */
+export function sanitizeProfileId(value: unknown): string {
+  return typeof value === "string" ? value.slice(0, MAX_PROFILE_ID_LENGTH) : "";
+}
+
+/**
+ * The roster exactly as the app uses it: at most `MAX_PROFILES` entries with an
+ * id and a visible name, the default profile always among them.
+ *
+ * This is the one normalizer behind both questions a roster answers – whom the
+ * switcher and a backup list, and whose stores may be read and written. They
+ * used to disagree: availability accepted any entry with a non-blank trimmed
+ * name, so a sixth entry, an over-long id or a zero-width name resolved as the
+ * active owner while missing from the list, and every export then failed on an
+ * active profile "absent from the stored roster".
+ */
+export function sanitizeProfiles(input: unknown): Profile[] {
+  if (!Array.isArray(input)) return [DEFAULT_PROFILE];
+
+  const profiles: Profile[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of input) {
+    if (!entry || typeof entry !== "object") continue;
+
+    const record = entry as Record<string, unknown>;
+    const id = sanitizeProfileId(record.id);
+    const name = sanitizeProfileName(record.name);
+
+    if (!id || !name || seen.has(id)) continue;
+    seen.add(id);
+
+    profiles.push({ id, name });
+    if (profiles.length >= MAX_PROFILES) break;
+  }
+
+  // There is always somebody. A stored list that repaired down to nothing means
+  // the data in the live keys belongs to the default profile.
+  if (!profiles.some((profile) => profile.id === DEFAULT_ID)) {
+    profiles.unshift(DEFAULT_PROFILE);
+    // Room is made rather than taken: the loop above stops at the cap, so
+    // putting the default profile back on the front of a full list would return
+    // one more than `MAX_PROFILES` and let the UI create past its own limit.
+    // The default is the entry that cannot be dropped – it owns the live keys.
+    if (profiles.length > MAX_PROFILES) profiles.length = MAX_PROFILES;
+  }
+
+  return profiles;
+}
 
 let boundOwner: string | null = null;
 const pendingNotifications = new Set<() => void>();
@@ -37,6 +115,11 @@ export function isProfileDeleted(profileId: string): boolean {
   return profileId !== DEFAULT_ID && window.localStorage.getItem(deletedProfileKey(profileId)) !== null;
 }
 
+/**
+ * Whether a profile's stores may be read and written: exactly the profiles
+ * `getProfiles()` lists, through the same `sanitizeProfiles`, so an owner is
+ * either visible and available or neither.
+ */
 export function isProfileStorageOwnerAvailable(profileId: string): boolean {
   if (isProfileDeleted(profileId)) return false;
   if (profileId === DEFAULT_ID) return true;
@@ -45,8 +128,7 @@ export function isProfileStorageOwnerAvailable(profileId: string): boolean {
   if (roster === null) return true;
   const parsed: unknown = JSON.parse(roster);
   if (!Array.isArray(parsed)) throw new Error("Invalid stored profile roster");
-  return parsed.some((entry) => entry && typeof entry === "object" &&
-    entry.id === profileId && typeof entry.name === "string" && entry.name.trim());
+  return sanitizeProfiles(parsed).some((profile) => profile.id === profileId);
 }
 
 /** Resolve an obsolete pointer without making reads depend on a repair write. */
@@ -99,7 +181,7 @@ export function getLegacyProfileStorageOwner(): string {
 }
 
 function validateOwner(owner: string): string {
-  if (!owner || owner.length > 64) throw new Error("Invalid stored profile owner");
+  if (!owner || owner.length > MAX_PROFILE_ID_LENGTH) throw new Error("Invalid stored profile owner");
   return owner;
 }
 
@@ -165,24 +247,41 @@ export function createProfileStoreSnapshot<T>(
     const value = cached?.raw === raw ? cached.value : raw ? parse(raw) : empty;
     snapshots.delete(owner);
     snapshots.set(owner, { raw, value });
-    if (snapshots.size > MAX_SNAPSHOT_OWNERS) {
+    // Old and deleted owners must not accumulate beyond the roster's size.
+    if (snapshots.size > MAX_PROFILES) {
       snapshots.delete(snapshots.keys().next().value!);
     }
     return value;
   };
 }
 
+/**
+ * Save one store for one owner.
+ *
+ * `clear` marks a write whose value owes nothing to the current one: the
+ * visitor asked for the store to be emptied. A null value is always a clear; a
+ * store whose empty form is not null (the watchlist's `[]`) says so explicitly.
+ */
 export function writeProfileStore(
   key: string,
   value: string | null,
   profileId = getProfileStorageOwner(),
+  options: { clear?: boolean } = {},
 ): void {
   // Rendering may show an empty fallback for unreadable data. A normal edit
   // must not save that fallback over the only recoverable copy. Read the
   // effective store strictly before any initialization or migration write;
   // an authoritative current value still hides an unused broken parked copy.
-  const previous = readProfileStore(key, profileId, true);
-  if (previous !== null) JSON.parse(previous);
+  //
+  // A clear derives nothing from the old value, so there is nothing to guard.
+  // Requiring a readable store first left a corrupt one – rendered as empty –
+  // impossible to clear at all, reported only as refused storage. The explicit
+  // request replaces the current value; an unreadable parked copy stays behind
+  // the explicit empty value below, as it does for any other edit.
+  if (!(options.clear ?? value === null)) {
+    const previous = readProfileStore(key, profileId, true);
+    if (previous !== null) JSON.parse(previous);
+  }
   initializeProfileStorage();
   if (!isProfileStorageOwnerAvailable(profileId)) {
     throw new Error("This profile was removed; reload before saving");
@@ -229,6 +328,57 @@ export function writeProfileStore(
   if (isProfileDeleted(profileId)) {
     storage.removeItem(address);
     throw new Error("This profile was removed while saving");
+  }
+}
+
+/**
+ * One store as a backup needs it: the value when it can be read, and otherwise
+ * the stored text exactly as found.
+ *
+ * Strict reads stop an edit at the first unreadable store, which is right for
+ * an edit and wrong for the way out: a backup that refused to build over one
+ * hand-edited field left the visitor no copy of anything else. `raw` is the
+ * text of the effective value – the current address, else its parked field –
+ * or the whole parked slot when the slot itself cannot be parsed; null when the
+ * browser refused the read and there is no text to keep.
+ */
+export type ProfileStoreInspection =
+  | { readable: true; value: string | null }
+  | { readable: false; raw: string | null };
+
+export function inspectProfileStore(key: string, profileId: string): ProfileStoreInspection {
+  try {
+    const value = readProfileStore(key, profileId, true);
+    if (value !== null) JSON.parse(value);
+    return { readable: true, value };
+  } catch (error) {
+    console.error(`Error reading the profile's ${key}:`, error);
+    return { readable: false, raw: unreadableStoreText(key, profileId) };
+  }
+}
+
+function unreadableStoreText(key: string, profileId: string): string | null {
+  try {
+    const storage = window.localStorage;
+    const address = profileStoreKey(key, profileId);
+    const current = storage.getItem(address);
+    if (current !== null || address === key) return current;
+
+    const parked = storage.getItem(`profile-data:${profileId}`);
+    if (parked === null) return null;
+    try {
+      const slot: unknown = JSON.parse(parked);
+      if (slot && typeof slot === "object" && !Array.isArray(slot) &&
+          Object.prototype.hasOwnProperty.call(slot, key)) {
+        const field = (slot as Record<string, unknown>)[key];
+        return typeof field === "string" ? field : JSON.stringify(field);
+      }
+    } catch {
+      // The slot itself is what cannot be parsed; keep all of it.
+    }
+    return parked;
+  } catch {
+    return null;
   }
 }
 

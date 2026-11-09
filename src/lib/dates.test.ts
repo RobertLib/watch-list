@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   formatTmdbDate,
+  isCalendarDate,
   releaseYear,
   releaseYearSuffix,
   shiftDate,
@@ -128,12 +129,79 @@ describe("formatTmdbDate", () => {
 
   it("is null for a day that does not exist", () => {
     expect(formatTmdbDate("2020-13-45")).toBeNull();
+    expect(formatTmdbDate("2020-00-10")).toBeNull();
+    expect(formatTmdbDate("2020-01-00")).toBeNull();
+  });
+
+  // The month is in range and the day is under 32, so the pattern lets these
+  // through – and `Date` rolls the overflow into the next month instead of
+  // refusing it, which showed "2021-02-29" as "March 1, 2021".
+  it("is null for a day the month does not have", () => {
+    inEveryZone((zone) => {
+      expect(formatTmdbDate("2021-02-29"), zone).toBeNull();
+      expect(formatTmdbDate("2020-02-30"), zone).toBeNull();
+      expect(formatTmdbDate("2026-04-31"), zone).toBeNull();
+      expect(formatTmdbDate("1900-02-29"), zone).toBeNull();
+    });
+  });
+
+  it("shows the 29th of February in a leap year", () => {
+    inEveryZone((zone) => {
+      expect(formatTmdbDate("2020-02-29"), zone).toBe("February 29, 2020");
+      expect(formatTmdbDate("2000-02-29"), zone).toBe("February 29, 2000");
+    });
   });
 
   // A timestamp is a real instant, and pinning one to UTC would be the same
   // mistake in the other direction – so it is refused rather than mangled.
   it("refuses a full timestamp", () => {
     expect(formatTmdbDate("2021-04-19T18:09:17.411Z")).toBeNull();
+  });
+});
+
+describe("isCalendarDate", () => {
+  it("accepts a real day", () => {
+    expect(isCalendarDate("2011-04-17")).toBe(true);
+    expect(isCalendarDate("2026-12-31")).toBe(true);
+    expect(isCalendarDate("2024-02-29")).toBe(true);
+    expect(isCalendarDate("2000-02-29")).toBe(true);
+  });
+
+  it("follows the Gregorian leap rule, centuries included", () => {
+    expect(isCalendarDate("2023-02-29")).toBe(false);
+    expect(isCalendarDate("1900-02-29")).toBe(false);
+    expect(isCalendarDate("2100-02-29")).toBe(false);
+  });
+
+  // `Date.UTC` maps years 0–99 onto 1900–1999, which is why the days are counted
+  // by hand rather than by building a Date and reading it back.
+  it("counts years below 100 as themselves", () => {
+    expect(isCalendarDate("0004-02-29")).toBe(true);
+    expect(isCalendarDate("0003-02-29")).toBe(false);
+  });
+
+  it("refuses days the month does not have", () => {
+    for (const date of ["2026-04-31", "2026-06-31", "2026-09-31", "2026-11-31", "2026-01-32"]) {
+      expect(isCalendarDate(date), date).toBe(false);
+    }
+  });
+
+  it("refuses anything but a bare zero-padded date", () => {
+    for (const date of ["", "2026-1-05", "2026-01-5", "2026-13-01", "2026-00-01", "2026-01-00", "2026-01-05T00:00:00Z", " 2026-01-05"]) {
+      expect(isCalendarDate(date), date).toBe(false);
+    }
+  });
+
+  it("agrees with Date for every day of a leap year and a common one", () => {
+    for (const year of [2023, 2024]) {
+      for (let month = 1; month <= 12; month += 1) {
+        for (let day = 1; day <= 31; day += 1) {
+          const date = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+          const real = new Date(`${date}T00:00:00.000Z`).toISOString().startsWith(date);
+          expect(isCalendarDate(date), date).toBe(real);
+        }
+      }
+    }
   });
 });
 

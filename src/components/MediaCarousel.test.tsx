@@ -59,6 +59,18 @@ function setRowSize(clientWidth: number, scrollWidth: number, scrollLeft = 0) {
   return row;
 }
 
+/**
+ * The arrows stay mounted whether or not there is anywhere to scroll – so the
+ * question is whether one is usable, not whether it exists.
+ */
+function arrow(name: "Scroll left" | "Scroll right") {
+  return screen.getByRole("button", { name });
+}
+
+function isEnabled(name: "Scroll left" | "Scroll right") {
+  return arrow(name).getAttribute("aria-disabled") !== "true";
+}
+
 beforeEach(() => {
   sessionStorage.clear();
   frames.clear();
@@ -87,38 +99,38 @@ describe("MediaCarousel overflow controls", () => {
     setRowSize(500, scrollWidth);
     flushFrames();
 
-    expect(Boolean(screen.queryByRole("button", { name: "Scroll right" }))).toBe(hasArrow);
-    expect(screen.queryByRole("button", { name: "Scroll left" })).toBeNull();
+    expect(isEnabled("Scroll right")).toBe(hasArrow);
+    expect(isEnabled("Scroll left")).toBe(false);
   });
 
   it("reveals newly available content after a row shrinks and removes arrows when it fits", () => {
     render(<MediaCarousel title="Popular" items={items} />);
     setRowSize(500, 400);
     flushFrames();
-    expect(screen.queryByRole("button", { name: "Scroll right" })).toBeNull();
+    expect(isEnabled("Scroll right")).toBe(false);
 
     setRowSize(200, 400);
     resizeRow();
-    expect(screen.getByRole("button", { name: "Scroll right" })).toBeTruthy();
+    expect(isEnabled("Scroll right")).toBe(true);
 
     setRowSize(600, 400);
     resizeRow();
-    expect(screen.queryByRole("button", { name: "Scroll right" })).toBeNull();
+    expect(isEnabled("Scroll right")).toBe(false);
   });
 
   it("remeasures appended titles without resetting the current scroll position", () => {
     const { rerender } = render(<MediaCarousel title="Popular" items={items.slice(0, 1)} />);
     setRowSize(200, 400, 200);
     flushFrames();
-    expect(screen.queryByRole("button", { name: "Scroll right" })).toBeNull();
+    expect(isEnabled("Scroll right")).toBe(false);
 
     rerender(<MediaCarousel title="Popular" items={items} />);
     const row = setRowSize(200, 800, 200);
     flushFrames();
 
     expect(row.scrollLeft).toBe(200);
-    expect(screen.getByRole("button", { name: "Scroll right" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Scroll left" })).toBeTruthy();
+    expect(isEnabled("Scroll right")).toBe(true);
+    expect(isEnabled("Scroll left")).toBe(true);
   });
 
   it("restores saved progress when a loading or empty row receives its titles", () => {
@@ -134,7 +146,7 @@ describe("MediaCarousel overflow controls", () => {
     const row = setRowSize(200, 800);
     flushFrames();
     expect(row.scrollLeft).toBe(150);
-    expect(screen.getByRole("button", { name: "Scroll left" })).toBeTruthy();
+    expect(isEnabled("Scroll left")).toBe(true);
     expect(observers.size).toBe(1);
 
     rerender(<MediaCarousel title="Popular" items={items} loading />);
@@ -142,7 +154,7 @@ describe("MediaCarousel overflow controls", () => {
     rerender(<MediaCarousel title="Popular" items={items} />);
     setRowSize(900, 800);
     flushFrames();
-    expect(screen.queryByRole("button", { name: "Scroll right" })).toBeNull();
+    expect(isEnabled("Scroll right")).toBe(false);
     expect(observers.size).toBe(1);
   });
 
@@ -155,7 +167,7 @@ describe("MediaCarousel overflow controls", () => {
     setRowSize(200, 400);
     fireEvent(window, new Event("resize"));
     flushFrames();
-    expect(screen.getByRole("button", { name: "Scroll right" })).toBeTruthy();
+    expect(isEnabled("Scroll right")).toBe(true);
 
     fireEvent(window, new Event("resize"));
     expect(frames.size).toBe(1);
@@ -174,5 +186,75 @@ describe("MediaCarousel overflow controls", () => {
     unmount();
     expect(frames.size).toBe(0);
     expect(observers.size).toBe(0);
+  });
+});
+
+describe("MediaCarousel keyboard focus", () => {
+  // The arrow used to be unmounted the moment the row reached its end, taking
+  // keyboard focus with it to <body>.
+  it("keeps focus on Scroll right when the row reaches its end", () => {
+    render(<MediaCarousel title="Popular" items={items} />);
+    const row = setRowSize(200, 800);
+    row.scrollBy = vi.fn();
+    flushFrames();
+
+    const right = arrow("Scroll right");
+    right.focus();
+    fireEvent.click(right);
+    expect(row.scrollBy).toHaveBeenCalledOnce();
+
+    setRowSize(200, 800, 600);
+    act(() => {
+      fireEvent.scroll(row);
+    });
+
+    expect(arrow("Scroll right")).toBe(right);
+    expect(document.activeElement).toBe(right);
+    expect(right.getAttribute("aria-disabled")).toBe("true");
+    // Out of the tab order from here on, but not blurred.
+    expect(right.tabIndex).toBe(-1);
+    expect(right.hasAttribute("disabled")).toBe(false);
+    expect(isEnabled("Scroll left")).toBe(true);
+
+    // An arrow with nowhere to go does nothing when pressed again.
+    fireEvent.click(right);
+    expect(row.scrollBy).toHaveBeenCalledOnce();
+  });
+
+  it("puts an arrow back in the tab order once it has somewhere to go", () => {
+    render(<MediaCarousel title="Popular" items={items} />);
+    setRowSize(200, 800);
+    flushFrames();
+
+    expect(arrow("Scroll left").tabIndex).toBe(-1);
+    expect(arrow("Scroll right").tabIndex).toBe(0);
+
+    const row = setRowSize(200, 800, 300);
+    act(() => {
+      fireEvent.scroll(row);
+    });
+
+    expect(arrow("Scroll left").tabIndex).toBe(0);
+    expect(arrow("Scroll right").tabIndex).toBe(0);
+  });
+});
+
+describe("MediaCarousel heading", () => {
+  it("is a section of the page by default", () => {
+    render(<MediaCarousel title="Popular" items={items} />);
+
+    expect(screen.getByRole("heading", { level: 2, name: "Popular" })).toBeTruthy();
+  });
+
+  // On the home page the rows sit under "Movies" and "TV Shows" h2s.
+  it("can be a subsection, loading or loaded", () => {
+    const { rerender } = render(
+      <MediaCarousel title="Popular" items={[]} loading headingLevel={3} />,
+    );
+    expect(screen.getByRole("heading", { level: 3, name: "Popular" })).toBeTruthy();
+
+    rerender(<MediaCarousel title="Popular" items={items} headingLevel={3} />);
+    expect(screen.getByRole("heading", { level: 3, name: "Popular" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { level: 2 })).toBeNull();
   });
 });

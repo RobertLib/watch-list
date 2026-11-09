@@ -85,12 +85,23 @@ describe("ProfileSwitcher pending mutations", () => {
     return { release, held };
   }
 
-  it("waits for creation, disables controls and ignores duplicate submissions", async () => {
+  /**
+   * A pending save marks the controls unavailable without native `disabled`,
+   * which blurred the control just used and dropped keyboard focus.
+   */
+  function expectControlsPending(pending: boolean) {
+    const controls = screen.getByRole("group", { name: "Profile controls" }) as HTMLFieldSetElement;
+    expect(controls.disabled).toBe(false);
+    expect(controls.getAttribute("aria-disabled")).toBe(pending ? "true" : null);
+  }
+
+  it("waits for creation, marks controls unavailable and ignores duplicate submissions", async () => {
     const lock = await holdRosterLock();
     const requests = vi.spyOn(navigator.locks, "request");
     renderSwitcher();
-    const input = screen.getByLabelText("New profile name");
+    const input = screen.getByLabelText("New profile name") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "Tom" } });
+    input.focus();
 
     act(() => {
       fireEvent.submit(input.closest("form")!);
@@ -98,7 +109,10 @@ describe("ProfileSwitcher pending mutations", () => {
     });
 
     expect(requests).toHaveBeenCalledTimes(1);
-    expect((screen.getByRole("group", { name: "Profile controls" }) as HTMLFieldSetElement).disabled).toBe(true);
+    expectControlsPending(true);
+    expect(document.activeElement).toBe(input);
+    // Nothing typed while the save is pending can be lost when it clears.
+    expect(input.readOnly).toBe(true);
     expect(screen.queryByRole("button", { name: "Tom" })).toBeNull();
     expect(toast.showToast).not.toHaveBeenCalled();
 
@@ -108,8 +122,10 @@ describe("ProfileSwitcher pending mutations", () => {
     });
 
     expect(screen.getByRole("button", { name: "Tom" })).toBeDefined();
-    expect((input as HTMLInputElement).value).toBe("");
-    expect((screen.getByRole("group", { name: "Profile controls" }) as HTMLFieldSetElement).disabled).toBe(false);
+    expect(input.value).toBe("");
+    expect(input.readOnly).toBe(false);
+    expect(document.activeElement).toBe(input);
+    expectControlsPending(false);
     expect(toast.showToast).toHaveBeenCalledExactlyOnceWith('Added "Tom" – switch to start their list', "success");
   });
 
@@ -122,7 +138,8 @@ describe("ProfileSwitcher pending mutations", () => {
     fireEvent.change(input, { target: { value: "Tom" } });
     fireEvent.submit(input.closest("form")!);
 
-    expect((screen.getByRole("group", { name: "Profile controls" }) as HTMLFieldSetElement).disabled).toBe(true);
+    expectControlsPending(true);
+    expect(document.activeElement).toBe(input);
     expect(screen.queryByRole("button", { name: "Tom" })).toBeNull();
     await act(async () => { lock.release(); await lock.held; });
     expect(screen.getByRole("button", { name: "Tom" })).toBeDefined();
@@ -143,12 +160,13 @@ describe("ProfileSwitcher pending mutations", () => {
     expect(toast.showToast).toHaveBeenCalledExactlyOnceWith('Deleted "Second"', "success");
   });
 
-  it("waits for switching, disables controls and ignores duplicate clicks", async () => {
+  it("waits for switching, marks controls unavailable and ignores duplicate clicks", async () => {
     seedProfiles();
     const lock = await holdRosterLock();
     const requests = vi.spyOn(navigator.locks, "request");
     renderSwitcher();
     const target = screen.getByRole("button", { name: "Second" });
+    target.focus();
 
     act(() => {
       fireEvent.click(target);
@@ -157,14 +175,35 @@ describe("ProfileSwitcher pending mutations", () => {
 
     expect(requests).toHaveBeenCalledTimes(1);
     expect(localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY)).toBe("default");
-    expect((screen.getByRole("group", { name: "Profile controls" }) as HTMLFieldSetElement).disabled).toBe(true);
+    expectControlsPending(true);
+    expect(document.activeElement).toBe(target);
     expect(toast.showToast).not.toHaveBeenCalled();
 
     await act(async () => { lock.release(); await lock.held; });
 
     expect(localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY)).toBe("p2");
-    expect((screen.getByRole("group", { name: "Profile controls" }) as HTMLFieldSetElement).disabled).toBe(false);
+    expectControlsPending(false);
     expect(requests).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats a switch another tab already made as done and reloads into it", async () => {
+    seedProfiles();
+    renderSwitcher();
+    // Another tab switched first; this tab's storage event has not arrived.
+    localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, "p2");
+    const reload = vi.fn();
+    const realLocation = window.location;
+    Object.defineProperty(window, "location", { configurable: true, value: { reload } });
+
+    try {
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Second" })); });
+    } finally {
+      Object.defineProperty(window, "location", { configurable: true, value: realLocation });
+    }
+
+    expect(toast.showToast).not.toHaveBeenCalled();
+    expect(reload).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", { name: /^Second.*active$/ })).toBeDefined();
   });
 
   it("retains the name and enables retry when acquiring the lock fails", async () => {

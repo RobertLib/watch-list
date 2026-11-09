@@ -122,21 +122,50 @@ export function TonightPicker() {
     };
   }, [refs, isWatchlistLoading, attempt, settingsKey, day]);
 
+  // A saved title's facts do not depend on the rest of the list. While the
+  // shortlist refreshes after an edit, the titles still saved keep what was
+  // already resolved for them and a removed one leaves at once – rather than
+  // the page blanking to a spinner because one title came off the list.
+  const savedKeys = useMemo(
+    () => new Set(refs.map((ref) => mediaItemKey(ref.id, ref.mediaType))),
+    [refs],
+  );
+  const lookedUpKeys = useMemo(
+    () => new Set((loadedRefs ?? []).map((ref) => mediaItemKey(ref.id, ref.mediaType))),
+    [loadedRefs],
+  );
+  const isCurrentLookup = loadedRefs === refs;
+  const savedCandidates = useMemo(
+    () => isCurrentLookup ? candidates : candidates.filter((candidate) =>
+      savedKeys.has(mediaItemKey(candidate.id, candidate.mediaType))),
+    [isCurrentLookup, candidates, savedKeys],
+  );
+  const savedFailedRefs = useMemo(
+    () => isCurrentLookup ? failedRefs : failedRefs.filter((ref) =>
+      savedKeys.has(mediaItemKey(ref.id, ref.mediaType))),
+    [isCurrentLookup, failedRefs, savedKeys],
+  );
+  // Newly saved titles have nothing resolved yet; until they do, an empty
+  // pool proves nothing.
+  const awaitingCount = isCurrentLookup
+    ? 0
+    : refs.filter((ref) => !lookedUpKeys.has(mediaItemKey(ref.id, ref.mediaType))).length;
+
   const matching = useMemo(
-    () => filterCandidates(candidates, filters),
-    [candidates, filters],
+    () => filterCandidates(savedCandidates, filters),
+    [savedCandidates, filters],
   );
 
   // Unknown availability is a failed lookup, not evidence that a title is
   // unavailable. Keep verified picks usable, but offer a retry for titles that
   // otherwise fit rather than blaming the visitor's filters.
   const uncheckedCount = filters.readyOnly
-    ? filterCandidates(candidates, { ...filters, readyOnly: false })
+    ? filterCandidates(savedCandidates, { ...filters, readyOnly: false })
         .filter((candidate) => candidate.availability === "unknown").length
     : 0;
   // An unresolved title's media type is known, but its runtime and genres are
   // not. It can still fit every other filter, so it cannot prove an empty pool.
-  const unresolvedMatchingCount = failedRefs.filter((ref) =>
+  const unresolvedMatchingCount = savedFailedRefs.filter((ref) =>
     filters.type === "all" || ref.mediaType === filters.type,
   ).length;
 
@@ -146,40 +175,75 @@ export function TonightPicker() {
   };
 
   const genres = useMemo(() => {
-    const available = availableGenres(candidates);
+    const available = availableGenres(savedCandidates);
     // Keep the selected genre visible when its titles fail during a retry.
     if (filters.genre && !available.includes(filters.genre)) available.push(filters.genre);
     return available.sort((a, b) => a.localeCompare(b));
-  }, [candidates, filters.genre]);
+  }, [savedCandidates, filters.genre]);
 
-  // Re-picked whenever the pool or the spin counter changes, and only then. The
-  // pick is random, so drawing it on every render would give a different answer
-  // each time, including on renders nobody asked for; pinning it to the pool and
-  // spin it was drawn for holds it still for exactly as long as those do.
+  // The pick the visitor marked watched from its own card. Marking it takes it
+  // off the watchlist, which used to blank the page and draw a different title
+  // at random; it stays on screen instead, showing its new state, until the
+  // visitor asks for something else. Held for the settings and day it was
+  // looked up under, which are what its availability and eligibility describe.
+  const [held, setHeld] = useState<{ key: string; settingsKey: string; day: string } | null>(null);
+  const heldKey = held && held.settingsKey === settingsKey && held.day === day
+    ? held.key
+    : null;
+
+  // Drawn when the visitor spins or changes a filter, and only then. The pick is
+  // random, so drawing it on every render would give a different answer each
+  // time, including on renders nobody asked for. A refreshed pool – a list
+  // edit, a retry – keeps the title on screen while it still fits, updated to
+  // its fresh details, and draws only when it no longer does.
   const [pickedFor, setPickedFor] = useState<{
     matching: typeof matching;
+    filters: TonightFilters;
     spin: number;
   } | null>(null);
 
-  if (pickedFor?.matching !== matching || pickedFor.spin !== spin) {
-    setPickedFor({ matching, spin });
-    setPick((current) =>
-      pickOne(
-        matching,
-        // Never the title already on screen – "something else" that returns the
-        // same film reads as a broken button. `pickOne` allows the repeat back
-        // when it is the only thing that fits.
-        current ? mediaItemKey(current.id, current.mediaType) : null,
-        Math.random,
-      ),
-    );
+  if (
+    pickedFor?.matching !== matching ||
+    pickedFor.filters !== filters ||
+    pickedFor.spin !== spin
+  ) {
+    const redraw = !pickedFor || pickedFor.filters !== filters || pickedFor.spin !== spin;
+    setPickedFor({ matching, filters, spin });
+    if (redraw && held) setHeld(null);
+    setPick((current) => {
+      const currentKey = current ? mediaItemKey(current.id, current.mediaType) : null;
+      if (!redraw && currentKey) {
+        const refreshed = matching.find((candidate) =>
+          mediaItemKey(candidate.id, candidate.mediaType) === currentKey);
+        if (refreshed) return refreshed;
+        if (currentKey === heldKey) return current;
+      }
+
+      // Never the title already on screen – "something else" that returns the
+      // same film reads as a broken button. `pickOne` allows the repeat back
+      // when it is the only thing that fits.
+      return pickOne(matching, currentKey, Math.random);
+    });
   }
 
-  // A pick belongs to the saved titles and settings used for its lookup. Hide
-  // it immediately when either changes, including updates from another tab.
+  const shownPick = pick && (
+    matching.includes(pick) ||
+    mediaItemKey(pick.id, pick.mediaType) === heldKey
+  ) ? pick : null;
+
+  // A pick belongs to the settings and day used for its lookup: the region and
+  // platforms decide its availability, and the day its eligibility. Hide it
+  // immediately when either changes, including updates from another tab – and
+  // while newly saved titles are looked up with nothing yet to show beside them.
   if (
     isWatchlistLoading ||
-    ((!hasLoaded || loadedSettingsKey !== settingsKey || loadedRefs !== refs || loadedDay !== day) && refs.length > 0)
+    (refs.length > 0 && (
+      !hasLoaded ||
+      loadedSettingsKey !== settingsKey ||
+      loadedDay !== day ||
+      (awaitingCount > 0 && savedCandidates.length === 0 &&
+        savedFailedRefs.length === 0 && !shownPick)
+    ))
   ) {
     return (
       <div className="py-16">
@@ -188,7 +252,7 @@ export function TonightPicker() {
     );
   }
 
-  if (watchlist.length === 0) return <NothingSaved />;
+  if (watchlist.length === 0 && !shownPick) return <NothingSaved />;
 
   if (failed) {
     return (
@@ -196,6 +260,8 @@ export function TonightPicker() {
         title="Could not pick anything tonight"
         description="TMDB did not answer, so there was nothing to choose between. Your watchlist is untouched – it is saved in this browser, not there."
         onRetry={retryLoad}
+        // The page around this already has its "Tonight" h1.
+        headingLevel={2}
       />
     );
   }
@@ -209,34 +275,45 @@ export function TonightPicker() {
         matching={matching.length}
         total={refs.length}
         unchecked={uncheckedCount}
-        unresolved={failedRefs.length}
+        unresolved={savedFailedRefs.length}
       />
 
-      {pick && (
+      {awaitingCount > 0 && (
+        <p className="text-sm text-gray-400" role="status">
+          Checking {awaitingCount} newly saved {awaitingCount === 1 ? "title" : "titles"}…
+        </p>
+      )}
+
+      {shownPick && (
         <PickCard
-          pick={pick}
+          pick={shownPick}
           savedReleaseDate={watchlist.find((item) =>
-            item.id === pick.id && item.mediaType === pick.mediaType,
+            item.id === shownPick.id && item.mediaType === shownPick.mediaType,
           )?.releaseDate ?? ""}
           filters={filters}
           onSpin={() => setSpin(spin + 1)}
+          onMarkWatched={() => setHeld({
+            key: mediaItemKey(shownPick.id, shownPick.mediaType),
+            settingsKey,
+            day,
+          })}
         />
       )}
 
-      {(failedRefs.length > 0 || uncheckedCount > 0) && (
+      {(savedFailedRefs.length > 0 || uncheckedCount > 0) && (
         <LoadFailureNotice
-          title={failedRefs.length > 0
+          title={savedFailedRefs.length > 0
             ? "Some title details could not be loaded"
             : "Could not check streaming availability"}
-          description={failedRefs.length > 0
-            ? `Details could not be loaded for ${failedRefs.length} saved ${failedRefs.length === 1 ? "title" : "titles"}. Verified picks remain available.${uncheckedCount > 0 ? ` Streaming availability also could not be checked for ${uncheckedCount} ${uncheckedCount === 1 ? "title" : "titles"} that otherwise fit your filters.` : ""} Try again to check the remaining titles.`
+          description={savedFailedRefs.length > 0
+            ? `Details could not be loaded for ${savedFailedRefs.length} saved ${savedFailedRefs.length === 1 ? "title" : "titles"}. Verified picks remain available.${uncheckedCount > 0 ? ` Streaming availability also could not be checked for ${uncheckedCount} ${uncheckedCount === 1 ? "title" : "titles"} that otherwise fit your filters.` : ""} Try again to check the remaining titles.`
             : `Availability could not be checked for ${uncheckedCount} saved ${uncheckedCount === 1 ? "title" : "titles"} that otherwise fit your filters. Try again to see what you can play now.`}
           onRetry={retryLoad}
           compact
         />
       )}
 
-      {!pick && uncheckedCount === 0 && unresolvedMatchingCount === 0 && (
+      {!shownPick && awaitingCount === 0 && uncheckedCount === 0 && unresolvedMatchingCount === 0 && (
         <NothingMatches onReset={() => setFilters(DEFAULT_FILTERS)} />
       )}
     </div>
@@ -370,11 +447,14 @@ function PickCard({
   savedReleaseDate,
   filters,
   onSpin,
+  onMarkWatched,
 }: {
   pick: TonightCandidate;
   savedReleaseDate: string;
   filters: TonightFilters;
   onSpin: () => void;
+  /** Called as the card's own watched control is used, before it saves. */
+  onMarkWatched: () => void;
 }) {
   const artwork = pick.backdropPath ?? pick.posterPath;
   const runtime = formatRuntime(pick.runtime);
@@ -401,7 +481,7 @@ function PickCard({
             src={getImageUrl(artwork, "w780")}
             alt={pick.title}
             fill
-            priority
+            preload
             className="object-cover"
           />
         )}
@@ -496,7 +576,11 @@ function PickCard({
           >
             Details
           </Link>
-          <WatchedButton item={asMediaItem} />
+          {/* Capture rather than bubble: the button stops its click from
+              propagating. `contents` keeps the wrapper out of the layout. */}
+          <span className="contents" onClickCapture={onMarkWatched}>
+            <WatchedButton item={asMediaItem} />
+          </span>
         </div>
       </div>
     </div>

@@ -36,8 +36,9 @@ export function MovieCollection({ collection }: MovieCollectionProps) {
           <div className="absolute inset-0 flex items-center px-6 gap-5">
             {collection.poster_path && (
               <div className="relative w-16 h-24 shrink-0 rounded shadow-lg overflow-hidden hidden sm:block">
+                {/* 64px wide, so w154 still covers a 2x screen. */}
                 <Image
-                  src={tmdbApi.getImageUrl(collection.poster_path, "w500")}
+                  src={tmdbApi.getImageUrl(collection.poster_path, "w154")}
                   alt={collection.name}
                   fill
                   className="object-cover"

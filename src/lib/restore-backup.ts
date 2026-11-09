@@ -1,9 +1,7 @@
-import { COLLECTIONS_STORAGE_KEY, notifyCollectionsChanged } from "./collections";
-import { DAILY_GAME_STORAGE_KEY, notifyGameStateChanged } from "./daily-game";
-import { EPISODE_PROGRESS_STORAGE_KEY } from "./episode-progress";
-import { GOAL_STORAGE_KEY, notifyGoalChanged } from "./goal";
-import { HIGHER_LOWER_STORAGE_KEY } from "./higher-lower";
-import { storesToSlot, type PortableData } from "./portable-data";
+import { notifyCollectionsChanged } from "./collections";
+import { notifyGameStateChanged } from "./daily-game";
+import { notifyGoalChanged } from "./goal";
+import { storeLabelForKey, storesToSlot, type PortableData, type ProfileRef } from "./portable-data";
 import {
   liveProfileChanges,
   notifyProfilesChanged,
@@ -22,7 +20,7 @@ import {
   type StorageTransactionResult,
 } from "./storage-transaction";
 import { providerIdsToStoredValue } from "./watch-provider-settings";
-import { getProfileStorageOwner, isProfileDeleted, isProfileStorageOwnerAvailable, PROFILE_STORAGE_OWNER_KEY, withProfileStorage } from "./profile-storage";
+import { DELETED_PROFILE_PREFIX, getLegacyProfileStorageOwner, getProfileStorageOwner, isProfileDeleted, isProfileStorageOwnerAvailable, PROFILE_STORAGE_OWNER_KEY, withProfileStorage } from "./profile-storage";
 import { withProfileRosterLock } from "./profile-roster-lock";
 
 /** Restore every part of a backup before publishing any new store snapshot. */
@@ -111,21 +109,69 @@ function restoreBackupLocked(data: PortableData, owner: string): StorageTransact
   return result;
 }
 
-export function restoreFailureLabel(key: string | null): string {
-  if (key?.startsWith("profile-store:")) key = key.slice(key.lastIndexOf(":") + 1);
-  if (key?.startsWith("profile-data:") || key === "active-profile" || key === "profiles" || key === PROFILE_STORAGE_OWNER_KEY) {
-    return "profiles";
-  }
-  if ([REGION_KEY, WATCH_PROVIDER_FILTER_KEY, SELECTED_PROVIDERS_KEY, HAS_SETTINGS_KEY].includes(key ?? "")) {
-    return "settings";
-  }
-  const labels: Record<string, string> = {
-    [EPISODE_PROGRESS_STORAGE_KEY]: "episodes",
-    [COLLECTIONS_STORAGE_KEY]: "lists",
-    [GOAL_STORAGE_KEY]: "goal",
-    [DAILY_GAME_STORAGE_KEY]: "daily game",
-    [HIGHER_LOWER_STORAGE_KEY]: "higher or lower",
+/**
+ * The refused part of a restore, as the sentence "Could not restore …" needs it.
+ *
+ * Storage keys are addresses, not words: this used to hand the visitor
+ * `profile-deleted:3f2a…` verbatim. `activeProfileId` is the profile the
+ * restored stores belong to – "your" data – and `profiles` names the rest, from
+ * the file and from the roster it replaces. An unknown key falls back to "this
+ * backup" rather than ever showing an address.
+ */
+export function restoreFailureLabel(
+  key: string | null,
+  context: { activeProfileId?: string; profiles?: ProfileRef[] } = {},
+): string {
+  const nameOf = (profileId: string) =>
+    context.profiles?.find((profile) => profile.id === profileId)?.name;
+  const owned = (label: string, profileId: string | null) => {
+    if (profileId !== null && profileId === context.activeProfileId) return `your ${label}`;
+    const name = profileId === null ? undefined : nameOf(profileId);
+    return name ? `${label} for "${name}"` : `the ${label}`;
   };
-  if (key && labels[key]) return labels[key];
-  return key ?? "backup";
+  const profile = (profileId: string, fallback: string) => {
+    const name = nameOf(profileId);
+    return name ? `the profile "${name}"` : fallback;
+  };
+
+  if (key === null) return "this backup";
+  if (key.startsWith(STORE_PREFIX)) {
+    const separator = key.lastIndexOf(":");
+    const label = storeLabelForKey(key.slice(separator + 1));
+    const profileId = decode(key.slice(STORE_PREFIX.length, separator));
+    return label ? owned(label, profileId) : "this backup";
+  }
+  if (key.startsWith(SLOT_PREFIX)) {
+    return profile(key.slice(SLOT_PREFIX.length), "a profile's older saved data");
+  }
+  if (key.startsWith(DELETED_PROFILE_PREFIX)) {
+    return profile(decode(key.slice(DELETED_PROFILE_PREFIX.length)), "the profile list");
+  }
+  if (key === "active-profile" || key === "profiles" || key === PROFILE_STORAGE_OWNER_KEY) {
+    return "the profile list";
+  }
+  if ([REGION_KEY, WATCH_PROVIDER_FILTER_KEY, SELECTED_PROVIDERS_KEY, HAS_SETTINGS_KEY].includes(key)) {
+    return "your region and platform settings";
+  }
+  // A bare key is a store at the original owner's live address.
+  const label = storeLabelForKey(key);
+  if (!label) return "this backup";
+  let owner: string | null = null;
+  try {
+    owner = getLegacyProfileStorageOwner();
+  } catch {
+    // The label still names the store; only its owner is unknown.
+  }
+  return owned(label, owner);
+}
+
+const STORE_PREFIX = "profile-store:";
+const SLOT_PREFIX = "profile-data:";
+
+function decode(component: string): string {
+  try {
+    return decodeURIComponent(component);
+  } catch {
+    return component;
+  }
 }

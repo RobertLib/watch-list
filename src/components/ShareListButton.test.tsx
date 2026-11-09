@@ -138,6 +138,29 @@ describe("ShareListButton", () => {
     expect(document.activeElement).toBe(trigger);
   });
 
+  it("points its trigger at the open panel", () => {
+    render(<ShareListButton items={items} defaultTitle="My watchlist" />);
+    const trigger = screen.getByRole("button", { name: "Share" });
+    expect(trigger.hasAttribute("aria-controls")).toBe(false);
+
+    fireEvent.click(trigger);
+
+    const panel = document.getElementById(trigger.getAttribute("aria-controls")!);
+    expect(panel?.contains(screen.getByRole("textbox", { name: "Share link" }))).toBe(true);
+  });
+
+  it("keeps the panel open for the Escape that cancels an IME composition", () => {
+    render(<ShareListButton items={items} defaultTitle="My watchlist" />);
+    fireEvent.click(screen.getByRole("button", { name: "Share" }));
+    const input = screen.getByRole("textbox", { name: "Name it (optional)" });
+    input.focus();
+
+    fireEvent.keyDown(input, { key: "Escape", isComposing: true });
+
+    expect(screen.getByRole("textbox", { name: "Name it (optional)" })).toBe(input);
+    expect(document.activeElement).toBe(input);
+  });
+
   it("returns focus to the owner when Escape dismisses several share panels", () => {
     render(<>
       <ShareListButton items={items} defaultTitle="First list" />

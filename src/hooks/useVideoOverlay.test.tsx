@@ -14,7 +14,7 @@ vi.mock("@/lib/tmdb", () => ({
   },
 }));
 
-const { useVideoOverlay } = await import("./useVideoOverlay");
+const { findYouTubeTrailer, useVideoOverlay } = await import("./useVideoOverlay");
 
 /**
  * The trailer button, on a catalogue where "the trailer" is a guess.
@@ -310,5 +310,89 @@ describe("a lookup that answers late", () => {
     // React 19 drops a write to an unmounted component without a warning, so
     // the observable promise is only that nothing throws and nothing is logged.
     expect(console.error).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A detail page already holds its videos – they are appended to the details it
+ * loaded. Its trailer button used to have the overlay fetch `/videos` again: a
+ * second request and a spinner, and on failure "Video is not available" with
+ * the key already in hand.
+ */
+describe("showing a video the caller already has", () => {
+  it("opens straight onto it without asking TMDB", () => {
+    const { result } = renderHook(() => useVideoOverlay());
+
+    act(() => result.current.showVideo(video({ key: "k-known" })));
+
+    expect(result.current.isOpen).toBe(true);
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.video?.key).toBe("k-known");
+    expect(getMovieVideos).not.toHaveBeenCalled();
+    expect(getTVShowVideos).not.toHaveBeenCalled();
+  });
+
+  // Nothing to fetch means nothing to fail: TMDB being down is not a reason to
+  // withhold a trailer whose key is already on the page.
+  it("plays even when TMDB would have refused", () => {
+    getMovieVideos.mockRejectedValue(new Error("TMDB API error: 503"));
+    const { result } = renderHook(() => useVideoOverlay());
+
+    act(() => result.current.showVideo(video({ key: "k-known" })));
+
+    expect(result.current.video?.key).toBe("k-known");
+  });
+
+  it("is not overwritten by a lookup that was still in flight", async () => {
+    const slow = deferred<VideosResponse>();
+    getMovieVideos.mockReturnValue(slow.promise);
+    const { result } = renderHook(() => useVideoOverlay());
+
+    act(() => {
+      void result.current.openVideo(550, "movie");
+    });
+    act(() => result.current.showVideo(video({ key: "k-known" })));
+    expect(result.current.isLoading).toBe(false);
+
+    await act(async () => {
+      slow.resolve(response([video({ key: "k-late" })]));
+    });
+
+    expect(result.current.video?.key).toBe("k-known");
+  });
+
+  it("closes like any other open", () => {
+    const { result } = renderHook(() => useVideoOverlay());
+
+    act(() => result.current.showVideo(video()));
+    act(() => result.current.closeVideo());
+
+    expect(result.current.isOpen).toBe(false);
+    expect(result.current.video).toBeNull();
+  });
+});
+
+// The one rule both routes use, so a detail page's "Play Trailer" and the play
+// button on the same title's poster play the same video.
+describe("findYouTubeTrailer", () => {
+  it("prefers an official trailer, then any trailer, and never a teaser or Vimeo", () => {
+    expect(
+      findYouTubeTrailer([
+        video({ key: "k-fan", official: false }),
+        video({ key: "k-official" }),
+      ])?.key,
+    ).toBe("k-official");
+    expect(
+      findYouTubeTrailer([
+        video({ key: "k-teaser", type: "Teaser" }),
+        video({ key: "k-fan", official: false }),
+      ])?.key,
+    ).toBe("k-fan");
+    expect(
+      findYouTubeTrailer([
+        video({ key: "k-teaser", type: "Teaser" }),
+        video({ key: "12345", site: "Vimeo" }),
+      ]),
+    ).toBeUndefined();
   });
 });

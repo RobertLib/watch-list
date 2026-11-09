@@ -4,13 +4,16 @@ import { tmdbApi } from "@/lib/tmdb";
 import { createSlug } from "@/lib/utils";
 import type { Credits } from "@/types/tmdb";
 import { personHref } from "@/lib/routes";
+import { mergeCastByPerson } from "@/lib/media-converters";
 
 interface TVCastProps {
   credits: Credits;
 }
 
 function TVCastContent({ credits }: TVCastProps) {
-  const mainCast = credits.cast.slice(0, 12);
+  // Merged before the cut, so twelve billings for three roles of one actor
+  // still show twelve people – and each person is one card, keyed by their id.
+  const mainCast = mergeCastByPerson(credits.cast).slice(0, 12);
 
   if (mainCast.length === 0) {
     return null;
@@ -27,9 +30,10 @@ function TVCastContent({ credits }: TVCastProps) {
             prefetch={false}
             className="text-center group block"
           >
+            {/* Two or four to a row: ~140–230px wide, so w300 at 2x. */}
             <div className="relative aspect-2/3 mb-3 overflow-hidden rounded-lg">
               <Image
-                src={tmdbApi.getImageUrl(actor.profile_path, "w500")}
+                src={tmdbApi.getImageUrl(actor.profile_path, "w300")}
                 alt={actor.name}
                 fill
                 className="object-cover group-hover:scale-105 transition-transform duration-200"

@@ -73,16 +73,17 @@ function MatchResults({ mine, theirs, mineTruncated }: {
 }) {
   const settingsKey = useSettingsKey();
 
-  const { data, error, reload } = useAsyncData(async () => {
+  const { data, error, reload } = useAsyncData(async (signal) => {
     const match = matchLists(decodeSharedList(mine), decodeSharedList(theirs));
 
     // The links establish the overlap even when a title has left TMDB. Resolve
     // all buckets together so a failed bucket cannot hide another usable one.
+    // Up to 120 background reads, released when the comparison is left.
     const resolution = await getSharedListResolution([
       ...match.shared,
       ...match.onlyMine,
       ...match.onlyTheirs,
-    ]);
+    ], signal);
     const byKey = new Map(
       resolution.items.map((item) => [mediaItemKey(item.id, item.media_type), item]),
     );

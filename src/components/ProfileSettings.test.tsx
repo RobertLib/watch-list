@@ -89,14 +89,19 @@ describe("settings save feedback", () => {
     }
   }
 
-  it.each(changes)("waits for the shared lock before saving $kind and disables the settings controls", async ({ kind, key, value }) => {
-    prepareChange(kind);
-    const previous = getSettings();
+  async function holdLock() {
     let release!: () => void;
     const held = navigator.locks.request(PROFILE_ROSTER_LOCK, { mode: "exclusive" }, () => new Promise<void>((resolve) => {
       release = resolve;
     }));
     await Promise.resolve();
+    return { release, held };
+  }
+
+  it.each(changes)("waits for the shared lock before saving $kind and marks the settings controls unavailable", async ({ kind, key, value }) => {
+    prepareChange(kind);
+    const previous = getSettings();
+    const lock = await holdLock();
     const requests = vi.spyOn(navigator.locks, "request");
     const writes = vi.spyOn(Storage.prototype, "setItem");
 
@@ -106,22 +111,68 @@ describe("settings save feedback", () => {
     expect(writes).not.toHaveBeenCalled();
     expect(getSettings()).toBe(previous);
     expect(screen.getByText("Saving changes…")).toBeTruthy();
-    expect((screen.getByLabelText("Country or region") as HTMLSelectElement).disabled).toBe(true);
+    const select = screen.getByLabelText("Country or region") as HTMLSelectElement;
+    expect(select.getAttribute("aria-disabled")).toBe("true");
+    expect(select.disabled).toBe(false);
     for (const radio of screen.getAllByRole("radio")) {
-      expect((radio as HTMLInputElement).disabled).toBe(true);
+      expect(radio.getAttribute("aria-disabled")).toBe("true");
+      expect((radio as HTMLInputElement).disabled).toBe(false);
     }
     if (kind === "platforms") {
       expect((screen.getByRole("button", { name: "Select platform" }) as HTMLButtonElement).disabled).toBe(true);
     }
 
-    await act(async () => { release(); await held; });
+    await act(async () => { lock.release(); await lock.held; });
 
     expect(window.localStorage.getItem(key)).toBe(value);
     expect(screen.getByText("All changes saved")).toBeTruthy();
-    expect((screen.getByLabelText("Country or region") as HTMLSelectElement).disabled).toBe(false);
+    expect(screen.getByLabelText("Country or region").hasAttribute("aria-disabled")).toBe(false);
     for (const radio of screen.getAllByRole("radio")) {
-      expect((radio as HTMLInputElement).disabled).toBe(false);
+      expect(radio.hasAttribute("aria-disabled")).toBe(false);
     }
+  });
+
+  // On Windows and Linux, arrowing a closed select fires a change per key.
+  // Native `disabled` blurred it after the first, so the next arrow did nothing.
+  it("keeps focus on the region select while saving and refuses a second change until it is saved", async () => {
+    render(<ProfileSettings />);
+    const select = screen.getByLabelText("Country or region") as HTMLSelectElement;
+    select.focus();
+    const lock = await holdLock();
+    const requests = vi.spyOn(navigator.locks, "request");
+
+    act(() => { fireEvent.change(select, { target: { value: "CZ" } }); });
+    act(() => { fireEvent.change(select, { target: { value: "DE" } }); });
+
+    expect(document.activeElement).toBe(select);
+    expect(requests).toHaveBeenCalledTimes(1);
+    expect(select.value).toBe("US");
+
+    await act(async () => { lock.release(); await lock.held; });
+
+    expect(document.activeElement).toBe(select);
+    expect(window.localStorage.getItem(REGION_KEY)).toBe("CZ");
+    await act(async () => { fireEvent.change(select, { target: { value: "DE" } }); });
+    expect(window.localStorage.getItem(REGION_KEY)).toBe("DE");
+    expect(document.activeElement).toBe(select);
+  });
+
+  it("keeps focus on the chosen filter radio while saving and refuses another choice meanwhile", async () => {
+    render(<ProfileSettings />);
+    const everything = screen.getByRole("radio", { name: /^Everything/ });
+    const mine = screen.getByRole("radio", { name: /^Only my platforms/ });
+    mine.focus();
+    const lock = await holdLock();
+
+    act(() => { fireEvent.click(mine); });
+    act(() => { fireEvent.click(everything); });
+
+    expect(document.activeElement).toBe(mine);
+    await act(async () => { lock.release(); await lock.held; });
+
+    expect(document.activeElement).toBe(mine);
+    expect(window.localStorage.getItem(WATCH_PROVIDER_FILTER_KEY)).toBe("streaming-only");
+    expect((mine as HTMLInputElement).checked).toBe(true);
   });
 
   it.each(changes.flatMap((change) => [

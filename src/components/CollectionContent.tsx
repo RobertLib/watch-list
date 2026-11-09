@@ -83,11 +83,18 @@ function CollectionDetail() {
     collectionHref(createSlug(collection.name, collection.id)),
   );
 
-  // Sort parts by release date ascending
+  // Release order, undated parts last. TMDB lists an announced sequel with
+  // `release_date: ""`, which used to read as time zero and put the film nobody
+  // has seen yet ahead of the first one. The dates are ISO `YYYY-MM-DD`, so they
+  // compare correctly as strings – and without a `Date`, no time zone can shift
+  // one across midnight.
   const sortedParts = [...collection.parts].sort((a, b) => {
-    const dateA = a.release_date ? new Date(a.release_date).getTime() : 0;
-    const dateB = b.release_date ? new Date(b.release_date).getTime() : 0;
-    return dateA - dateB;
+    const dateA = a.release_date || null;
+    const dateB = b.release_date || null;
+    if (dateA === dateB) return 0;
+    if (dateA === null) return 1;
+    if (dateB === null) return -1;
+    return dateA < dateB ? -1 : 1;
   });
 
   const movies: MediaItem[] = sortedParts.map((movie) => ({
@@ -132,7 +139,7 @@ function CollectionDetail() {
               alt={collection.name}
               fill
               className="object-cover"
-              priority
+              preload
             />
             <div className="absolute inset-0 bg-linear-to-b from-black/40 via-black/50 to-gray-900" />
           </div>
@@ -144,8 +151,9 @@ function CollectionDetail() {
         <div className="absolute bottom-0 left-0 right-0 container mx-auto px-4 max-w-6xl pb-6 flex items-end gap-5">
           {collection.poster_path && (
             <div className="relative w-24 h-36 sm:w-32 sm:h-48 shrink-0 rounded-lg shadow-2xl overflow-hidden hidden sm:block">
+              {/* Shown at 128px wide at most: w300 covers that at 2x. */}
               <Image
-                src={tmdbApi.getImageUrl(collection.poster_path, "w500")}
+                src={tmdbApi.getImageUrl(collection.poster_path, "w300")}
                 alt={collection.name}
                 fill
                 className="object-cover"

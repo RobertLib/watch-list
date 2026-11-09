@@ -7,10 +7,10 @@ import { WatchlistProvider } from "@/contexts/WatchlistContext";
 import { EpisodeProgressProvider } from "@/contexts/EpisodeProgressContext";
 import { WATCHLIST_STORAGE_KEY } from "@/lib/watchlist";
 import { EPISODE_PROGRESS_STORAGE_KEY } from "@/lib/episode-progress";
-import { LAST_VISIT_STORAGE_KEY } from "@/lib/last-visit";
+import { LAST_VISIT_STORAGE_KEY, readLastVisit } from "@/lib/last-visit";
 import { refreshSettings, REGION_KEY, setRegion } from "@/lib/settings";
 import { ACTIVE_PROFILE_STORAGE_KEY, PROFILES_STORAGE_KEY } from "@/lib/profiles";
-import { writeProfileStore } from "@/lib/profile-storage";
+import { initializeProfileStorage, writeProfileStore } from "@/lib/profile-storage";
 import { todayLocal } from "@/lib/dates";
 import { createProfileLockManager } from "@/test/profile-locks";
 import type { MissedRelease } from "@/lib/since-last-visit-data";
@@ -34,8 +34,14 @@ vi.mock("next/link", () => ({
 const ORIGINAL_TZ = process.env.TZ;
 const NOW = new Date("2026-10-05T12:00:00.000Z");
 
+/** The default profile's stamp, at the original owner's live address. */
+function storedVisit(): string | null {
+  const raw = window.localStorage.getItem(LAST_VISIT_STORAGE_KEY);
+  return raw === null ? null : JSON.parse(raw);
+}
+
 function saveVisit(previous = "2026-10-01T12:00:00.000Z") {
-  window.localStorage.setItem(LAST_VISIT_STORAGE_KEY, previous);
+  window.localStorage.setItem(LAST_VISIT_STORAGE_KEY, JSON.stringify(previous));
   window.localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify([{
     id: 550, title: "A Film", mediaType: "movie", posterPath: null,
     voteAverage: 8, releaseDate: "2026-10-03", addedAt: previous,
@@ -102,22 +108,82 @@ describe("WelcomeBack", () => {
     const view = await renderWelcomeBack();
     const signal = getReleasesSinceLastVisit.mock.calls[0][2] as AbortSignal;
     expect(signal.aborted).toBe(false);
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe("2026-10-01T12:00:00.000Z");
+    expect(storedVisit()).toBe("2026-10-01T12:00:00.000Z");
     view.unmount();
     expect(signal.aborted).toBe(true);
 
     await act(async () => { finish([release("An abandoned response")]); });
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe("2026-10-01T12:00:00.000Z");
+    expect(storedVisit()).toBe("2026-10-01T12:00:00.000Z");
   });
 
-  it.each(["region", "watchlist", "profile"])("cancels the old lookup after a %s change without acknowledging it", async (change) => {
+  it("cancels the old lookup after a profile change and checks the new profile's own interval", async () => {
     saveVisit();
-    if (change === "profile") {
-      window.localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify([
-        { id: "default", name: "Me" }, { id: "bob", name: "Bob" },
-      ]));
-      writeProfileStore(WATCHLIST_STORAGE_KEY, window.localStorage.getItem(WATCHLIST_STORAGE_KEY)!, "bob");
-    }
+    window.localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify([
+      { id: "default", name: "Me" }, { id: "bob", name: "Bob" },
+    ]));
+    writeProfileStore(WATCHLIST_STORAGE_KEY, window.localStorage.getItem(WATCHLIST_STORAGE_KEY)!, "bob");
+    const bobsVisit = "2026-10-03T12:00:00.000Z";
+    writeProfileStore(LAST_VISIT_STORAGE_KEY, JSON.stringify(bobsVisit), "bob");
+    const requests: Array<{ since: string; signal: AbortSignal; finish: (value: MissedRelease[]) => void }> = [];
+    getReleasesSinceLastVisit.mockImplementation((_seeds, since: string, signal: AbortSignal) =>
+      new Promise<MissedRelease[]>((resolve, reject) => {
+        requests.push({ since, signal, finish: resolve });
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      }),
+    );
+    await renderWelcomeBack();
+    expect(requests.map(({ since }) => since)).toEqual([todayLocal(new Date("2026-10-01T12:00:00.000Z"))]);
+
+    await act(async () => {
+      window.localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, "bob");
+      window.dispatchEvent(new StorageEvent("storage", { key: ACTIVE_PROFILE_STORAGE_KEY }));
+    });
+
+    expect(requests).toHaveLength(2);
+    expect(requests[0].signal.aborted).toBe(true);
+    expect(requests[1].since).toBe(todayLocal(new Date(bobsVisit)));
+    expect(storedVisit()).toBe("2026-10-01T12:00:00.000Z");
+
+    await act(async () => { requests[1].finish([release("Bob's premiere")]); });
+
+    expect(screen.getByText("Bob's premiere")).toBeDefined();
+    expect(readLastVisit("bob")).toBe(NOW.toISOString());
+    // The default profile's unchecked interval is still waiting for it.
+    expect(storedVisit()).toBe("2026-10-01T12:00:00.000Z");
+  });
+
+  it("does not let a profile that follows nothing acknowledge another profile's interval", async () => {
+    // Alice was last here on Monday. On Friday Bob, who follows nothing,
+    // opens the home page; on Saturday Alice must still hear about Tuesday.
+    const monday = "2026-09-28T12:00:00.000Z";
+    saveVisit(monday);
+    window.localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify([
+      { id: "default", name: "Alice" }, { id: "bob", name: "Bob" },
+    ]));
+    initializeProfileStorage();
+    window.localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, "bob");
+
+    const bobsSession = await renderWelcomeBack();
+    expect(getReleasesSinceLastVisit).not.toHaveBeenCalled();
+    expect(readLastVisit("bob")).toBe(NOW.toISOString());
+    expect(storedVisit()).toBe(monday);
+    bobsSession.unmount();
+
+    window.sessionStorage.clear();
+    window.localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, "default");
+    vi.setSystemTime(new Date(NOW.getTime() + 86_400_000));
+    getReleasesSinceLastVisit.mockResolvedValueOnce([release("Tuesday's premiere")]);
+
+    await renderWelcomeBack();
+
+    expect(getReleasesSinceLastVisit).toHaveBeenCalledWith(
+      expect.any(Array), todayLocal(new Date(monday)), expect.any(AbortSignal),
+    );
+    expect(screen.getByText("Tuesday's premiere")).toBeDefined();
+  });
+
+  it.each(["region", "watchlist"])("cancels the old lookup after a %s change without acknowledging it", async (change) => {
+    saveVisit();
     const requests: Array<{ signal: AbortSignal; finish: (value: MissedRelease[]) => void }> = [];
     getReleasesSinceLastVisit.mockImplementation((_seeds, _since, signal: AbortSignal) =>
       new Promise<MissedRelease[]>((resolve, reject) => {
@@ -136,9 +202,6 @@ describe("WelcomeBack", () => {
           voteAverage: 8, releaseDate: "2026-10-02", addedAt: "2026-01-02T00:00:00.000Z",
         }]));
         window.dispatchEvent(new StorageEvent("storage", { key: WATCHLIST_STORAGE_KEY }));
-      } else {
-        window.localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, "bob");
-        window.dispatchEvent(new StorageEvent("storage", { key: ACTIVE_PROFILE_STORAGE_KEY }));
       }
     });
 
@@ -146,14 +209,14 @@ describe("WelcomeBack", () => {
     expect(requests[0].signal.aborted).toBe(true);
     expect(requests[1].signal).not.toBe(requests[0].signal);
     expect(requests[1].signal.aborted).toBe(false);
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe("2026-10-01T12:00:00.000Z");
+    expect(storedVisit()).toBe("2026-10-01T12:00:00.000Z");
     expect(screen.queryByRole("alert")).toBeNull();
     expect(console.error).not.toHaveBeenCalled();
 
     await act(async () => { requests[1].finish([release("Current premiere")]); });
 
     expect(screen.getByText("Current premiere")).toBeDefined();
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe(NOW.toISOString());
+    expect(storedVisit()).toBe(NOW.toISOString());
   });
 
   it("cancels a pending lookup when unmounted without reporting an outage", async () => {
@@ -169,7 +232,7 @@ describe("WelcomeBack", () => {
     await act(async () => { view.unmount(); });
 
     expect(signal.aborted).toBe(true);
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe("2026-10-01T12:00:00.000Z");
+    expect(storedVisit()).toBe("2026-10-01T12:00:00.000Z");
     expect(console.error).not.toHaveBeenCalled();
   });
 
@@ -179,13 +242,13 @@ describe("WelcomeBack", () => {
 
     await renderWelcomeBack();
     expect(screen.getByRole("heading", { name: "Could not load recent releases" })).toBeDefined();
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe("2026-10-01T12:00:00.000Z");
+    expect(storedVisit()).toBe("2026-10-01T12:00:00.000Z");
 
     getReleasesSinceLastVisit.mockResolvedValueOnce([release("Recovered premiere")]);
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Try again" })); });
 
     expect(screen.getByText("Recovered premiere")).toBeDefined();
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe(NOW.toISOString());
+    expect(storedVisit()).toBe(NOW.toISOString());
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -204,7 +267,7 @@ describe("WelcomeBack", () => {
 
     expect(getReleasesSinceLastVisit).toHaveBeenLastCalledWith(expect.any(Array), originalDay, expect.any(AbortSignal));
     expect(screen.getByText("Previously missed premiere")).toBeDefined();
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe(nextVisit.toISOString());
+    expect(storedVisit()).toBe(nextVisit.toISOString());
   });
 
   it("retries an unchecked interval when the connection returns", async () => {
@@ -216,7 +279,7 @@ describe("WelcomeBack", () => {
     await act(async () => { window.dispatchEvent(new Event("online")); });
 
     expect(screen.getByText("Recovered online")).toBeDefined();
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe(NOW.toISOString());
+    expect(storedVisit()).toBe(NOW.toISOString());
   });
 
   it("acknowledges a successful empty lookup", async () => {
@@ -224,7 +287,7 @@ describe("WelcomeBack", () => {
     await renderWelcomeBack();
 
     expect(getReleasesSinceLastVisit).toHaveBeenCalledTimes(1);
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe(NOW.toISOString());
+    expect(storedVisit()).toBe(NOW.toISOString());
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -244,7 +307,7 @@ describe("WelcomeBack", () => {
     await renderWelcomeBack();
 
     expect(getReleasesSinceLastVisit).not.toHaveBeenCalled();
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe("2026-10-01T12:00:00.000Z");
+    expect(storedVisit()).toBe("2026-10-01T12:00:00.000Z");
     expect(screen.getByRole("alert").textContent).toContain("Your saved titles could not be read");
 
     // Retry also adopts a repaired source when no storage event arrived.
@@ -254,7 +317,7 @@ describe("WelcomeBack", () => {
 
     expect(getReleasesSinceLastVisit).toHaveBeenLastCalledWith(expect.any(Array), todayLocal(new Date("2026-10-01T12:00:00.000Z")), expect.any(AbortSignal));
     expect(screen.getByText("Recovered premiere")).toBeDefined();
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe(NOW.toISOString());
+    expect(storedVisit()).toBe(NOW.toISOString());
   });
 
   it.each([WATCHLIST_STORAGE_KEY, EPISODE_PROGRESS_STORAGE_KEY])("reloads all followed titles after a temporary %s read failure", async (key) => {
@@ -280,11 +343,11 @@ describe("WelcomeBack", () => {
       { id: 550, mediaType: "movie", title: "A Film", posterPath: null, releaseDate: "2026-10-03" },
       { id: 1396, mediaType: "tv", title: "A Show", posterPath: null, releaseDate: null },
     ]), todayLocal(new Date("2026-10-01T12:00:00.000Z")), expect.any(AbortSignal));
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe("2026-10-01T12:00:00.000Z");
+    expect(storedVisit()).toBe("2026-10-01T12:00:00.000Z");
 
     await act(async () => { finish([release("Checked complete follow list")]); });
 
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe(NOW.toISOString());
+    expect(storedVisit()).toBe(NOW.toISOString());
   });
 
   it.each([WATCHLIST_STORAGE_KEY, EPISODE_PROGRESS_STORAGE_KEY])("checks the original interval in a new session after repairing %s", async (key) => {
@@ -302,7 +365,7 @@ describe("WelcomeBack", () => {
     await renderWelcomeBack();
 
     expect(getReleasesSinceLastVisit).toHaveBeenLastCalledWith(expect.any(Array), todayLocal(new Date("2026-10-01T12:00:00.000Z")), expect.any(AbortSignal));
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe(nextVisit.toISOString());
+    expect(storedVisit()).toBe(nextVisit.toISOString());
   });
 
   it.each([WATCHLIST_STORAGE_KEY, EPISODE_PROGRESS_STORAGE_KEY])("does not acknowledge a changed %s before its storage event arrives", async (key) => {
@@ -322,7 +385,7 @@ describe("WelcomeBack", () => {
 
     await act(async () => { finish([release("Stale premiere")]); });
 
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe("2026-10-01T12:00:00.000Z");
+    expect(storedVisit()).toBe("2026-10-01T12:00:00.000Z");
     expect(screen.queryByText("Stale premiere")).toBeNull();
   });
 
@@ -337,7 +400,7 @@ describe("WelcomeBack", () => {
 
     await act(async () => { finish([release("Incomplete result")]); });
 
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe("2026-10-01T12:00:00.000Z");
+    expect(storedVisit()).toBe("2026-10-01T12:00:00.000Z");
     expect(screen.getByRole("alert").textContent).toContain("Your saved titles could not be read");
     expect(screen.queryByText("Incomplete result")).toBeNull();
 
@@ -349,7 +412,7 @@ describe("WelcomeBack", () => {
 
     expect(getReleasesSinceLastVisit).toHaveBeenLastCalledWith(expect.any(Array), todayLocal(new Date("2026-10-01T12:00:00.000Z")), expect.any(AbortSignal));
     expect(screen.getByText("Repaired source premiere")).toBeDefined();
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe(NOW.toISOString());
+    expect(storedVisit()).toBe(NOW.toISOString());
   });
 
   it("acknowledges the same followed shows when activity changes their order", async () => {
@@ -370,7 +433,7 @@ describe("WelcomeBack", () => {
     await act(async () => { finish([]); });
 
     expect(getReleasesSinceLastVisit).toHaveBeenCalledTimes(1);
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe(NOW.toISOString());
+    expect(storedVisit()).toBe(NOW.toISOString());
   });
 
   it.each(["first visit", "short gap", "nothing followed"])("records %s without a catalogue lookup", async (scenario) => {
@@ -383,7 +446,7 @@ describe("WelcomeBack", () => {
     await renderWelcomeBack();
 
     expect(getReleasesSinceLastVisit).not.toHaveBeenCalled();
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe(NOW.toISOString());
+    expect(storedVisit()).toBe(NOW.toISOString());
   });
 
   it("keeps the original session interval after leaving home and returning", async () => {
@@ -396,7 +459,7 @@ describe("WelcomeBack", () => {
     await renderWelcomeBack();
 
     expect(getReleasesSinceLastVisit).toHaveBeenLastCalledWith(expect.any(Array), originalDay, expect.any(AbortSignal));
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe(NOW.toISOString());
+    expect(storedVisit()).toBe(NOW.toISOString());
   });
 
   it.each(["region", "profile"])("does not acknowledge a stale %s before its storage event arrives", async (change) => {
@@ -415,7 +478,7 @@ describe("WelcomeBack", () => {
 
     await act(async () => { finish([release("Stale premiere")]); });
 
-    expect(window.localStorage.getItem(LAST_VISIT_STORAGE_KEY)).toBe("2026-10-01T12:00:00.000Z");
+    expect(storedVisit()).toBe("2026-10-01T12:00:00.000Z");
   });
 
   it.each([

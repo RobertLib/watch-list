@@ -130,6 +130,61 @@ describe("focus", () => {
     fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(player);
   });
+
+  /**
+   * Once a click puts focus inside the YouTube player, its key presses stay in
+   * that cross-origin frame: neither Escape nor the Tab trap above hears them.
+   * Tabbing past the player's last control leaves through the browser's
+   * toolbar and re-enters the page at its first link – under the backdrop. The
+   * close button is where that focus is sent instead.
+   */
+  it("takes back focus that lands on the page underneath", () => {
+    const pageLink = document.createElement("a");
+    pageLink.href = "/movies";
+    document.body.prepend(pageLink);
+    try {
+      renderOverlay();
+      const close = screen.getByRole("button", { name: "Close video player" });
+
+      act(() => pageLink.focus());
+
+      expect(document.activeElement).toBe(close);
+    } finally {
+      pageLink.remove();
+    }
+  });
+
+  it("leaves focus alone inside the dialog, the player included", () => {
+    renderOverlay();
+    const player = screen.getByTitle("Official Trailer");
+
+    act(() => player.focus());
+
+    expect(document.activeElement).toBe(player);
+  });
+
+  // The guard goes before the opener is refocused – or closing would hand
+  // focus to the opener and the closing dialog would snatch it straight back.
+  it("stops guarding once closed", () => {
+    const opener = document.createElement("button");
+    const elsewhere = document.createElement("button");
+    document.body.append(opener, elsewhere);
+    try {
+      opener.focus();
+      const { rerender } = renderOverlay();
+
+      rerender(
+        <VideoOverlay isOpen={false} video={null} isLoading={false} onClose={() => {}} />,
+      );
+      expect(document.activeElement).toBe(opener);
+
+      act(() => elsewhere.focus());
+      expect(document.activeElement).toBe(elsewhere);
+    } finally {
+      opener.remove();
+      elsewhere.remove();
+    }
+  });
 });
 
 describe("closing", () => {

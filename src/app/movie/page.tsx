@@ -12,7 +12,7 @@ export const metadata: Metadata = pageMetadata({
 /**
  * A film.
  *
- * The title is named by `?id=550-fight-club` rather than by the path: a static
+ * The title is named by `?id=fight-club-550` rather than by the path: a static
  * export can only serve paths that existed at build time, and TMDB's catalogue
  * is not a build-time list. `useSearchParams` is what reads it, which is why the
  * body sits behind a Suspense boundary – during the prerender there is no query

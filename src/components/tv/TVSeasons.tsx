@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useId, useMemo, useRef, useState, useTransition } from "react";
 import Image from "next/image";
 import {
   Check,
@@ -77,11 +77,11 @@ function EpisodeRow({
         watched && "opacity-60",
       )}
     >
-      {/* Still image */}
+      {/* Still image – 112–144px wide, so w300 covers it at 2x. */}
       <div className="relative w-28 sm:w-36 shrink-0 rounded overflow-hidden bg-gray-700 aspect-video self-start">
         {episode.still_path ? (
           <Image
-            src={getImageUrl(episode.still_path, "w500")}
+            src={getImageUrl(episode.still_path, "w300")}
             alt={episode.name}
             fill
             className="object-cover"
@@ -196,6 +196,7 @@ function SeasonRow({
   checkProfile: () => boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const panelId = useId();
   const [details, setDetails] = useState<SeasonDetails | null>(null);
   const [error, setError] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -246,22 +247,30 @@ function SeasonRow({
 
   return (
     <div className="bg-gray-800 rounded-lg overflow-hidden">
-      {/* Season header — always visible */}
-      <button
-        onClick={toggle}
-        className="w-full flex gap-4 p-3 hover:bg-gray-750 transition-colors text-left"
-        aria-expanded={open}
-      >
+      {/* Season header — always visible.
+          The heading holds the button rather than the other way round: a
+          heading inside a button is invalid, and a screen reader's heading list
+          lost every season. The button's ::after is stretched over the whole
+          header (`relative` here), so the entire row still toggles on click as
+          it did when the row itself was the button – while the year, progress
+          bar and overview are read as text rather than folded into the button's
+          name. */}
+      <div className="relative w-full flex gap-4 p-3 hover:bg-gray-750 transition-colors text-left">
         <div className="relative w-14 h-20 shrink-0 rounded overflow-hidden">
           {season.poster_path ? (
+            // 56px wide, so w154 still covers a 2x screen. Unnamed, because
+            // the heading beside it already says which season this is.
             <Image
-              src={getImageUrl(season.poster_path, "w500")}
-              alt={season.name}
+              src={getImageUrl(season.poster_path, "w154")}
+              alt=""
               fill
               className="object-cover"
             />
           ) : (
-            <div className="w-full h-full bg-gray-700 flex items-center justify-center">
+            <div
+              className="w-full h-full bg-gray-700 flex items-center justify-center"
+              aria-hidden="true"
+            >
               <span className="text-gray-500 text-xs text-center px-1">
                 No image
               </span>
@@ -270,10 +279,20 @@ function SeasonRow({
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="font-semibold text-white">{season.name}</h3>
+            <h3 className="font-semibold text-white">
+              <button
+                type="button"
+                onClick={toggle}
+                aria-expanded={open}
+                aria-controls={panelId}
+                className="text-left rounded-lg focus:outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-blue-500"
+              >
+                {season.name}
+              </button>
+            </h3>
             {season.vote_average > 0 && (
               <span className="text-yellow-400 text-sm flex items-center gap-0.5">
-                <Star className="w-3.5 h-3.5 fill-current" />
+                <Star className="w-3.5 h-3.5 fill-current" aria-hidden="true" />
                 {season.vote_average.toFixed(1)}
               </span>
             )}
@@ -321,7 +340,8 @@ function SeasonRow({
             </p>
           )}
         </div>
-        <div className="shrink-0 self-center text-gray-400 pl-2">
+        {/* Decoration: the button's aria-expanded is what announces the state. */}
+        <div className="shrink-0 self-center text-gray-400 pl-2" aria-hidden="true">
           {isPending ? (
             <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
           ) : open ? (
@@ -330,75 +350,79 @@ function SeasonRow({
             <ChevronDown className="w-5 h-5" />
           )}
         </div>
-      </button>
+      </div>
 
-      {/* Episodes list */}
-      {open && (
-        <div className="border-t border-gray-700 px-3">
-          {error && (
-            <p className="text-gray-400 text-sm py-4 text-center">
-              Failed to load episodes.
-            </p>
-          )}
-          {!error && !details && isPending && (
-            <p className="text-gray-400 text-sm py-4 text-center">
-              Loading episodes…
-            </p>
-          )}
-          {details && details.episodes.length === 0 && (
-            <p className="text-gray-400 text-sm py-4 text-center">
-              No episodes available yet.
-            </p>
-          )}
+      {/* Episodes list. The container stays mounted (hidden while shut) so the
+          header's aria-controls always names an element that exists. */}
+      <div id={panelId} hidden={!open} className="border-t border-gray-700 px-3">
+        {open && (
+          <>
+            {error && (
+              <p className="text-gray-400 text-sm py-4 text-center">
+                Failed to load episodes.
+              </p>
+            )}
+            {!error && !details && isPending && (
+              <p className="text-gray-400 text-sm py-4 text-center">
+                Loading episodes…
+              </p>
+            )}
+            {details && details.episodes.length === 0 && (
+              <p className="text-gray-400 text-sm py-4 text-center">
+                No episodes available yet.
+              </p>
+            )}
 
-          {/* Bulk toggle lives here rather than in the header, which is itself a
-              button and cannot nest one. */}
-          {airedEpisodeNumbers.length > 0 && (
-            <div className="flex justify-end pt-3">
-              <button
-                onClick={async () => {
-                  if (saving.current || !checkProfile()) return;
-                  saving.current = true;
-                  setIsSaving(true);
-                  try {
-                    if (
-                      !(await setSeasonWatched(
-                        show,
-                        season.season_number,
-                        airedEpisodeNumbers,
-                        !allAiredWatched,
-                      ))
-                    ) {
-                      toast.showToast(STORAGE_REFUSED_MESSAGE, "error");
+            {/* Bulk toggle lives here rather than in the header, whose whole
+                surface is the open/close button's stretched click target – a
+                second control there would sit underneath it. */}
+            {airedEpisodeNumbers.length > 0 && (
+              <div className="flex justify-end pt-3">
+                <button
+                  onClick={async () => {
+                    if (saving.current || !checkProfile()) return;
+                    saving.current = true;
+                    setIsSaving(true);
+                    try {
+                      if (
+                        !(await setSeasonWatched(
+                          show,
+                          season.season_number,
+                          airedEpisodeNumbers,
+                          !allAiredWatched,
+                        ))
+                      ) {
+                        toast.showToast(STORAGE_REFUSED_MESSAGE, "error");
+                      }
+                    } finally {
+                      saving.current = false;
+                      setIsSaving(false);
                     }
-                  } finally {
-                    saving.current = false;
-                    setIsSaving(false);
-                  }
-                }}
-                disabled={isSaving}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-60 disabled:cursor-wait text-sm text-gray-200 hover:text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-              >
-                <Check className="w-4 h-4" aria-hidden="true" />
-                {allAiredWatched
-                  ? "Unmark all"
-                  : `Mark ${airedEpisodeNumbers.length} aired as watched`}
-              </button>
-            </div>
-          )}
+                  }}
+                  disabled={isSaving}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-60 disabled:cursor-wait text-sm text-gray-200 hover:text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                >
+                  <Check className="w-4 h-4" aria-hidden="true" />
+                  {allAiredWatched
+                    ? "Unmark all"
+                    : `Mark ${airedEpisodeNumbers.length} aired as watched`}
+                </button>
+              </div>
+            )}
 
-          {details &&
-            details.episodes.map((ep) => (
-              <EpisodeRow
-                key={ep.id}
-                episode={ep}
-                show={show}
-                today={today}
-                checkProfile={checkProfile}
-              />
-            ))}
-        </div>
-      )}
+            {details &&
+              details.episodes.map((ep) => (
+                <EpisodeRow
+                  key={ep.id}
+                  episode={ep}
+                  show={show}
+                  today={today}
+                  checkProfile={checkProfile}
+                />
+              ))}
+          </>
+        )}
+      </div>
     </div>
   );
 }

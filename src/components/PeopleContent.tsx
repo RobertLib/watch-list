@@ -109,8 +109,13 @@ export function PeopleContent({ people }: PeopleContentProps) {
               className="group block"
             >
               <div className="relative aspect-2/3 mb-3 overflow-hidden rounded-lg bg-gray-800">
+                {/* A card is roughly 140–235px wide across the breakpoints,
+                    so a 2x screen wants up to ~470px: h632 (421×632) is the
+                    profile size that comes closest, short of the full-size
+                    original. The w500 asked for before is 40% more pixels per
+                    card, and the first twelve cards load eagerly. */}
                 <Image
-                  src={getImageUrl(person.profile_path, "w500")}
+                  src={getImageUrl(person.profile_path, "h632")}
                   alt={person.name}
                   fill
                   className="object-cover group-hover:scale-105 transition-transform duration-200"

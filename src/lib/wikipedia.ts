@@ -200,14 +200,19 @@ async function fetchPageContent(
 // Public API
 // ──────────────────────────────────────────────────────────────────────────────
 
+/**
+ * A film's article, by its Wikidata id (TMDB's `external_ids.wikidata_id`).
+ *
+ * This used to search "<title> film <year>" and trust the first hit. A title is
+ * not an identity: remakes share it, and a film with no English article simply
+ * got whichever article the search ranked first – presented as its own. Films
+ * now go the way series and people already did, and a film TMDB has no Wikidata
+ * id for shows no panel rather than a guessed one.
+ */
 export async function getMovieWikipediaContent(
-  title: string,
-  year?: number,
+  wikidataId: string | null | undefined,
 ): Promise<WikipediaContent | null> {
-  const query = year ? `${title} film ${year}` : `${title} film`;
-  const pageTitle = await searchWikipediaTitle(query);
-  if (!pageTitle) return null;
-  return fetchPageContent(pageTitle);
+  return getWikidataWikipediaContent(wikidataId);
 }
 
 export async function getTVWikipediaContent(
@@ -222,10 +227,43 @@ export async function getPersonWikipediaContent(
   return getWikidataWikipediaContent(wikidataId);
 }
 
+type WikidataEntity = {
+  id?: string;
+  redirects?: { from?: string; to?: string };
+  sitelinks?: { enwiki?: { site?: string; title?: string } };
+};
+
+/**
+ * The entity Wikidata answered for `requested`, if it is that entity.
+ *
+ * `wbgetentities` follows redirects. When the item TMDB names has since been
+ * merged into another, the answer is the surviving item: its `id` is the target
+ * and `redirects` records the hop. Comparing `id` with the requested id alone
+ * read that as a mismatch, and the panel quietly vanished for every title whose
+ * item had been merged. A merge is two records of one entity, so the target is
+ * accepted – but only with the hop on record; an `id` that differs without one
+ * is some other entity. Searched by value rather than read by key, so it holds
+ * whichever of the two ids the response is keyed by.
+ */
+function requestedEntity(
+  entities: Record<string, WikidataEntity> | undefined,
+  requested: string,
+): WikidataEntity | null {
+  return (
+    Object.values(entities ?? {}).find(
+      (entity) =>
+        entity?.id === requested ||
+        (entity?.redirects?.from === requested &&
+          typeof entity.id === "string" &&
+          entity.redirects.to === entity.id),
+    ) ?? null
+  );
+}
+
 async function getWikidataWikipediaContent(
   wikidataId: string | null | undefined,
 ): Promise<WikipediaContent | null> {
-  // Names cannot distinguish people or different series with the same title.
+  // Names cannot distinguish people, films or series with the same title.
   // TMDB's external ID identifies the entity; Wikidata supplies its English
   // article. Without that link, omit this optional panel instead of guessing.
   if (typeof wikidataId !== "string" || !/^Q[1-9]\d*$/.test(wikidataId)) return null;
@@ -235,21 +273,19 @@ async function getWikidataWikipediaContent(
   url.searchParams.set("ids", wikidataId);
   url.searchParams.set("props", "sitelinks");
   url.searchParams.set("sitefilter", "enwiki");
+  // The default, spelled out because `requestedEntity` depends on it.
+  url.searchParams.set("redirects", "yes");
   url.searchParams.set("format", "json");
   url.searchParams.set("origin", "*");
 
   try {
     const { response, data } = await fetchJsonWithRetry<{
-      entities?: Record<string, {
-        id?: string;
-        sitelinks?: { enwiki?: { site?: string; title?: string } };
-      }>;
+      entities?: Record<string, WikidataEntity>;
     }>(url.toString());
     if (!response.ok) return null;
 
-    const entity = data?.entities?.[wikidataId];
-    const article = entity?.sitelinks?.enwiki;
-    if (entity?.id !== wikidataId || article?.site !== "enwiki" ||
+    const article = requestedEntity(data?.entities, wikidataId)?.sitelinks?.enwiki;
+    if (article?.site !== "enwiki" ||
         typeof article.title !== "string" || !article.title.trim()) return null;
 
     return fetchPageContent(article.title);

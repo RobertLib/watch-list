@@ -302,7 +302,9 @@ describe("clearing a list", () => {
 
     await act(async () => { fireEvent.click(button); fireEvent.click(button); });
 
-    expect(button.hasAttribute("disabled")).toBe(true);
+    // Busy but focusable: native `disabled` blurs the focused button.
+    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
     expect(confirmed).toHaveBeenCalledTimes(1);
     expect(requests).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("card").textContent).toBe(tab === "watched" ? "Heat" : "Fight Club");
@@ -328,7 +330,7 @@ describe("clearing a list", () => {
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /clear all/i })); });
 
     expect(screen.getByTestId("card").textContent).toBe("Heat");
-    expect(screen.getByRole("button", { name: /clear all/i }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: /clear all/i }).getAttribute("aria-disabled")).toBe("false");
     expect(toast.showToast).toHaveBeenCalledExactlyOnceWith(STORAGE_REFUSED_MESSAGE, "error");
   });
 
@@ -729,9 +731,9 @@ describe("the tabs, from the keyboard", () => {
     toWatch.focus();
 
     await act(async () => {
+      // The selection travels through the fragment, like a click does – and
+      // without any `hashchange` arriving to tell the store about it.
       fireEvent.keyDown(toWatch, { key: "ArrowRight" });
-      // The selection travels through the fragment, like a click does.
-      fireEvent(window, new HashChangeEvent("hashchange"));
     });
 
     expect(document.activeElement).toBe(watched);
@@ -747,7 +749,6 @@ describe("the tabs, from the keyboard", () => {
 
     await act(async () => {
       fireEvent.keyDown(toWatch, { key: "ArrowLeft" });
-      fireEvent(window, new HashChangeEvent("hashchange"));
     });
 
     expect(document.activeElement).toBe(watched);
@@ -762,13 +763,11 @@ describe("the tabs, from the keyboard", () => {
 
     await act(async () => {
       fireEvent.keyDown(toWatch, { key: "End" });
-      fireEvent(window, new HashChangeEvent("hashchange"));
     });
     expect(document.activeElement).toBe(watched);
 
     await act(async () => {
       fireEvent.keyDown(watched, { key: "Home" });
-      fireEvent(window, new HashChangeEvent("hashchange"));
     });
     expect(document.activeElement).toBe(toWatch);
     expect(screen.getByTestId("card").textContent).toBe("Fight Club");
@@ -782,6 +781,58 @@ describe("the tabs, from the keyboard", () => {
     const panel = screen.getByRole("tabpanel");
     expect(toWatch.getAttribute("aria-controls")).toBe(panel.id);
     expect(panel.getAttribute("aria-labelledby")).toBe(toWatch.id);
+  });
+});
+
+describe("switching tabs and the URL", () => {
+  /**
+   * Assigning `location.hash` navigated: an empty fragment means "the top of
+   * the document", so returning to "To Watch" scrolled the page up, and every
+   * switch – one per arrow key – added an entry for the Back button.
+   */
+  it("rewrites the fragment in place, without a navigation or a Back entry", async () => {
+    seed({ watchlist: [saved("Fight Club", 550)], watched: [seen("Heat", 949)] });
+    await renderPage();
+    const replace = vi.spyOn(window.history, "replaceState");
+    const push = vi.spyOn(window.history, "pushState");
+    const hashChanges = vi.fn();
+    window.addEventListener("hashchange", hashChanges);
+    const entries = window.history.length;
+    const [toWatch, watched] = screen.getAllByRole("tab");
+
+    await act(async () => { fireEvent.keyDown(toWatch, { key: "ArrowRight" }); });
+    expect(window.location.hash).toBe("#watched");
+    expect(screen.getByTestId("card").textContent).toBe("Heat");
+
+    await act(async () => { fireEvent.keyDown(watched, { key: "ArrowLeft" }); });
+    expect(window.location.hash).toBe("");
+    // No dangling "#" either: the URL is the page's own again.
+    expect(window.location.href.endsWith("#")).toBe(false);
+    expect(screen.getByTestId("card").textContent).toBe("Fight Club");
+
+    await act(async () => { fireEvent.click(watched); });
+    expect(screen.getByTestId("card").textContent).toBe("Heat");
+
+    expect(replace).toHaveBeenCalledTimes(3);
+    expect(replace.mock.calls.every(([state]) => state === null)).toBe(true);
+    expect(push).not.toHaveBeenCalled();
+    expect(window.history.length).toBe(entries);
+    // Nothing navigated, so the browser had no fragment to scroll to.
+    expect(hashChanges).not.toHaveBeenCalled();
+    window.removeEventListener("hashchange", hashChanges);
+  });
+
+  it("keeps the query string when writing the fragment", async () => {
+    window.history.replaceState(null, "", "/watchlist?from=nav");
+    seed({ watchlist: [saved("Fight Club", 550)], watched: [seen("Heat", 949)] });
+    await renderPage();
+
+    await act(async () => { fireEvent.click(screen.getAllByRole("tab")[1]); });
+
+    expect(window.location.pathname).toBe("/watchlist");
+    expect(window.location.search).toBe("?from=nav");
+    expect(window.location.hash).toBe("#watched");
+    window.history.replaceState(null, "", "/");
   });
 });
 

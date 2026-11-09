@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { startTransition, useLayoutEffect, useState } from "react";
+import { createRoot } from "react-dom/client";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { useAsyncData } from "./useAsyncData";
 
@@ -184,5 +186,94 @@ describe("useAsyncData", () => {
 
     expect(result.current.data).toBe("newer");
     expect(result.current.error).toBeNull();
+  });
+
+  /**
+   * A client navigation commits as a transition, and a transition's effect
+   * cleanups run after its commit rather than inside it. The previous load
+   * settling in that gap used to be accepted – the old effect had not been told
+   * yet – so film A's details sat on film B's page until B's own load answered.
+   *
+   * `act` would flush the cleanups before any promise could settle, so this
+   * drives a real root on React's own scheduler instead.
+   */
+  it("never shows the previous deps' result under deps committed in a transition", async () => {
+    const reactEnvironment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    const wasActEnvironment = reactEnvironment.IS_REACT_ACT_ENVIRONMENT;
+    reactEnvironment.IS_REACT_ACT_ENVIRONMENT = false;
+    const loads = { A: deferred<string>(), B: deferred<string>() };
+    const frames: string[] = [];
+    let navigate!: (id: "A" | "B") => void;
+
+    function Page() {
+      const [id, setId] = useState<"A" | "B">("A");
+      navigate = (next) => startTransition(() => setId(next));
+      const { data, isLoading } = useAsyncData(() => loads[id].promise, [id]);
+      frames.push(`id=${id} data=${data} loading=${isLoading}`);
+
+      // Settles A after B has committed, before the passive cleanup that
+      // would have marked it cancelled.
+      useLayoutEffect(() => {
+        if (id === "B") loads.A.resolve("A-data");
+      }, [id]);
+
+      return null;
+    }
+
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      root.render(<Page />);
+      await vi.waitFor(() => expect(frames.at(-1)).toBe("id=A data=null loading=true"));
+
+      navigate("B");
+      await vi.waitFor(() => expect(frames.some((frame) => frame.startsWith("id=B"))).toBe(true));
+      // Give the settled A a chance to render, as it used to.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      loads.B.resolve("B-data");
+      await vi.waitFor(() => expect(frames.at(-1)).toBe("id=B data=B-data loading=false"));
+
+      expect(frames.filter((frame) => frame.startsWith("id=B"))
+        .every((frame) => frame === "id=B data=null loading=true" ||
+          frame === "id=B data=B-data loading=false")).toBe(true);
+    } finally {
+      root.unmount();
+      reactEnvironment.IS_REACT_ACT_ENVIRONMENT = wasActEnvironment;
+    }
+  });
+
+  it("aborts the signal it handed to a load that can no longer be shown", async () => {
+    const signals: AbortSignal[] = [];
+    const { rerender, unmount } = renderHook(
+      ({ key }) => useAsyncData((signal) => {
+        signals.push(signal);
+        return new Promise<string>(() => {});
+      }, [key]),
+      { initialProps: { key: "a" } },
+    );
+
+    rerender({ key: "b" });
+    expect(signals.map((signal) => signal.aborted)).toEqual([true, false]);
+
+    unmount();
+    expect(signals.map((signal) => signal.aborted)).toEqual([true, true]);
+  });
+
+  it("ignores the answer to an attempt that a reload replaced", async () => {
+    const first = deferred<string>();
+    const second = deferred<string>();
+    const answers = [first.promise, second.promise];
+    let call = 0;
+    const { result } = renderHook(() => useAsyncData(() => answers[call++], []));
+
+    act(() => result.current.reload());
+    expect(result.current.isLoading).toBe(true);
+
+    await act(async () => { first.resolve("superseded"); });
+    expect(result.current.data).toBeNull();
+    expect(result.current.isLoading).toBe(true);
+
+    await act(async () => { second.resolve("current"); });
+    expect(result.current.data).toBe("current");
   });
 });

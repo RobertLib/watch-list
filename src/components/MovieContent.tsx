@@ -2,6 +2,7 @@
 
 import { Suspense } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { tmdbApi } from "@/lib/tmdb";
 import { GenreTags } from "@/components/GenreTags";
@@ -33,6 +34,7 @@ import { useAsyncData } from "@/hooks/useAsyncData";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { useCanonicalUrl } from "@/hooks/useCanonicalUrl";
 import { useSettings } from "@/hooks/useSettings";
+import { findYouTubeTrailer } from "@/hooks/useVideoOverlay";
 import { getMovieWikipediaContent } from "@/lib/wikipedia";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
 import { releaseYear, releaseYearSuffix } from "@/lib/dates";
@@ -47,8 +49,10 @@ import {
   personHref,
 } from "@/lib/routes";
 
+// `external_ids` is what carries the film's Wikidata id – the only thing the
+// Wikipedia panel trusts to name the right article.
 const APPENDED_SECTIONS =
-  "watch/providers,credits,videos,similar,translations,keywords,reviews,release_dates,images";
+  "watch/providers,credits,videos,similar,translations,keywords,reviews,release_dates,images,external_ids";
 
 function formatRuntime(minutes: number | null): string {
   if (!minutes) return "Unknown runtime";
@@ -60,7 +64,7 @@ function formatRuntime(minutes: number | null): string {
 /**
  * A film.
  *
- * The title is named by `?id=550-fight-club` rather than by the path: a static
+ * The title is named by `?id=fight-club-550` rather than by the path: a static
  * export can only serve paths that existed at build time, and TMDB's catalogue
  * is not a build-time list. `useSearchParams` is what reads it, which is why the
  * body sits behind a Suspense boundary – during the prerender there is no query
@@ -87,15 +91,13 @@ function MovieDetail() {
 
   // A second, slower source that must not hold up the page: the film renders as
   // soon as TMDB answers, and the Wikipedia section appears when it appears.
+  // Found through the film's Wikidata id rather than a search for its title:
+  // the search trusted its first hit, so a remake, a namesake, or a film with
+  // no English article at all could be shown another film's article as its own.
   const { data: wikiContent } = useAsyncData(
     async () =>
-      data
-        ? getMovieWikipediaContent(
-            data.title,
-            releaseYear(data.release_date) ?? undefined,
-          )
-        : null,
-    [data?.id, data?.title],
+      data ? getMovieWikipediaContent(data.external_ids?.wikidata_id) : null,
+    [data?.id, data?.external_ids?.wikidata_id],
   );
 
   useDocumentTitle(
@@ -154,10 +156,7 @@ function MovieDetail() {
     getRegionCode(region),
   );
 
-  const trailer = videos.results.find(
-    (video: { type: string; site: string }) =>
-      video.type === "Trailer" && video.site === "YouTube",
-  );
+  const trailer = findYouTubeTrailer(videos.results);
 
   const director = credits.crew.find(
     (member: { job: string }) => member.job === "Director",
@@ -306,17 +305,20 @@ function MovieDetail() {
                 </div>
               )}
 
-              {/* Key Crew */}
+              {/* Key Crew – Links like the cast's. A plain <a> here was a full
+                  document load in the static export: the app booted again
+                  and the in-memory TMDB cache went with it. */}
               <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                 {director && (
                   <div>
                     <h3 className="font-semibold">Director</h3>
-                    <a
+                    <Link
                       href={personHref(createSlug(director.name, director.id))}
+                      prefetch={false}
                       className="text-gray-300 hover:text-white transition-colors"
                     >
                       {director.name}
-                    </a>
+                    </Link>
                   </div>
                 )}
                 {writers.length > 0 && (
@@ -327,12 +329,13 @@ function MovieDetail() {
                         (w: { id: number; name: string }, i: number) => (
                           <span key={w.id}>
                             {i > 0 && ", "}
-                            <a
+                            <Link
                               href={personHref(createSlug(w.name, w.id))}
+                              prefetch={false}
                               className="hover:text-white transition-colors"
                             >
                               {w.name}
-                            </a>
+                            </Link>
                           </span>
                         ),
                       )}
@@ -343,7 +346,7 @@ function MovieDetail() {
 
               {/* Action Buttons */}
               <div className="flex flex-wrap items-center gap-3 mt-6">
-                <MovieTrailerButton movieId={details.id} trailer={trailer} />
+                <MovieTrailerButton trailer={trailer} />
                 <DetailPageWatchlistButton
                   id={details.id}
                   title={details.title}

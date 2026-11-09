@@ -94,18 +94,33 @@ export function DetailPageWatchedButton({
     <div className="mt-6 inline-flex items-center">
       <button
         onClick={handleClick}
-        disabled={isSaving}
+        // Not native `disabled`: browsers blur a disabled button, so marking
+        // a title from the keyboard dropped focus. `handleClick` refuses a
+        // repeat while the first is saving.
+        aria-disabled={isSaving}
         aria-busy={isSaving}
         className={cn(
-          "flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-black",
+          "flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium aria-disabled:cursor-wait transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-black",
           watched
             ? "bg-green-600 hover:bg-green-700"
             : "bg-white/10 hover:bg-white/20",
         )}
-        aria-pressed={watched}
       >
         <Eye className="w-4 h-4" aria-hidden="true" />
-        {watched ? "Watched" : "Mark as watched"}
+        {/* The label changes with the state, so the state is not also an
+            `aria-pressed` – together they announced "Watched, pressed" and
+            "Mark as watched, not pressed", a toggle whose name flips too.
+            Spoken, the watched state also says what pressing it does; the
+            visible word still leads the name, so "click Watched" works for
+            someone using voice control. */}
+        {watched ? (
+          <>
+            Watched
+            <span className="sr-only">, mark as not watched</span>
+          </>
+        ) : (
+          "Mark as watched"
+        )}
       </button>
     </div>
   );

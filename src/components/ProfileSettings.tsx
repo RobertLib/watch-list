@@ -29,7 +29,19 @@ export function ProfileSettings() {
   const pendingWrites = useRef(0);
   const [isSaving, setIsSaving] = useState(false);
 
-  const save = async (apply: () => Promise<boolean>, errorMessage: string) => {
+  // The controls below are aria-disabled while a write is pending, not
+  // natively disabled: arrowing a closed select on Windows or Linux fires a
+  // change per key, and native `disabled` dropped focus after the first one,
+  // so the next arrow did nothing. This guard is what refuses a second change
+  // while the first is still being saved. Platform updates are exempt: each
+  // is applied to the list read under the lock, so queued ones compose, and
+  // the catalogue's reconciliation after a region change must never be lost.
+  const save = async (
+    apply: () => Promise<boolean>,
+    errorMessage: string,
+    { exclusive = true }: { exclusive?: boolean } = {},
+  ) => {
+    if (exclusive && pendingWrites.current > 0) return;
     pendingWrites.current += 1;
     setIsSaving(true);
     try {
@@ -67,6 +79,8 @@ export function ProfileSettings() {
   ) => save(
     () => updateSelectedProviderIds(update, expectedRegion),
     "Could not save your platforms. Please try again.",
+    // Presses are refused by the selector itself while `isSaving`.
+    { exclusive: false },
   );
 
   if (!hydrated) return <ProfileSettingsSkeleton />;

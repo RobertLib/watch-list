@@ -1,3 +1,5 @@
+import { PUZZLE_EPOCH } from "./daily-puzzle";
+
 /**
  * The pool the daily puzzle draws from.
  *
@@ -11,12 +13,54 @@
  * read from TMDB at request time, so a re-titling upstream follows along.
  *
  * Ordered by id on purpose – the order must not leak how well known a film is.
- * Appending is safe; see `pickPuzzleForDay` for what it does to the rotation.
+ * Append-only: new films go on the end, sorted by id among themselves, and
+ * nothing above them moves. Every day that has run draws from a prefix of this
+ * list, so inserting, removing or reordering an existing entry rewrites the
+ * answer of days people have already played. Appending also needs a new entry in
+ * `PUZZLE_POOL_GENERATIONS` below: the schedule only walks as far as the last
+ * generation, so films added without one are never served.
  */
 export interface PuzzleEntry {
   id: number;
   title: string;
 }
+
+/**
+ * How much of the pool the schedule used, and from which day.
+ *
+ * `pickPuzzleForDay` strides through the first `length` films of the pool, and
+ * the stride depends on that length – so the length cannot simply be read off
+ * the array. When it was, adding a 399th film moved the walk for every day since
+ * the epoch: a finished archive board went on showing a correct guess for one
+ * film while revealing another as the answer, and a board in progress could
+ * become unwinnable because its earlier guesses were now checked against a
+ * different film.
+ *
+ * Instead each stretch of days keeps the length it started with. A day uses the
+ * last generation whose `from` is not after it; the films a generation adds are
+ * appended, so the prefix every earlier generation reads is untouched.
+ *
+ * To grow the pool: append the films, then add a generation with the new length
+ * and a `from` that has not begun anywhere yet – a UTC day a few days after the
+ * deploy, which gives tabs and service workers still running the old bundle time
+ * to pick up the new one before the two disagree about a day. A `from` of today
+ * or earlier changes the answer of every day from it on, including one already
+ * in progress. The pool tests refuse a pool whose length does not match the last
+ * generation, and a prefix that has changed underneath one.
+ *
+ * Crossing into a new generation restarts the walk at a different point, so a
+ * film shown in the weeks before the switch can come round again sooner than a
+ * full cycle. That is the price of never touching a day that has been played.
+ */
+export interface PoolGeneration {
+  /** First UTC day (`YYYY-MM-DD`) that draws from this length of the pool. */
+  from: string;
+  length: number;
+}
+
+export const PUZZLE_POOL_GENERATIONS: readonly PoolGeneration[] = [
+  { from: PUZZLE_EPOCH, length: 398 },
+];
 
 export const PUZZLE_POOL: PuzzleEntry[] = [
   { id: 11, title: "Star Wars" }, // 1977

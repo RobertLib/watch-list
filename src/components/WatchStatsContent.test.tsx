@@ -454,6 +454,77 @@ describe("the selected review year", () => {
       `${YEAR} in review\n🎬 ${incoming.length} film${incoming.length === 1 ? "" : "s"}`,
     ));
   });
+
+  /**
+   * A finished series used to count as zero minutes in its year – "around 2
+   * hours" for a film and fifty ticked episodes – with nothing on the page or
+   * in the shared text to say its time had been dropped.
+   */
+  it("says when a finished series' time is left out of the year, on the page and when shared", async () => {
+    seed({
+      watched: [
+        seen("Fight Club", 550),
+        seen("Breaking Bad", 1396, { mediaType: "tv" }),
+      ],
+      progress: {
+        "1396": show(1396, "Breaking Bad", {
+          "1": Array.from({ length: 50 }, (_, index) => index + 1),
+        }),
+      },
+    });
+    getWatchStatsFacts.mockResolvedValue({
+      "movie-550": facts(550, "movie", 100),
+      "tv-1396": facts(1396, "tv", 45),
+    });
+    await renderStats();
+
+    const review = screen.getByRole("heading", { name: `${YEAR} in review` }).closest("section")!;
+    expect(within(review).getByText(/You finished/).textContent).toContain("around 2 hours");
+    expect(within(review).getByText(/leaves out the time for 1 series you finished/)).toBeTruthy();
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    await act(async () => {
+      fireEvent.click(within(review).getByRole("button", { name: "Share" }));
+    });
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining(
+      "⏱️ 2 hours, not counting 1 series",
+    ));
+  });
+});
+
+describe("sharing the year", () => {
+  async function shareWith(share: () => Promise<void>) {
+    seed({ watched: [seen("Fight Club", 550)] });
+    await renderStats();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { share: vi.fn(share), clipboard: { writeText } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Share" }));
+    });
+    return writeText;
+  }
+
+  // On iOS the cancelled sheet spent the gesture, so the copy failed and the
+  // visitor was told so for having changed their mind.
+  it("does nothing more when the visitor dismisses the share sheet", async () => {
+    const writeText = await shareWith(() =>
+      Promise.reject(new DOMException("Share canceled", "AbortError")),
+    );
+
+    expect(writeText).not.toHaveBeenCalled();
+    expect(toast.showToast).not.toHaveBeenCalled();
+    expect(screen.queryByText("Copied")).toBeNull();
+  });
+
+  it("still copies the text when the browser refuses to share", async () => {
+    const writeText = await shareWith(() =>
+      Promise.reject(new DOMException("Not allowed", "NotAllowedError")),
+    );
+
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("in review"));
+    expect(screen.getByText("Copied")).toBeTruthy();
+  });
 });
 
 describe("the yearly goal", () => {

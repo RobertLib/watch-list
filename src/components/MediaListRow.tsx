@@ -32,7 +32,9 @@ export function MediaListRow({ item, className }: MediaListRowProps) {
   const { isOpen, video, isLoading, openVideo, closeVideo } = useVideoOverlay();
   const { isWatched } = useWatched();
 
-  const imageUrl = getImageUrl(item.poster_path, "w500");
+  // The thumbnail is 64–80px wide, so w185 covers a 2x screen; the full w500
+  // poster this used to fetch is seven times the pixels, once per row.
+  const imageUrl = getImageUrl(item.poster_path, "w185");
   const year = releaseYear(item.release_date);
   const watched = isWatched(item.id, item.media_type);
   const detailUrl = mediaHref(item.media_type, createSlug(item.title, item.id));

@@ -4,7 +4,9 @@ import {
   BACKUP_VERSION,
   backupFilename,
   buildBackup,
+  describeUnreadable,
   EMPTY_STORES,
+  MAX_BACKUP_FILE_BYTES,
   parseBackup,
   sanitizePortableProfiles,
   sanitizePortableSettings,
@@ -653,5 +655,74 @@ describe("version 1 files", () => {
     });
 
     expect(restored!.goal).toBeNull();
+  });
+});
+
+describe("each profile's last visit", () => {
+  it("round-trips through a file and a parked slot", () => {
+    const backup = buildBackup({
+      stores: { ...EMPTY_STORES, lastVisit: "2026-07-31T12:00:00.000Z" },
+      activeProfile: { id: "default", name: "Me" },
+      otherProfiles: [{ id: "p2", name: "Two", ...EMPTY_STORES, lastVisit: "2026-07-01T12:00:00.000Z" }],
+      settings: { region: null, watchProviderFilter: null, selectedProviderIds: null },
+      exportedAt: EXPORTED_AT,
+    });
+    const restored = parseBackup(JSON.parse(JSON.stringify(backup)))!;
+
+    expect(restored.lastVisit).toBe("2026-07-31T12:00:00.000Z");
+    expect(restored.otherProfiles[0].lastVisit).toBe("2026-07-01T12:00:00.000Z");
+    expect(storesToSlot(restored)["last-visited"]).toBe(JSON.stringify("2026-07-31T12:00:00.000Z"));
+    expect(storesFromSlot(storesToSlot(restored), EXPORTED_AT).lastVisit).toBe("2026-07-31T12:00:00.000Z");
+  });
+
+  it.each([undefined, null, "not a date", 42])("restores %j as a first visit", (lastVisit) => {
+    expect(parseBackup({ ...fullBackup(), lastVisit })!.lastVisit).toBeNull();
+    expect(storesToSlot(parseBackup({ ...fullBackup(), lastVisit })!)).not.toHaveProperty("last-visited");
+  });
+});
+
+describe("what an export could not read", () => {
+  it("is described with the profile's name and the store's own word", () => {
+    expect(describeUnreadable({ profile: { id: "p2", name: "Sam" }, stores: ["watched"], raw: "[" }))
+      .toBe('watched list for "Sam"');
+    expect(describeUnreadable({
+      profile: { id: "p2", name: "Sam" }, stores: ["watchlist", "watched", "ratings"], raw: "{",
+    })).toBe('watchlist, watched list and ratings for "Sam"');
+    expect(describeUnreadable({ profile: null, stores: ["settings.region"], raw: "XX" }))
+      .toBe("the region setting");
+    expect(describeUnreadable({ profile: null, stores: ["profiles"], raw: "null" }))
+      .toBe("the profile list");
+  });
+
+  it("is never restored, so a file cannot write unreadable text back", () => {
+    const restored = parseBackup({
+      ...fullBackup(),
+      unreadable: [{ profile: null, stores: ["settings.region"], raw: "XX" }],
+    });
+
+    expect(restored).not.toHaveProperty("unreadable");
+  });
+});
+
+describe("the restore size limit", () => {
+  it("leaves room for the largest backup a browser's storage can produce", () => {
+    // Every store at its most expensive: the longest titles, in characters
+    // that take three bytes each once the file is UTF-8 – enough of them to
+    // fill the five million characters localStorage holds.
+    const title = "映".repeat(200);
+    const item = { ...watchlistItem, title };
+    const perItem = JSON.stringify(item).length;
+    const count = Math.ceil((5 * 1024 * 1024) / perItem);
+    const watchlist = Array.from({ length: count }, (_, index) => ({ ...item, id: index + 1 }));
+    const backup = buildBackup({
+      stores: { ...EMPTY_STORES, watchlist },
+      activeProfile: { id: "default", name: "Me" },
+      otherProfiles: [],
+      settings: { region: null, watchProviderFilter: null, selectedProviderIds: null },
+      exportedAt: EXPORTED_AT,
+    });
+
+    const bytes = new TextEncoder().encode(JSON.stringify(backup, null, 2)).length;
+    expect(bytes).toBeLessThan(MAX_BACKUP_FILE_BYTES);
   });
 });

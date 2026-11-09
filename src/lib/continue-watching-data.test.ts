@@ -9,7 +9,8 @@ import type { ContinueWatchingSeed } from "./continue-watching";
  * tested next door. What this half owns is the fetching, and its one real
  * economy: normally the season is fetched for the episode actually being offered
  * rather than for the whole show, so a series with fifteen seasons costs two
- * reads. A last-airing special requires individual regular episode dates instead.
+ * reads. A last-airing special requires individual episode dates instead – for
+ * the season that may be part-way through, not for every season of the show.
  * That pairing is index-based across two settled batches, and getting it
  * wrong would show one show's episode title under another show's poster – a bug
  * that looks like bad data rather than like a mis-paired array.
@@ -459,6 +460,111 @@ describe("getContinueWatchingEpisodes", () => {
     });
     expect(getCachedSeasonDetails).toHaveBeenCalledTimes(2);
     expect(getCachedSeasonDetails).not.toHaveBeenCalledWith(1396, 0);
+  });
+
+  describe("after a special, on a long-running show", () => {
+    // Thirty yearly seasons of ten episodes; the latest premiered last month and
+    // has aired five so far. A special aired most recently of all.
+    const longRunning = () => show({
+      seasons: [
+        { season_number: 0, episode_count: 12, air_date: "1999-12-24" },
+        ...Array.from({ length: 30 }, (_, index) => ({
+          season_number: index + 1,
+          episode_count: 10,
+          air_date: index === 29 ? "2026-09-07" : `${1996 + index}-09-01`,
+        })),
+        { season_number: 31, episode_count: 10, air_date: "2027-09-06" },
+      ] as TVShowDetails["seasons"],
+      last_episode_to_air: episode(12, { season_number: 0, air_date: "2026-10-01" }),
+      // Stale or not, a scheduled episode must not stand in for dated lists.
+      next_episode_to_air: episode(9, { season_number: 30, air_date: "2026-10-04" }),
+    });
+    const tenEpisodes = (seasonNumber: number, aired: number) => season({
+      season_number: seasonNumber,
+      episodes: Array.from({ length: 10 }, (_, index) => episode(index + 1, {
+        season_number: seasonNumber,
+        name: `S${seasonNumber}E${index + 1}`,
+        air_date: index < aired
+          ? ["2026-09-07", "2026-09-14", "2026-09-21", "2026-09-28", "2026-10-05"][index % 5]
+          : "2026-11-30",
+      })),
+    });
+    const allWatchedBefore30 = Object.fromEntries(Array.from({ length: 29 }, (_, index) =>
+      [String(index + 1), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]],
+    ));
+
+    beforeEach(() => {
+      vi.mocked(getCachedTVShowDetails).mockResolvedValue(longRunning());
+      vi.mocked(getCachedSeasonDetails).mockImplementation(async (_id, seasonNumber) =>
+        tenEpisodes(seasonNumber, seasonNumber === 30 ? 5 : 10),
+      );
+    });
+
+    it("reads only the season that may be part-way through", async () => {
+      const [next] = await getContinueWatchingEpisodes([seed({
+        seasons: { ...allWatchedBefore30, "30": [1, 2, 3] },
+      })], "2026-10-06");
+
+      expect(next).toMatchObject({
+        seasonNumber: 30,
+        episodeNumber: 4,
+        episodeName: "S30E4",
+        watchedCount: 293,
+        airedCount: 295,
+      });
+      expect(vi.mocked(getCachedSeasonDetails).mock.calls.map(([, number]) => number))
+        .toEqual([30]);
+    });
+
+    it("still offers a gap in an earlier season, reading that season for its card", async () => {
+      const seasons = { ...allWatchedBefore30, "2": [1, 2, 3, 4, 6, 7, 8, 9, 10], "30": [1, 2, 3, 4, 5] };
+      const [next] = await getContinueWatchingEpisodes([seed({ seasons })], "2026-10-06");
+
+      expect(next).toMatchObject({
+        seasonNumber: 2,
+        episodeNumber: 5,
+        episodeName: "S2E5",
+        watchedCount: 294,
+        airedCount: 295,
+      });
+      expect(vi.mocked(getCachedSeasonDetails).mock.calls.map(([, number]) => number))
+        .toEqual([30, 2]);
+    });
+
+    it("leaves the show out once every aired episode is ticked", async () => {
+      expect(await getContinueWatchingEpisodes([seed({
+        seasons: { ...allWatchedBefore30, "30": [1, 2, 3, 4, 5] },
+      })], "2026-10-06")).toEqual([]);
+      expect(getCachedSeasonDetails).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("reads an undated later season rather than assuming it has not aired", async () => {
+    vi.mocked(getCachedTVShowDetails).mockResolvedValue(show({
+      seasons: [
+        { season_number: 1, episode_count: 3, air_date: "2020-01-01" },
+        { season_number: 2, episode_count: 3, air_date: "2021-01-01" },
+        { season_number: 3, episode_count: 3, air_date: null },
+        { season_number: 4, episode_count: 3, air_date: "2099-01-01" },
+      ] as TVShowDetails["seasons"],
+      last_episode_to_air: episode(1, { season_number: 0 }),
+    }));
+    vi.mocked(getCachedSeasonDetails).mockImplementation(async (_id, seasonNumber) => season({
+      season_number: seasonNumber,
+      episodes: [
+        episode(1, { season_number: seasonNumber, air_date: "2021-01-01", name: `S${seasonNumber}E1` }),
+        episode(2, { season_number: seasonNumber, air_date: seasonNumber === 3 ? "2099-01-01" : "2021-01-08" }),
+        episode(3, { season_number: seasonNumber, air_date: seasonNumber === 3 ? null : "2021-01-15" }),
+      ],
+    }));
+
+    const [next] = await getContinueWatchingEpisodes([seed({
+      seasons: { "1": [1, 2, 3], "2": [1, 2, 3] },
+    })], "2026-10-05");
+
+    expect(next).toMatchObject({ seasonNumber: 3, episodeNumber: 1, watchedCount: 6, airedCount: 7 });
+    expect(vi.mocked(getCachedSeasonDetails).mock.calls.map(([, number]) => number).sort())
+      .toEqual([2, 3]);
   });
 
   it("does not guess the regular run when a special marker's season reads fail", async () => {

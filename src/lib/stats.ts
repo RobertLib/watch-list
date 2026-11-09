@@ -63,6 +63,14 @@ export interface WatchStats {
    */
   minutes: number;
   titlesWithoutRuntime: number;
+  /**
+   * Series among the titles whose ticked episodes `minutes` leaves out because
+   * they cannot be placed in the period summarised. Always zero all-time; in a
+   * year it is every series finished that year with ticked episodes, since a
+   * tick carries no date. Kept apart from `titlesWithoutRuntime`: the runtime
+   * is known here, and saying it was not would be a different untruth.
+   */
+  seriesWithUndatedTime: number;
   topGenres: Tally[];
   decades: Tally[];
   /** Index 0 is a score of 1; index 9 a score of 10. */
@@ -82,6 +90,7 @@ export const EMPTY_STATS: WatchStats = {
   episodes: 0,
   minutes: 0,
   titlesWithoutRuntime: 0,
+  seriesWithUndatedTime: 0,
   topGenres: [],
   decades: [],
   ratingHistogram: Array.from({ length: 10 }, () => 0),
@@ -219,6 +228,7 @@ export function summarize(input: StatsInput): WatchStats {
     episodes,
     minutes,
     titlesWithoutRuntime,
+    seriesWithUndatedTime: 0,
     topGenres: tally(genreCounts, MAX_TOP_GENRES),
     decades: tally(decadeCounts).sort((a, b) => a.name.localeCompare(b.name)),
     ratingHistogram,
@@ -231,14 +241,48 @@ export function summarize(input: StatsInput): WatchStats {
 
 /** The same summary, over one calendar year of finishing things. */
 export function summarizeYear(input: StatsInput, year: string): WatchStats {
-  return summarize({
+  const watched = input.watched.filter((entry) => yearOf(entry.watchedAt) === year);
+  const stats = summarize({
     ...input,
-    watched: input.watched.filter((entry) => yearOf(entry.watchedAt) === year),
-    // Episode ticks carry no date of their own, so a year in review counts the
-    // titles finished that year and leaves the episode total to the all-time
-    // page rather than reporting a number it cannot actually attribute.
+    watched,
+    // Episode ticks carry no date of their own – the store keeps which episodes
+    // were ticked, and only when a show was last touched – so a year in review
+    // counts the titles finished that year and leaves the episode total to the
+    // all-time page rather than reporting a number it cannot attribute.
     episodesByShow: {},
   });
+
+  // The same goes for the time those episodes took. Counting it in the year a
+  // series was finished would hand that year every season of a show watched
+  // across several; counting nothing, silently, made a finished series look
+  // like zero minutes. So it is left out and the summary says how often.
+  const seriesWithUndatedTime = watched.filter((entry) => {
+    if (entry.mediaType !== "tv" || !((input.episodesByShow[entry.id] ?? 0) > 0)) {
+      return false;
+    }
+    // A series with no known runtime is already reported as exactly that.
+    const fact = input.facts[mediaItemKey(entry.id, "tv")];
+    return fact !== undefined && fact.runtime !== null;
+  }).length;
+
+  return { ...stats, seriesWithUndatedTime };
+}
+
+/**
+ * The watch time for the shared text, with what it leaves out – a shared
+ * "2 hours" travels without the page's note explaining it. Null when there is
+ * nothing to say.
+ */
+function describeWatchTime(stats: WatchStats): string | null {
+  const untimed = stats.seriesWithUndatedTime;
+  const series = `${untimed} series`;
+
+  if (stats.minutes > 0) {
+    const time = formatWatchTime(stats.minutes);
+    return untimed > 0 ? `${time}, not counting ${series}` : time;
+  }
+
+  return untimed > 0 ? `time on ${series} not counted` : null;
 }
 
 /** Every year the record covers, newest first. */
@@ -280,10 +324,11 @@ export function buildStatsShareText(
   label: string,
   url: string,
 ): string {
+  const watchTime = describeWatchTime(stats);
   const parts = [
     `🎬 ${stats.films} film${stats.films === 1 ? "" : "s"}`,
     stats.episodes > 0 ? `📺 ${stats.episodes} episodes` : null,
-    stats.minutes > 0 ? `⏱️ ${formatWatchTime(stats.minutes)}` : null,
+    watchTime ? `⏱️ ${watchTime}` : null,
     stats.topGenres[0] ? `🏷️ mostly ${stats.topGenres[0].name}` : null,
   ].filter(Boolean);
 

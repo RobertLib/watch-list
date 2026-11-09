@@ -154,3 +154,56 @@ describe("MediaReviews expansion", () => {
     expect(frames.size).toBe(0);
   });
 });
+
+/**
+ * Reviews arrive as Markdown and are shown as plain text. The emphasis patterns
+ * used to be bare non-greedy `_(.+?)_` and `*(.+?)*`, which paired any two
+ * delimiters they found – across words, through identifiers, through URLs.
+ */
+describe("MediaReviews markdown", () => {
+  function shown(content: string): string | null {
+    render(<MediaReviews reviews={reviews(content)} />);
+    return document.querySelector("article p.leading-relaxed")?.textContent ?? null;
+  }
+
+  it.each([
+    [
+      "leaves the underscores in a link's address",
+      "Read https://en.wikipedia.org/wiki/Fight_Club_(film) first.",
+      "Read https://en.wikipedia.org/wiki/Fight_Club_(film) first.",
+    ],
+    [
+      "leaves underscores inside words",
+      "The snake_case names and the other_name both stay.",
+      "The snake_case names and the other_name both stay.",
+    ],
+    [
+      "leaves an asterisk with spaces round it",
+      "Rated 2 * 3 * 4 out of a hundred.",
+      "Rated 2 * 3 * 4 out of a hundred.",
+    ],
+    [
+      "keeps emphasis delimiters that are part of a bare address",
+      "Mirror at www.example.com/_a_/b and _here_.",
+      "Mirror at www.example.com/_a_/b and here.",
+    ],
+    [
+      "leaves a # that does not start a heading",
+      "C# fans rank it #1.",
+      "C# fans rank it #1.",
+    ],
+  ])("%s", (_name, content, expected) => {
+    expect(shown(content)).toBe(expected);
+  });
+
+  it.each([
+    ["emphasis and strong emphasis at word edges", "A _really_ good, *very* fun, **bold** and __strong__ film.", "A really good, very fun, bold and strong film."],
+    ["emphasis that runs to the end of a word with an underscore inside", "_foo_bar_ is fine", "foo_bar is fine"],
+    ["inline code", "Run `make_film` again.", "Run make_film again."],
+    ["a heading at the start of a line", "## Verdict\nIt was _great_.", "Verdict\nIt was great."],
+    ["a link, keeping its label – and an address with parentheses whole", "See [Fight Club](https://en.wikipedia.org/wiki/Fight_Club_(film)) now.", "See Fight Club now."],
+    ["an image, keeping its alt text", "![The poster](https://example.com/p.jpg) says it all.", "The poster says it all."],
+  ])("still strips %s", (_name, content, expected) => {
+    expect(shown(content)).toBe(expected);
+  });
+});

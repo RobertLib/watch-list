@@ -408,7 +408,7 @@ describe("ContinueWatching episode marking", () => {
       fireEvent.click(button);
       fireEvent.click(button);
     });
-    expect(button.disabled).toBe(true);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
     expect(getEpisodeProgress()["1396"].seasons["1"]).toEqual([1]);
 
     writeProfileStore(EPISODE_PROGRESS_STORAGE_KEY, "{}");
@@ -430,7 +430,7 @@ describe("ContinueWatching episode marking", () => {
 
     expect(isEpisodeWatched(getEpisodeProgress(), 1396, 1, 2)).toBe(true);
     expect(getEpisodeProgress()["1396"].seasons["1"]).toEqual([1, 2]);
-    expect(button.disabled).toBe(true);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
     expect(toast.showToast).not.toHaveBeenCalled();
   });
 
@@ -443,15 +443,41 @@ describe("ContinueWatching episode marking", () => {
 
     await act(async () => { fireEvent.click(button); });
     await act(async () => vi.advanceTimersByTimeAsync(500));
-    expect(button.disabled).toBe(true);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
     expect(screen.queryByRole("button", { name: "Mark Breaking Bad S01E03 as watched" }))
       .toBeNull();
 
     await act(async () => resolveNext([episode(3)]));
-    expect((screen.getByRole("button", {
+    expect(screen.getByRole("button", {
       name: "Mark Breaking Bad S01E03 as watched",
-    }) as HTMLButtonElement).disabled).toBe(false);
+    }).getAttribute("aria-disabled")).toBe("false");
     expect(isEpisodeWatched(getEpisodeProgress(), 1396, 1, 2)).toBe(true);
+  });
+
+  /**
+   * Native `disabled` blurred the pressed button, and the replacement episode
+   * used to arrive in a freshly keyed card – so ticking an episode from the
+   * keyboard left focus on the page body twice over.
+   */
+  it("keeps keyboard focus on Watched from the click through to the next episode", async () => {
+    const button = await renderRow();
+    let resolveNext!: (episodes: UpNextEpisode[]) => void;
+    vi.mocked(getContinueWatching).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveNext = resolve;
+    }));
+    act(() => button.focus());
+
+    await act(async () => { fireEvent.click(button); });
+    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(button.getAttribute("aria-label")).toBe("Breaking Bad S01E02 is watched");
+    await act(async () => vi.advanceTimersByTimeAsync(500));
+    await act(async () => resolveNext([episode(3)]));
+
+    const next = screen.getByRole("button", { name: "Mark Breaking Bad S01E03 as watched" });
+    expect(next).toBe(button);
+    expect(document.activeElement).toBe(button);
+    expect(next.getAttribute("aria-disabled")).toBe("false");
   });
 
   it("keeps the episode unmarked and retryable when storage refuses the write", async () => {
@@ -462,13 +488,13 @@ describe("ContinueWatching episode marking", () => {
 
     await act(async () => { fireEvent.click(button); });
     expect(isEpisodeWatched(getEpisodeProgress(), 1396, 1, 2)).toBe(false);
-    expect(button.disabled).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("false");
     expect(toast.showToast).toHaveBeenCalledWith(STORAGE_REFUSED_MESSAGE, "error");
 
     writes.mockRestore();
     await act(async () => { fireEvent.click(button); });
     expect(isEpisodeWatched(getEpisodeProgress(), 1396, 1, 2)).toBe(true);
-    expect(button.disabled).toBe(true);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
   });
 });
 
@@ -481,11 +507,11 @@ describe("ContinueWatching storage changes", () => {
     await act(async () => { fireEvent.click(button); });
 
     expect(window.localStorage.getItem(EPISODE_PROGRESS_STORAGE_KEY)).toBe(before);
-    expect(button.disabled).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("false");
     expect(toast.showToast).toHaveBeenCalledExactlyOnceWith(STORAGE_REFUSED_MESSAGE, "error");
     await act(async () => { fireEvent.click(button); });
     expect(getEpisodeProgress()["1396"].seasons["1"]).toEqual([1, 2]);
-    expect(button.disabled).toBe(true);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
   });
 
   it("hides a removed show's card while the remaining shows reload", async () => {

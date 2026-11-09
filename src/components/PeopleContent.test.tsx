@@ -6,7 +6,10 @@ import type { ComponentProps } from "react";
 import type { Person } from "@/types/tmdb";
 import { PeopleContent } from "./PeopleContent";
 
-vi.mock("next/image", () => ({ default: () => null }));
+vi.mock("next/image", () => ({
+  // eslint-disable-next-line @next/next/no-img-element
+  default: ({ alt, src }: { alt: string; src: string }) => <img alt={alt} src={src} />,
+}));
 vi.mock("next/link", () => ({
   default: ({ href, children }: ComponentProps<"a">) => <a href={href}>{children}</a>,
 }));
@@ -47,4 +50,15 @@ it("exposes media filters as pressed buttons and keeps the matching people in on
   expect(screen.queryByText("Movie Actor")).toBeNull();
   expect(screen.getByText("TV Actor")).toBeTruthy();
   expect(screen.getByText("Both Actor")).toBeTruthy();
+});
+
+// With `unoptimized` set the size named is the file downloaded, twelve of them
+// eagerly. A card is at most ~235px wide in the usual layouts; h632 (421px
+// wide) covers that at 2x, where the w500 asked for before was 40% more.
+it("asks for the h632 profile size", () => {
+  render(<PeopleContent people={[{ ...person(1, "Movie Actor", ["movie"]), profile_path: "/face.jpg" }]} />);
+
+  expect(screen.getByRole("img", { name: "Movie Actor" }).getAttribute("src")).toBe(
+    "https://image.tmdb.org/t/p/h632/face.jpg",
+  );
 });

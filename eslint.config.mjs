@@ -8,11 +8,11 @@ const eslintConfig = defineConfig([
   {
     // In a static export every prefetch is a HEAD on the page plus its
     // `__next._tree.txt`, and query-addressed hrefs (`/person?id=…`) never share
-    // a cache entry – a cast list of twenty actors was forty CDN requests before
-    // anyone clicked. Prefetching buys nothing here either: the payload is the
-    // route's empty shell, and the data comes from TMDB after navigation anyway.
-    // So every Link has to say what it wants, and the answer is almost always
-    // `prefetch={false}`.
+    // a cache entry – a cast list of twenty actors was forty requests before
+    // anyone clicked, out of the visitor's data plan and the host's bandwidth
+    // allowance. And they buy nothing: the payload is the route's empty shell,
+    // and the data comes from TMDB after navigation anyway. So every Link has
+    // to say what it wants, and the answer is almost always `prefetch={false}`.
     files: ["src/**/*.tsx"],
     rules: {
       "no-restricted-syntax": [

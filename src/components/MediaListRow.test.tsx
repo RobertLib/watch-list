@@ -60,8 +60,10 @@ describe("memoized list row updates", () => {
     expect(screen.getByRole("link").getAttribute("aria-label")).toContain("2025");
     expect(screen.getByText("Updated description")).toBeTruthy();
     expect(screen.queryByText("Original description")).toBeNull();
+    // An 80px thumbnail: w185 covers it at 2x, where the full w500 poster this
+    // used to fetch was seven times the pixels.
     expect(screen.getByText("Poster for Updated title").getAttribute("data-src"))
-      .toContain("/updated.jpg");
+      .toBe("https://image.tmdb.org/t/p/w185/updated.jpg");
     expect(screen.getByLabelText("Rating: 9.1 out of 10 stars")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Play trailer for Updated title" })).toBeTruthy();
   });

@@ -26,6 +26,31 @@
 /** A bare TMDB date. Captures year, month and day so none of them need parsing. */
 const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
+const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+/**
+ * Whether a string is a bare `YYYY-MM-DD` naming a day that exists.
+ *
+ * The pattern alone lets "2021-02-29" and "2026-04-31" through, and `Date` does
+ * not refuse them either: V8 rolls the overflow into the next month, so such a
+ * date was shown as the 1st of March and exported to calendars as an invalid
+ * `DTSTART`. Counted here rather than by round-tripping through `Date`, whose
+ * `Date.UTC` reads years 0–99 as 1900–1999.
+ */
+export function isCalendarDate(value: string): boolean {
+  const match = DATE_ONLY.exec(value);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1) return false;
+
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const days = month === 2 && leap ? 29 : DAYS_IN_MONTH[month - 1];
+  return day <= days;
+}
+
 /** The default shape for a date on a detail page: "April 17, 2011". */
 const LONG_DATE: Intl.DateTimeFormatOptions = {
   year: "numeric",
@@ -84,12 +109,10 @@ export function formatTmdbDate(
   if (typeof date !== "string") return null;
 
   const trimmed = date.trim();
-  if (!DATE_ONLY.test(trimmed)) return null;
+  // Not just the shape: `Date` would show "2021-02-29" as March 1st.
+  if (!isCalendarDate(trimmed)) return null;
 
-  // `2020-13-45` gets past the pattern and lands here as an Invalid Date.
   const parsed = new Date(`${trimmed}T00:00:00.000Z`);
-  if (Number.isNaN(parsed.getTime())) return null;
-
   return parsed.toLocaleDateString("en-US", { ...options, timeZone: "UTC" });
 }
 

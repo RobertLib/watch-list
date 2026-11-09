@@ -193,7 +193,10 @@ describe("higher-or-lower record persistence", () => {
     expect(requests).toHaveBeenCalledWith(PROFILE_ROSTER_LOCK, { mode: "exclusive" }, expect.any(Function));
     expect(getRecord()).toEqual({ best: 3, totalRounds: 5 });
     expect(screen.queryByRole("button", { name: "Next round" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Higher" })).toBeNull();
+    // Still there, so focus is not lost – but taking no second answer.
+    expect(screen.getByRole("button", { name: "Higher" }).getAttribute("aria-disabled")).toBe("true");
+    await click("Lower");
+    expect(resolveRatingDuel).toHaveBeenCalledTimes(1);
     saveFromAnotherTab(12, 20, false);
 
     await act(async () => { lock.release(); await lock.holding; });
@@ -505,5 +508,130 @@ describe("retrying a film load", () => {
 
     expect(activeProfile).not.toHaveBeenCalled();
     expect(window.localStorage.getItem(HIGHER_LOWER_STORAGE_KEY)).toBe(storedRecord);
+  });
+});
+
+describe("the end of a run", () => {
+  /**
+   * The record is raised as the run goes, so the final streak always equals
+   * `record.best` once saved – and a run that only matched the old best used to
+   * be congratulated on "a new best".
+   */
+  it("does not call equalling the previous best a new best", async () => {
+    saveFromAnotherTab(1, 4, false);
+    resolveRatingDuel.mockResolvedValueOnce({ correct: true, challengerRating: 8 })
+      .mockResolvedValueOnce({ correct: false, challengerRating: 6 });
+    render(<HigherLowerGame />);
+    await act(async () => {});
+
+    await click("Higher");
+    await click("Next round");
+    await click("Higher");
+
+    expect(screen.getByText("You got 1 right")).toBeTruthy();
+    expect(screen.queryByText(/new best/i)).toBeNull();
+    expect(getRecord().best).toBe(1);
+  });
+
+  it("calls a streak above the previous best a new best", async () => {
+    saveFromAnotherTab(1, 4, false);
+    resolveRatingDuel.mockResolvedValueOnce({ correct: true, challengerRating: 8 })
+      .mockResolvedValueOnce({ correct: true, challengerRating: 9 })
+      .mockResolvedValueOnce({ correct: false, challengerRating: 6 });
+    render(<HigherLowerGame />);
+    await act(async () => {});
+
+    await click("Higher");
+    await click("Next round");
+    await click("Higher");
+    await click("Next round");
+    await click("Higher");
+
+    expect(screen.getByText(/You got 2 right/, { selector: "p.text-sm" }).textContent).toBe("You got 2 right – a new best.");
+    expect(screen.getByRole("status").textContent).toMatch(/You got 2 right – a new best\.$/);
+  });
+
+  it("does not carry a new best into the next run", async () => {
+    resolveRatingDuel.mockResolvedValueOnce({ correct: true, challengerRating: 8 })
+      .mockResolvedValueOnce({ correct: false, challengerRating: 6 })
+      .mockResolvedValueOnce({ correct: false, challengerRating: 6 });
+    getRatingDuel.mockReset()
+      .mockResolvedValueOnce({ champion: { ...film(1), rating: 7 }, challenger: film(2) })
+      .mockResolvedValueOnce({ champion: null, challenger: film(3) })
+      .mockResolvedValue({ champion: { ...film(10), rating: 7 }, challenger: film(11) });
+    render(<HigherLowerGame />);
+    await act(async () => {});
+    await click("Higher");
+    await click("Next round");
+    await click("Higher");
+    expect(screen.getByText(/You got 1 right/, { selector: "p.text-sm" }).textContent).toBe("You got 1 right – a new best.");
+
+    await click("Play again");
+    await click("Higher");
+
+    expect(screen.getByText("You got 0 right")).toBeTruthy();
+    expect(screen.queryByText(/new best/i)).toBeNull();
+  });
+});
+
+describe("playing with a keyboard and a screen reader", () => {
+  /**
+   * The choices used to unmount for a spinner while a round was settled, so the
+   * button just pressed took focus with it; and the result was never announced,
+   * nor focus moved to the button that carries on.
+   */
+  it("keeps the pressed choice focused while the round is settled", async () => {
+    const result = deferred<{ correct: boolean; challengerRating: number }>();
+    resolveRatingDuel.mockReturnValueOnce(result.promise);
+    render(<HigherLowerGame />);
+    await act(async () => {});
+    const higher = screen.getByRole("button", { name: "Higher" });
+    higher.focus();
+
+    await act(async () => { fireEvent.click(higher); });
+
+    expect(document.activeElement).toBe(higher);
+    expect(higher.getAttribute("aria-disabled")).toBe("true");
+    expect(higher.hasAttribute("disabled")).toBe(false);
+    await act(async () => { result.resolve({ correct: true, challengerRating: 8 }); });
+  });
+
+  it("announces a right answer and moves focus to the next round, then back to the choices", async () => {
+    render(<HigherLowerGame />);
+    await act(async () => {});
+    const status = screen.getByRole("status");
+    expect(status.textContent).toBe("");
+
+    screen.getByRole("button", { name: "Higher" }).focus();
+    await click("Higher");
+
+    expect(status.textContent).toBe("Correct. Film 2 scored 8.0. Streak 1.");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Next round" }));
+
+    await click("Next round");
+
+    expect(status.textContent).toBe("");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Higher" }));
+  });
+
+  it("announces the end of a run and moves focus to playing again", async () => {
+    resolveRatingDuel.mockResolvedValueOnce({ correct: false, challengerRating: 6 });
+    render(<HigherLowerGame />);
+    await act(async () => {});
+
+    screen.getByRole("button", { name: "Lower" }).focus();
+    await click("Lower");
+
+    expect(screen.getByRole("status").textContent).toBe(
+      "That one went the other way. Film 2 scored 6.0. You got 0 right.",
+    );
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Play again" }));
+  });
+
+  it("does not take focus when the game first loads", async () => {
+    render(<HigherLowerGame />);
+    await act(async () => {});
+
+    expect(document.activeElement).toBe(document.body);
   });
 });

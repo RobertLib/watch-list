@@ -83,7 +83,8 @@ function ProfileAddToListButton({ item, className, profileId }: {
       }
     }
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
+      // Escape during IME composition cancels the composition, not the picker.
+      if (event.key !== "Escape" || event.isComposing) return;
       if (panelRef.current?.contains(document.activeElement)) {
         event.preventDefault();
         triggerRef.current?.focus();
@@ -267,10 +268,13 @@ function ProfileAddToListButton({ item, className, profileId }: {
                   <li key={collection.id}>
                     <button
                       onClick={() => toggle(collection.id, isMember)}
-                      disabled={isSaving}
+                      // Not native `disabled`: browsers blur a disabled button,
+                      // so ticking a list by keyboard dropped focus out of the
+                      // open picker. `mutate` refuses a second write instead.
+                      aria-disabled={isSaving}
                       aria-busy={isSaving}
                       aria-pressed={isMember}
-                      className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left text-sm hover:bg-white/5 transition-colors focus:outline-none focus-visible:bg-white/10"
+                      className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left text-sm hover:bg-white/5 aria-disabled:cursor-wait transition-colors focus:outline-none focus-visible:bg-white/10"
                     >
                       <span
                         className={cn(
@@ -304,7 +308,10 @@ function ProfileAddToListButton({ item, className, profileId }: {
             <input
               id={`new-list-${item.id}`}
               value={newName}
-              disabled={isSaving}
+              // Read-only rather than disabled while saving, for the same
+              // reason as the buttons: Enter in this box must not lose focus.
+              readOnly={isSaving}
+              aria-busy={isSaving}
               maxLength={MAX_COLLECTION_NAME_LENGTH}
               onChange={(event) => setNewName(event.target.value)}
               placeholder="New list…"
@@ -312,10 +319,10 @@ function ProfileAddToListButton({ item, className, profileId }: {
             />
             <button
               type="submit"
-              disabled={isSaving}
+              aria-disabled={isSaving}
               aria-busy={isSaving}
               aria-label="Create list and add this title"
-              className="p-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+              className="p-2 rounded-lg bg-blue-600 hover:bg-blue-700 aria-disabled:opacity-60 aria-disabled:cursor-wait text-white transition-colors"
             >
               <Plus className="w-4 h-4" aria-hidden="true" />
             </button>

@@ -88,6 +88,9 @@ export function RatedTitles() {
     if (lookupKey === "") return;
 
     let isCurrent = true;
+    // Up to two hundred reads. Leaving the page, or a new slice superseding
+    // this one, releases whichever of them nothing else is still waiting on.
+    const controller = new AbortController();
 
     (async () => {
       try {
@@ -96,6 +99,7 @@ export function RatedTitles() {
             const [mediaType, id] = key.split("-");
             return { id: Number(id), mediaType };
           }),
+          controller.signal,
         );
 
         if (!isCurrent) return;
@@ -113,13 +117,15 @@ export function RatedTitles() {
         }));
         setFailed(failedRefs.length > 0);
       } catch (error) {
+        if (!isCurrent || controller.signal.aborted) return;
         console.error("Error loading rated titles:", error);
-        if (isCurrent) setFailed(true);
+        setFailed(true);
       }
     })();
 
     return () => {
       isCurrent = false;
+      controller.abort();
     };
   }, [lookupKey, attempt]);
 

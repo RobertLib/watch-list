@@ -18,8 +18,11 @@ import type { MediaType } from "@/types/tmdb";
  * Runtime, genre and year for everything the visitor has watched.
  *
  * None of it is stored locally: the watched list keeps what a card needs to
- * render, and a runtime is not that. All three come from cached detail reads, so
- * a stats page costs one round trip and TMDB usually pays for none of it.
+ * render, and a runtime is not that. All three come from cached detail reads:
+ * the first visit costs one per title, and a return within the details' six
+ * hours costs nothing for a history that fits the transport's background budget
+ * (`MAX_BULK_ENTRIES` in `tmdb-cache.ts`). A longer one keeps the same leading
+ * part of the history cached and pays again only for the rest.
  */
 
 interface FactRef {

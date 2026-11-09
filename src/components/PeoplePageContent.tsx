@@ -53,6 +53,13 @@ export function PeoplePageContent() {
   }
 
   const featured = people[0];
+  // One file for the sharp portrait and the blurred wash behind it, so the hero
+  // costs a single download. h632 is the narrowest profile size that covers the
+  // 160px portrait on a 2x screen (w185 only covers it at 1x), and it is the
+  // size the grid below asks for – where this same person is the first card.
+  const featuredProfileUrl = featured
+    ? tmdbApi.getImageUrl(featured.profile_path, "h632")
+    : "";
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
@@ -62,7 +69,7 @@ export function PeoplePageContent() {
           {/* Blurred background from first person's poster */}
           <div className="absolute inset-0 scale-110">
             <Image
-              src={tmdbApi.getImageUrl(featured.profile_path, "w500")}
+              src={featuredProfileUrl}
               alt={`${featured.name} background`}
               fill
               className="object-cover blur-2xl opacity-20"
@@ -82,7 +89,7 @@ export function PeoplePageContent() {
               >
                 <div className="relative w-32 h-48 md:w-40 md:h-60 overflow-hidden rounded-xl shadow-2xl ring-2 ring-white/10 group-hover:ring-blue-500/60 transition-all">
                   <Image
-                    src={tmdbApi.getImageUrl(featured.profile_path, "w500")}
+                    src={featuredProfileUrl}
                     alt={featured.name}
                     fill
                     className="object-cover group-hover:scale-105 transition-transform duration-300"
@@ -95,14 +102,18 @@ export function PeoplePageContent() {
                 <p className="text-blue-400 text-sm font-medium uppercase tracking-widest mb-2">
                   Most Popular Right Now
                 </p>
+                {/* Not a heading: this spotlight comes before the page's
+                    "Popular People" h1, and an h2 here opened the outline one
+                    level below a title it had not reached yet. The person is
+                    also the first card of the grid under that h1. */}
                 <Link
                   href={personHref(createSlug(featured.name, featured.id))}
                   prefetch={false}
                   className="hover:text-blue-400 transition-colors"
                 >
-                  <h2 className="text-3xl md:text-4xl font-bold mb-1">
+                  <p className="text-3xl md:text-4xl font-bold mb-1">
                     {featured.name}
-                  </h2>
+                  </p>
                 </Link>
                 <p className="text-gray-400 mb-3">
                   {featured.known_for_department}

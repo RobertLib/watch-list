@@ -17,6 +17,12 @@ interface StreamingProviderSelectorProps {
   selectedProviderIds: number[];
   onUpdate: (update: (providerIds: number[]) => number[], expectedRegion: string) => void;
   region: string;
+  /**
+   * Unavailable while a change is being saved. Controls stay focusable and
+   * refuse presses instead of using native `disabled`, which blurred the
+   * platform that had just been toggled and left keyboard focus nowhere. The
+   * catalogue's own reconciliation after a load is not a press, and still runs.
+   */
   disabled?: boolean;
 }
 
@@ -80,6 +86,7 @@ export function StreamingProviderSelector({
   }, [region]);
 
   const toggleProvider = (providerId: number) => {
+    if (disabled) return;
     // Capture the displayed choice, then apply it to the latest stored list.
     // Two tabs selecting the same unchecked platform must both leave it picked.
     // Keep its region too, in case a restore changes it while the write waits.
@@ -108,9 +115,11 @@ export function StreamingProviderSelector({
         <p className="text-red-400">{error}</p>
         <button
           type="button"
-          disabled={disabled}
-          onClick={() => window.location.reload()}
-          className="mt-4 rounded-md bg-gray-700 px-4 py-2 text-white transition-colors hover:bg-gray-600"
+          aria-disabled={disabled || undefined}
+          onClick={() => {
+            if (!disabled) window.location.reload();
+          }}
+          className="mt-4 rounded-md bg-gray-700 px-4 py-2 text-white transition-colors hover:bg-gray-600 aria-disabled:cursor-wait aria-disabled:opacity-50"
         >
           Try Again
         </button>
@@ -188,6 +197,10 @@ export function StreamingProviderSelector({
   );
 }
 
+/**
+ * aria-disabled rather than disabled: a quick action that empties the
+ * selection disables itself, and native `disabled` would blur it mid-press.
+ */
 function QuickAction({
   onClick,
   disabled,
@@ -200,9 +213,11 @@ function QuickAction({
   return (
     <button
       type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="rounded-md bg-gray-700 px-3 py-1.5 text-sm text-white transition-colors hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
+      onClick={() => {
+        if (!disabled) onClick();
+      }}
+      aria-disabled={disabled || undefined}
+      className="rounded-md bg-gray-700 px-3 py-1.5 text-sm text-white transition-colors hover:bg-gray-600 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
     >
       {children}
     </button>
@@ -221,11 +236,11 @@ function ProviderCard({ provider, isSelected, onToggle, disabled }: ProviderCard
     <button
       type="button"
       onClick={onToggle}
-      disabled={disabled}
+      aria-disabled={disabled || undefined}
       role="checkbox"
       aria-checked={isSelected}
       className={cn(
-        "relative flex cursor-pointer flex-col items-center rounded-lg border-2 p-3 transition-all disabled:cursor-not-allowed disabled:opacity-50",
+        "relative flex cursor-pointer flex-col items-center rounded-lg border-2 p-3 transition-all aria-disabled:cursor-wait aria-disabled:opacity-50",
         isSelected
           ? "border-red-500 bg-red-500/10"
           : "border-gray-700 bg-gray-800 hover:border-gray-600",

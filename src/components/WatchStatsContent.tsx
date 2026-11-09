@@ -684,8 +684,15 @@ function YearInReview({
       try {
         await navigator.share({ text });
         return;
-      } catch {
-        // Dismissed – fall through to the clipboard.
+      } catch (error) {
+        // A dismissed sheet is a decision, not a failure: falling through used
+        // to answer a cancel with a copy – or, where the sheet's own gesture
+        // was spent, with a "Could not copy" error. A refused or unsupported
+        // share still falls through to the clipboard.
+        if (
+          error !== null && typeof error === "object" &&
+          "name" in error && error.name === "AbortError"
+        ) return;
       }
     }
 
@@ -756,6 +763,17 @@ function YearInReview({
           <> You scored them {stats.averageRating.toFixed(1)} on average.</>
         )}
       </p>
+      {/* A finished series' episodes are counted all-time, but a tick carries
+          no date, so the year cannot claim them – and must not pass their
+          absence off as no time at all. */}
+      {stats.seriesWithUndatedTime > 0 && (
+        <p className="text-sm text-gray-500">
+          {stats.minutes > 0 ? "That leaves out the time" : "No watch time is shown"} for{" "}
+          {stats.seriesWithUndatedTime} series you finished: ticked episodes are
+          not dated, so they cannot be placed in a year. The all-time watch time
+          above includes them.
+        </p>
+      )}
     </section>
   );
 }

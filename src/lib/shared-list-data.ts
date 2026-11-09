@@ -28,17 +28,27 @@ export interface SharedListResolution {
  *
  * The two media types are fetched as separate batches so each response keeps its
  * own type, and the original order is restored afterwards from the refs.
+ *
+ * It is bulk work – sixty titles for a shared list, a hundred and twenty for a
+ * comparison, two hundred for the ratings page – so the reads run at background
+ * priority, and a search typed while they are queued takes the next free slot.
+ * `signal` is the caller's: aborting it (the page unmounting) releases every
+ * read only this resolution still needed, while one another caller is waiting
+ * on carries on for that caller.
  */
 export async function getSharedListItems(
   refs: SharedListRef[],
+  signal?: AbortSignal,
 ): Promise<MediaItem[]> {
-  return (await getSharedListResolution(refs)).items;
+  return (await getSharedListResolution(refs, signal)).items;
 }
 
 /** Keep lookup failures separate from the ids that establish a comparison. */
 export async function getSharedListResolution(
   refs: SharedListRef[],
+  signal?: AbortSignal,
 ): Promise<SharedListResolution> {
+  signal?.throwIfAborted();
   if (refs.length === 0) return { items: [], failedRefs: [] };
 
   const movieIds = refs
@@ -47,11 +57,15 @@ export async function getSharedListResolution(
   const showIds = refs
     .filter((ref) => ref.mediaType === "tv")
     .map((ref) => ref.id);
+  const options = { signal, priority: "background" as const };
 
   const [movieResults, showResults] = await Promise.all([
-    Promise.allSettled(movieIds.map((id) => getCachedMovieDetails(id))),
-    Promise.allSettled(showIds.map((id) => getCachedTVShowDetails(id))),
+    Promise.allSettled(movieIds.map((id) => getCachedMovieDetails(id, undefined, options))),
+    Promise.allSettled(showIds.map((id) => getCachedTVShowDetails(id, options))),
   ]);
+  // A cancelled resolution has no page left to report to – least of all as an
+  // outage, which is what every read rejecting would otherwise look like.
+  signal?.throwIfAborted();
   throwIfAllRequestsFailed([...movieResults, ...showResults]);
 
   const byKey = new Map<string, MediaItem>();

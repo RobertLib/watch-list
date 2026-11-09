@@ -344,117 +344,56 @@ describe("subscribeSettings", () => {
   });
 });
 
-describe("applySettings", () => {
-  it("restores the settings half of a backup", async () => {
-    const { applySettings, getSettings } = await freshModule();
+describe("inspectStoredSettings", () => {
+  it("returns the defaults for an untouched browser", async () => {
+    const { inspectStoredSettings } = await freshModule();
 
-    applySettings({
-      region: "CZ",
-      watchProviderFilter: "streaming-only",
-      selectedProviderIds: [8],
-    });
-
-    expect(getSettings()).toMatchObject({
-      region: "CZ",
-      watchProviderFilter: "streaming-only",
-      selectedProviderIds: [8],
-      hasCustomSettings: true,
+    expect(inspectStoredSettings()).toEqual({
+      region: { readable: true, value: "US" },
+      watchProviderFilter: { readable: true, value: "all" },
+      selectedProviderIds: { readable: true, value: [] },
+      hasCustomSettings: { readable: true, value: false },
     });
   });
 
-  it("leaves a setting alone where the file carries a null for it", async () => {
-    // A backup written before a setting existed has no opinion about it, and
-    // restoring a null has to mean "no opinion" rather than "reset".
-    const { applySettings, getSettings, setRegion } = await freshModule();
-    setRegion("GB");
+  // A backup used to be refused outright over any one of these; each is now
+  // named on its own, with its exact text, and the others still read.
+  it.each([
+    ["region", "tmdb-region", "not-a-region"],
+    ["watchProviderFilter", "watch-provider-filter", "unsupported-filter"],
+    ["selectedProviderIds", "selected-watch-providers", "8,337broken"],
+    ["hasCustomSettings", "user-has-settings", "not-a-boolean"],
+  ])("names an invalid %s without affecting the other settings", async (name, key, raw) => {
+    const { inspectStoredSettings, readStoredSettings } = await freshModule();
+    fakeWindow.localStorage.setItem("tmdb-region", "CZ");
+    fakeWindow.localStorage.setItem(key, raw);
 
-    applySettings({
-      region: null,
-      watchProviderFilter: null,
-      selectedProviderIds: null,
-    });
-
-    expect(getSettings().region).toBe("GB");
+    const inspected = inspectStoredSettings();
+    expect(inspected[name as keyof typeof inspected]).toEqual({ readable: false, raw });
+    for (const [other, setting] of Object.entries(inspected)) {
+      if (other !== name) expect(setting.readable).toBe(true);
+    }
+    expect(() => readStoredSettings({ strict: true })).toThrow(name);
   });
 
-  it("ignores a region the file names that is not a region", async () => {
-    const { applySettings, getSettings, DEFAULT_REGION } = await freshModule();
+  it("reports a refused read without text to keep", async () => {
+    const { inspectStoredSettings } = await freshModule();
+    const read = fakeWindow.localStorage.getItem;
+    fakeWindow.localStorage.getItem = (key: string) => {
+      if (key === "tmdb-region") throw new DOMException("Read denied", "SecurityError");
+      return read(key);
+    };
 
-    applySettings({
-      region: "XX",
-      watchProviderFilter: null,
-      selectedProviderIds: [],
-    });
-
-    expect(getSettings().region).toBe(DEFAULT_REGION);
+    expect(inspectStoredSettings().region).toEqual({ readable: false, raw: null });
   });
 
-  it("clears the current platforms when the backup explicitly saved none", async () => {
-    const { applySettings, getSettings, setSelectedProviderIds } =
-      await freshModule();
-    setSelectedProviderIds([8, 337]);
+  it("gives strict reads the same values as the rendered snapshot", async () => {
+    const { readStoredSettings, getSettings } = await freshModule();
+    fakeWindow.localStorage.setItem("tmdb-region", "CZ");
+    fakeWindow.localStorage.setItem("watch-provider-filter", "streaming-only");
+    fakeWindow.localStorage.setItem("selected-watch-providers", "8,337");
+    fakeWindow.localStorage.setItem("user-has-settings", "true");
 
-    expect(
-      applySettings({
-        region: null,
-        watchProviderFilter: "streaming-only",
-        selectedProviderIds: [],
-      }),
-    ).toBe(true);
-    expect(getSettings().selectedProviderIds).toEqual([]);
-  });
-
-  it("preserves current platforms when an older backup did not name them", async () => {
-    const { applySettings, getSettings, setSelectedProviderIds } =
-      await freshModule();
-    setSelectedProviderIds([8]);
-
-    applySettings({
-      region: null,
-      watchProviderFilter: null,
-      selectedProviderIds: null,
-    });
-    expect(getSettings().selectedProviderIds).toEqual([8]);
-  });
-
-  it("says so when it restored what the file asked for", async () => {
-    const { applySettings } = await freshModule();
-
-    expect(
-      applySettings({
-        region: "CZ",
-        watchProviderFilter: "streaming-only",
-        selectedProviderIds: [8],
-      }),
-    ).toBe(true);
-  });
-
-  // "Backup restored" over settings the browser threw away is the wrong answer.
-  it("reports a refused write rather than claiming to have restored", async () => {
-    const { applySettings } = await freshModule();
-    fakeWindow.failWrites = true;
-
-    expect(
-      applySettings({
-        region: "CZ",
-        watchProviderFilter: "streaming-only",
-        selectedProviderIds: [8],
-      }),
-    ).toBe(false);
-  });
-
-  it("counts a file that names no setting as a success, not a refusal", async () => {
-    // Nothing was asked for, so nothing failed. A backup from before these
-    // settings existed must not read as a broken restore.
-    const { applySettings } = await freshModule();
-    fakeWindow.failWrites = true;
-
-    expect(
-      applySettings({
-        region: null,
-        watchProviderFilter: null,
-        selectedProviderIds: null,
-      }),
-    ).toBe(true);
+    expect(readStoredSettings({ strict: true })).toEqual(getSettings());
   });
 });

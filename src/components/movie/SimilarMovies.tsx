@@ -29,8 +29,9 @@ function SimilarMoviesContent({ similar }: SimilarMoviesProps) {
               className="flex gap-3 group"
             >
               <div className="relative w-16 shrink-0 aspect-2/3">
+                {/* 64px wide, so w154 still covers a 2x screen. */}
                 <Image
-                  src={tmdbApi.getImageUrl(movie.poster_path, "w500")}
+                  src={tmdbApi.getImageUrl(movie.poster_path, "w154")}
                   alt={movie.title}
                   fill
                   className="object-cover rounded group-hover:opacity-80 transition-opacity"

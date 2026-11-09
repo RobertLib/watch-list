@@ -40,8 +40,9 @@ export function ServiceWorkerRegistrar() {
       return;
     }
 
-    // Register after load, then the route effect below warms what loaded before
-    // the worker took control as well as later client-side navigations.
+    // Registered once the page has loaded and the browser is idle, and then the
+    // route effect below saves what loaded before the worker took control as
+    // well as later client-side navigations.
     const register = () => {
       navigator.serviceWorker
         .register("/sw.js", { scope: "/", updateViaCache: "none" })
@@ -50,37 +51,42 @@ export function ServiceWorkerRegistrar() {
         });
     };
 
-    // A first visit waits for a click, tap or key before installing anything.
-    // Installing is not free: `sw.js`, the offline page and its chunks, and the
-    // page itself saved once more – and almost every first visit here is a
-    // crawler rendering one page in a fresh browser, paying all of it on every
-    // single page it renders, against a host that bills per request. A person
-    // interacts long before they go offline or install the app; a crawler
-    // never does. A worker that already controls the page is a returning
-    // visitor, and registers on load as before.
-    const firstInteraction = ["pointerdown", "keydown"] as const;
-    const onFirstInteraction = () => {
-      stopWaiting();
-      register();
-    };
-    const stopWaiting = () => {
-      window.removeEventListener("load", register);
-      for (const type of firstInteraction) {
-        window.removeEventListener(type, onFirstInteraction, true);
+    // Load, then idle: installing fetches `sw.js`, the offline page and its
+    // chunks, and the current page once more, and none of that should compete
+    // with what the visitor is waiting for. Not later than that, though – a
+    // first visit used to wait for a click or a key press as well, so that a
+    // crawler rendering one page in a fresh browser never installed anything,
+    // on a host that billed every request. GitHub Pages bills nothing per
+    // request; a rendering crawler's install is a couple of hundred kilobytes
+    // against Pages' soft monthly bandwidth limit, and the crawlers that cost
+    // the most are turned away in `robots.ts` anyway. The wait, meanwhile, had a
+    // real cost: a visitor who opened a page, read it and lost signal before
+    // touching anything had no worker, so no saved copy and no offline page.
+    //
+    // `requestIdleCallback` is missing from Safari, where the next task after
+    // load is the nearest equivalent. The timeout keeps a page whose main
+    // thread never goes quiet from putting registration off indefinitely.
+    let idleHandle: number | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const registerWhenIdle = () => {
+      if ("requestIdleCallback" in window) {
+        idleHandle = window.requestIdleCallback(register, { timeout: 5000 });
+      } else {
+        timer = setTimeout(register, 0);
       }
     };
 
-    if (!navigator.serviceWorker.controller) {
-      for (const type of firstInteraction) {
-        window.addEventListener(type, onFirstInteraction, true);
-      }
-    } else if (document.readyState === "complete") {
-      register();
+    if (document.readyState === "complete") {
+      registerWhenIdle();
     } else {
-      window.addEventListener("load", register);
+      window.addEventListener("load", registerWhenIdle, { once: true });
     }
 
-    return stopWaiting;
+    return () => {
+      window.removeEventListener("load", registerWhenIdle);
+      if (idleHandle !== undefined) window.cancelIdleCallback(idleHandle);
+      if (timer !== undefined) clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {

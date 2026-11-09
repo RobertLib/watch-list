@@ -200,13 +200,17 @@ describe("getSharedListItems", () => {
     expect(items.map((item) => item.media_type)).toEqual(["movie", "tv"]);
   });
 
-  it("asks for each title once, on the right endpoint", async () => {
-    await getSharedListItems([ref(550, "movie"), ref(1396, "tv")]);
+  // Up to two hundred reads at a time: queued behind them at the default
+  // priority, a header search waited for the whole list.
+  it("asks for each title once, on the right endpoint, as background work", async () => {
+    const controller = new AbortController();
+    await getSharedListItems([ref(550, "movie"), ref(1396, "tv")], controller.signal);
 
+    const options = { signal: controller.signal, priority: "background" };
     expect(getCachedMovieDetails).toHaveBeenCalledTimes(1);
-    expect(getCachedMovieDetails).toHaveBeenCalledWith(550);
+    expect(getCachedMovieDetails).toHaveBeenCalledWith(550, undefined, options);
     expect(getCachedTVShowDetails).toHaveBeenCalledTimes(1);
-    expect(getCachedTVShowDetails).toHaveBeenCalledWith(1396);
+    expect(getCachedTVShowDetails).toHaveBeenCalledWith(1396, options);
   });
 });
 
@@ -227,5 +231,29 @@ describe("getSharedListResolution", () => {
 
     expect(result.items.map((item) => item.id)).toEqual([1, 2]);
     expect(result.failedRefs).toEqual([ref(503, "tv")]);
+  });
+
+  it("does not start reads for a caller that has already left", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(getSharedListResolution([ref(550, "movie")], controller.signal))
+      .rejects.toMatchObject({ name: "AbortError" });
+    expect(getCachedMovieDetails).not.toHaveBeenCalled();
+  });
+
+  // Every read rejecting with the abort would otherwise read as an outage.
+  it("reports a cancellation as a cancellation rather than as an outage", async () => {
+    const controller = new AbortController();
+    vi.mocked(getCachedMovieDetails).mockImplementation((_id, _append, options) =>
+      new Promise((_resolve, reject) => {
+        options!.signal!.addEventListener("abort", () => reject(options!.signal!.reason));
+      }),
+    );
+
+    const resolution = getSharedListResolution([ref(550, "movie")], controller.signal);
+    controller.abort();
+
+    await expect(resolution).rejects.toMatchObject({ name: "AbortError" });
   });
 });

@@ -8,6 +8,12 @@ interface RegionSelectorProps {
   id: string;
   value: string;
   onChange: (region: string) => void;
+  /**
+   * Unavailable while a change is being saved. The select stays focusable and
+   * changes are not passed on: on Windows and Linux, arrowing through a closed
+   * select fires a change per key, and native `disabled` dropped focus after
+   * the first one, so the next arrow went nowhere.
+   */
   disabled?: boolean;
 }
 
@@ -25,9 +31,12 @@ export function RegionSelector({
       <select
         id={id}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
-        disabled={disabled}
-        className="w-full appearance-none rounded-lg border border-gray-700 bg-gray-800 py-3 pl-4 pr-10 text-white transition-colors hover:border-gray-600 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 disabled:cursor-not-allowed disabled:opacity-50 [&_optgroup]:bg-gray-900 [&_option]:bg-gray-900"
+        onChange={(event) => {
+          // The controlled value snaps back to the saved region.
+          if (!disabled) onChange(event.target.value);
+        }}
+        aria-disabled={disabled || undefined}
+        className="w-full appearance-none rounded-lg border border-gray-700 bg-gray-800 py-3 pl-4 pr-10 text-white transition-colors hover:border-gray-600 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 aria-disabled:cursor-wait aria-disabled:opacity-50 [&_optgroup]:bg-gray-900 [&_option]:bg-gray-900"
       >
         <optgroup label="Popular">
           {popularRegions.map((region) => (

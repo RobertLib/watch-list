@@ -3,9 +3,10 @@ import {
   convertMovieToMediaItem,
   convertTVShowToMediaItem,
   convertTrendingToMediaItem,
+  mergeCastByPerson,
   resolveRegionProviders,
 } from "./media-converters";
-import type { Movie, TVShow, WatchProvidersResponse } from "@/types/tmdb";
+import type { CastMember, Movie, TVShow, WatchProvidersResponse } from "@/types/tmdb";
 
 const movie: Movie = {
   id: 550,
@@ -175,5 +176,57 @@ describe("resolveRegionProviders", () => {
 
     expect(providers.rent).toEqual([]);
     expect(providers.buy).toEqual([]);
+  });
+});
+
+/**
+ * TMDB bills an actor once per role. Dr. Strangelove's cast opens with Peter
+ * Sellers three times over, which the cast grid rendered as three identical
+ * cards sharing one React key.
+ */
+describe("mergeCastByPerson", () => {
+  function member(id: number, name: string, character: string, order: number): CastMember {
+    return { id, name, character, profile_path: `/p${id}.jpg`, order };
+  }
+
+  const strangelove = [
+    member(12446, "Peter Sellers", "Group Capt. Lionel Mandrake", 0),
+    member(12446, "Peter Sellers", "President Merkin Muffley", 1),
+    member(12446, "Peter Sellers", "Dr. Strangelove", 2),
+    member(862, "George C. Scott", "Gen. 'Buck' Turgidson", 3),
+    member(4690, "Sterling Hayden", "Brig. Gen. Jack D. Ripper", 4),
+  ];
+
+  it("keeps one entry per person, at their first billing, with every role", () => {
+    const cast = mergeCastByPerson(strangelove);
+
+    expect(cast.map((m) => m.name)).toEqual([
+      "Peter Sellers",
+      "George C. Scott",
+      "Sterling Hayden",
+    ]);
+    expect(cast[0]).toMatchObject({
+      id: 12446,
+      order: 0,
+      character:
+        "Group Capt. Lionel Mandrake / President Merkin Muffley / Dr. Strangelove",
+    });
+    expect(new Set(cast.map((m) => m.id)).size).toBe(cast.length);
+  });
+
+  it("does not repeat a role billed twice, or invent one from a blank", () => {
+    const cast = mergeCastByPerson([
+      member(1, "Actor", "Self", 0),
+      member(1, "Actor", " Self ", 1),
+      member(1, "Actor", "", 2),
+      member(2, "Other", "", 3),
+    ]);
+
+    expect(cast.map((m) => m.character)).toEqual(["Self", ""]);
+  });
+
+  it("leaves a cast without repeats as it was", () => {
+    const cast = strangelove.slice(3);
+    expect(mergeCastByPerson(cast)).toEqual(cast);
   });
 });

@@ -4,6 +4,24 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { tmdbApi } from "@/lib/tmdb";
 import { Video } from "@/types/tmdb";
 
+/**
+ * The trailer among a title's videos: an official YouTube trailer first, then
+ * any YouTube trailer. Undefined when there is none – a teaser is not one.
+ *
+ * Shared by the lookup below and by the detail pages, which hold their videos
+ * already. One rule for both is what makes a detail page's "Play Trailer" play
+ * the same video as the play button on that title's poster.
+ */
+export function findYouTubeTrailer(videos: Video[]): Video | undefined {
+  return (
+    videos.find(
+      (video) =>
+        video.site === "YouTube" && video.type === "Trailer" && video.official,
+    ) ??
+    videos.find((video) => video.site === "YouTube" && video.type === "Trailer")
+  );
+}
+
 export function useVideoOverlay() {
   const [isOpen, setIsOpen] = useState(false);
   const [video, setVideo] = useState<Video | null>(null);
@@ -39,23 +57,13 @@ export function useVideoOverlay() {
 
         if (!isCurrent()) return;
 
-        // Find the first official trailer
         const trailer =
-          videos.results.find(
-            (video: Video) =>
-              video.site === "YouTube" &&
-              video.type === "Trailer" &&
-              video.official,
-          ) ||
-          videos.results.find(
-            (video: Video) =>
-              video.site === "YouTube" && video.type === "Trailer",
-          ) ||
+          findYouTubeTrailer(videos.results) ??
           // The shared player embeds YouTube only. A Vimeo key is not a
           // playable fallback, even when it happens to be the first result.
           videos.results.find((video: Video) => video.site === "YouTube");
 
-        setVideo(trailer || null);
+        setVideo(trailer ?? null);
       } catch (error) {
         if (!isCurrent()) return;
         console.error("Error loading video:", error);
@@ -66,6 +74,18 @@ export function useVideoOverlay() {
     },
     [],
   );
+
+  // For a caller that already holds the video. A detail page has `videos`
+  // appended to the details it loaded, and used to have the overlay ask TMDB
+  // for them again: a second request and a spinner for nothing – and when that
+  // request failed, "Video is not available" with the key already in hand.
+  const showVideo = useCallback((known: Video) => {
+    // Supersede any lookup still in flight, so it cannot replace this video.
+    runId.current += 1;
+    setVideo(known);
+    setIsLoading(false);
+    setIsOpen(true);
+  }, []);
 
   const closeVideo = useCallback(() => {
     // Supersede whatever is in flight – see `runId`. Loading is cleared here
@@ -81,6 +101,7 @@ export function useVideoOverlay() {
     video,
     isLoading,
     openVideo,
+    showVideo,
     closeVideo,
   };
 }

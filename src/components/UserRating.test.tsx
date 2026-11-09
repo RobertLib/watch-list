@@ -106,7 +106,7 @@ describe("UserRating storage outcomes", async () => {
       window.localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, "bob");
       act(() => window.dispatchEvent(new StorageEvent("storage", { key: profileStoreKey(key, "bob") })));
 
-      await act(async () => { fireEvent.click(screen.getByRole("radio", { name: "8 out of 10" })); });
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Rate 8 out of 10" })); });
 
       expect(window.localStorage.getItem(bobRatingsKey)).toBe(bobRatings);
       expect(window.localStorage.getItem(RATINGS_STORAGE_KEY)).toBeNull();
@@ -136,7 +136,7 @@ describe("UserRating storage outcomes", async () => {
       return value;
     });
 
-    await act(async () => { fireEvent.click(screen.getByRole("radio", { name: "8 out of 10" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Rate 8 out of 10" })); });
 
     expect(JSON.parse(window.localStorage.getItem(RATINGS_STORAGE_KEY)!)["movie-550"].rating).toBe(8);
     expect(withProfileStorage("default", getWatched)).toHaveLength(1);
@@ -154,7 +154,7 @@ describe("UserRating storage outcomes", async () => {
     renderRating();
     window.localStorage.setItem(WATCHED_STORAGE_KEY, "[]");
 
-    await act(async () => { fireEvent.click(screen.getByRole("radio", { name: "8 out of 10" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Rate 8 out of 10" })); });
 
     expect(getWatched().map((entry) => entry.id)).toEqual([item.id]);
     expect(toast.showToast).toHaveBeenCalledWith("Rated 8/10 and marked as watched", "success");
@@ -164,7 +164,7 @@ describe("UserRating storage outcomes", async () => {
     renderRating();
     await queueTitle();
 
-    await act(async () => { fireEvent.click(screen.getByRole("radio", { name: "8 out of 10" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Rate 8 out of 10" })); });
 
     expect(getWatchlist()).toEqual([]);
     expect(getWatched().map((entry) => entry.id)).toEqual([item.id]);
@@ -182,7 +182,7 @@ describe("UserRating storage outcomes", async () => {
     window.localStorage.setItem(WATCHED_STORAGE_KEY, "[]");
 
     await act(async () => { fireEvent.click(action === "rate"
-      ? screen.getByRole("radio", { name: "8 out of 10" })
+      ? screen.getByRole("button", { name: "Rate 8 out of 10" })
       : screen.getByRole("button", { name: "Clear" })); });
 
     expect(window.localStorage.getItem(RATINGS_STORAGE_KEY)).toBe(bobRatings);
@@ -193,7 +193,7 @@ describe("UserRating storage outcomes", async () => {
   it("removes a rated title from the watchlist after marking it watched", async () => {
     await queueTitle();
     renderRating();
-    await act(async () => { fireEvent.click(screen.getByRole("radio", { name: "8 out of 10" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Rate 8 out of 10" })); });
 
     expect(getWatchlist()).toEqual([]);
     expect(JSON.parse(window.localStorage.getItem(WATCHED_STORAGE_KEY)!))
@@ -207,7 +207,7 @@ describe("UserRating storage outcomes", async () => {
     await queueTitle();
     refuseWrites(WATCHED_STORAGE_KEY);
     renderRating();
-    await act(async () => { fireEvent.click(screen.getByRole("radio", { name: "8 out of 10" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Rate 8 out of 10" })); });
 
     expect(getWatchlist().map((entry) => entry.id)).toEqual([item.id]);
     expect(window.localStorage.getItem(WATCHED_STORAGE_KEY)).toBeNull();
@@ -222,7 +222,7 @@ describe("UserRating storage outcomes", async () => {
     await queueTitle();
     refuseWrites(WATCHLIST_STORAGE_KEY);
     renderRating();
-    await act(async () => { fireEvent.click(screen.getByRole("radio", { name: "8 out of 10" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Rate 8 out of 10" })); });
 
     expect(getWatchlist().map((entry) => entry.id)).toEqual([item.id]);
     expect(JSON.parse(window.localStorage.getItem(WATCHED_STORAGE_KEY)!))
@@ -237,9 +237,9 @@ describe("UserRating storage outcomes", async () => {
 
   it("reports success only after saving the score and watched title", async () => {
     renderRating();
-    await act(async () => { fireEvent.click(screen.getByRole("radio", { name: "8 out of 10" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Rate 8 out of 10" })); });
 
-    expect(screen.getByRole("radio", { name: "8 out of 10" }).getAttribute("aria-checked"))
+    expect(screen.getByRole("button", { name: "Rate 8 out of 10" }).getAttribute("aria-current"))
       .toBe("true");
     expect(JSON.parse(window.localStorage.getItem(WATCHED_STORAGE_KEY)!))
       .toHaveLength(1);
@@ -251,12 +251,12 @@ describe("UserRating storage outcomes", async () => {
   it("does not mark watched or announce success when the score cannot be saved", async () => {
     refuseWrites(RATINGS_STORAGE_KEY);
     renderRating();
-    await act(async () => { fireEvent.click(screen.getByRole("radio", { name: "8 out of 10" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Rate 8 out of 10" })); });
 
     expect(window.localStorage.getItem(RATINGS_STORAGE_KEY)).toBeNull();
     expect(window.localStorage.getItem(WATCHED_STORAGE_KEY)).toBeNull();
-    expect(screen.getByRole("radio", { name: "8 out of 10" }).getAttribute("aria-checked"))
-      .toBe("false");
+    expect(screen.getByRole("button", { name: "Rate 8 out of 10" }).getAttribute("aria-current"))
+      .toBeNull();
     expect(toast.showToast).toHaveBeenCalledWith(STORAGE_REFUSED_MESSAGE, "error");
     expect(toast.showToast).not.toHaveBeenCalledWith(expect.any(String), "success");
   });
@@ -264,7 +264,7 @@ describe("UserRating storage outcomes", async () => {
   it("keeps a saved rating and explains when marking watched fails", async () => {
     refuseWrites(WATCHED_STORAGE_KEY);
     renderRating();
-    await act(async () => { fireEvent.click(screen.getByRole("radio", { name: "8 out of 10" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Rate 8 out of 10" })); });
 
     expect(JSON.parse(window.localStorage.getItem(RATINGS_STORAGE_KEY)!)["movie-550"].rating)
       .toBe(8);
@@ -281,7 +281,7 @@ describe("UserRating storage outcomes", async () => {
     renderRating();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Clear" })); });
 
-    expect(screen.getByRole("radio", { name: "8 out of 10" }).getAttribute("aria-checked"))
+    expect(screen.getByRole("button", { name: "Rate 8 out of 10" }).getAttribute("aria-current"))
       .toBe("true");
     expect(toast.showToast).toHaveBeenCalledWith(STORAGE_REFUSED_MESSAGE, "error");
     expect(toast.showToast).not.toHaveBeenCalledWith("Rating removed", "info");
@@ -298,73 +298,191 @@ describe("UserRating storage outcomes", async () => {
 });
 
 describe("UserRating keyboard controls", async () => {
-  const radio = (value: number) => screen.getByRole("radio", { name: `${value} out of 10` });
-  const tabStops = () => screen.getAllByRole("radio").filter((button) => button.tabIndex === 0);
+  const star = (value: number) => screen.getByRole("button", { name: `Rate ${value} out of 10` });
+  const stars = () => screen.getAllByRole("button", { name: /^Rate \d+ out of 10$/ });
+  const tabStops = () => stars().filter((button) => button.tabIndex === 0);
+  const filled = () => stars().filter((button) =>
+    button.querySelector("svg")?.getAttribute("class")?.includes("fill-current"),
+  ).length;
+
+  it("is a toolbar of buttons rather than a radio group whose arrows would select", () => {
+    renderRating();
+
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+    expect(screen.queryAllByRole("radio")).toEqual([]);
+    expect(screen.getByRole("toolbar", { name: "Rate Fight Club out of ten" })).toBeTruthy();
+    expect(stars()).toHaveLength(10);
+  });
 
   it("has one Tab stop at the saved rating, or the first value when unrated", async () => {
     const view = renderRating();
-    expect(tabStops()).toEqual([radio(1)]);
+    expect(tabStops()).toEqual([star(1)]);
     view.unmount();
     saveRating();
     renderRating();
-    expect(tabStops()).toEqual([radio(8)]);
+    expect(tabStops()).toEqual([star(8)]);
 
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Clear" })); });
-    expect(tabStops()).toEqual([radio(1)]);
+    expect(tabStops()).toEqual([star(1)]);
   });
 
-  it("moves focus and selection with arrows, wraps, and supports Home and End", async () => {
+  it("marks the saved score as current and describes the side effects while unrated", async () => {
+    const view = renderRating();
+    const hint = screen.getByText(/Rating a title marks it watched/);
+    expect(stars().every((button) => button.getAttribute("aria-describedby") === hint.id)).toBe(true);
+    expect(stars().some((button) => button.hasAttribute("aria-current"))).toBe(false);
+    view.unmount();
+
+    saveRating();
     renderRating();
-    act(() => radio(1).focus());
+    expect(stars().filter((button) => button.getAttribute("aria-current") === "true"))
+      .toEqual([star(8)]);
+    expect(stars().some((button) => button.hasAttribute("aria-describedby"))).toBe(false);
+  });
+
+  /**
+   * The regression. Tabbing into an unrated title and pressing → used to rate it
+   * 2/10, mark it watched and drop it from the watchlist; ← on the first star
+   * wrapped to a 10. Arrows now only move focus and preview.
+   */
+  it("moves focus and the preview with arrows, Home and End without saving anything", async () => {
+    await queueTitle();
+    renderRating();
+    act(() => star(1).focus());
+    expect(filled()).toBe(1);
+
     for (const [key, expected] of [
-      ["ArrowLeft", 10],
-      ["ArrowRight", 1],
-      ["ArrowDown", 2],
-      ["ArrowUp", 1],
+      ["ArrowLeft", 1],
+      ["ArrowRight", 2],
+      ["ArrowRight", 3],
+      ["ArrowLeft", 2],
       ["End", 10],
+      ["ArrowRight", 10],
       ["Home", 1],
     ] as const) {
       await act(async () => { fireEvent.keyDown(document.activeElement!, { key }); });
-      expect(document.activeElement).toBe(radio(expected));
-      expect(radio(expected).getAttribute("aria-checked")).toBe("true");
-      expect(tabStops()).toEqual([radio(expected)]);
-      expect(JSON.parse(window.localStorage.getItem(RATINGS_STORAGE_KEY)!)["movie-550"].rating)
-        .toBe(expected);
+      expect(document.activeElement).toBe(star(expected));
+      expect(tabStops()).toEqual([star(expected)]);
+      expect(filled()).toBe(expected);
+    }
+
+    expect(stars().some((button) => button.hasAttribute("aria-current"))).toBe(false);
+    expect(window.localStorage.getItem(RATINGS_STORAGE_KEY)).toBeNull();
+    expect(getWatched()).toEqual([]);
+    expect(getWatchlist()).toHaveLength(1);
+    expect(toast.showToast).not.toHaveBeenCalled();
+  });
+
+  it("leaves vertical arrows to the page", async () => {
+    renderRating();
+    act(() => star(3).focus());
+
+    for (const key of ["ArrowUp", "ArrowDown"]) {
+      const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+      act(() => { document.activeElement!.dispatchEvent(event); });
+      expect(event.defaultPrevented).toBe(false);
+      expect(document.activeElement).toBe(star(3));
     }
   });
 
-  it("keeps the focused radio enabled during an async save and can keep adjusting afterwards", async () => {
+  it("restores the saved score and its Tab stop once focus leaves the row", async () => {
+    saveRating();
+    renderRating();
+    act(() => star(8).focus());
+    await act(async () => { fireEvent.keyDown(document.activeElement!, { key: "Home" }); });
+    expect(filled()).toBe(1);
+
+    act(() => star(1).blur());
+
+    expect(filled()).toBe(8);
+    expect(tabStops()).toEqual([star(8)]);
+  });
+
+  it("commits the focused score only when it is activated", async () => {
+    await queueTitle();
+    renderRating();
+    act(() => star(1).focus());
+    for (let step = 0; step < 6; step += 1) {
+      await act(async () => { fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" }); });
+    }
+    expect(window.localStorage.getItem(RATINGS_STORAGE_KEY)).toBeNull();
+
+    // Enter and Space activate a native button, which arrives as a click.
+    await act(async () => { fireEvent.click(document.activeElement!); });
+
+    expect(JSON.parse(window.localStorage.getItem(RATINGS_STORAGE_KEY)!)["movie-550"].rating).toBe(7);
+    expect(star(7).getAttribute("aria-current")).toBe("true");
+    expect(document.activeElement).toBe(star(7));
+    expect(toast.showToast).toHaveBeenCalledExactlyOnceWith(
+      "Rated 7/10, marked as watched and removed from your watchlist", "success",
+    );
+  });
+
+  it("keeps the focused star enabled during an async save and lets the arrows keep moving", async () => {
     saveRating();
     const lock = await holdRosterLock();
     const requests = vi.spyOn(navigator.locks, "request");
     renderRating();
-    act(() => radio(8).focus());
+    act(() => star(8).focus());
 
     act(() => { fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" }); });
-    const pending = radio(9) as HTMLButtonElement;
+    const pending = star(9) as HTMLButtonElement;
     expect(document.activeElement).toBe(pending);
+    expect(requests).not.toHaveBeenCalled();
+    act(() => { fireEvent.click(pending); });
     // jsdom keeps focus even on a disabled button, so checking focus alone
     // would miss the native browser regression.
     expect(pending.disabled).toBe(false);
     expect(pending.getAttribute("aria-disabled")).toBe("true");
-    expect(pending.getAttribute("aria-checked")).toBe("false");
+    expect(pending.getAttribute("aria-current")).toBeNull();
 
     act(() => {
       fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
-      fireEvent.click(radio(10));
+      fireEvent.click(star(10));
     });
-    expect(document.activeElement).toBe(pending);
+    expect(document.activeElement).toBe(star(10));
     expect(requests).toHaveBeenCalledTimes(1);
 
     await act(async () => { lock.release(); await lock.held; });
-    expect(document.activeElement).toBe(pending);
+    expect(document.activeElement).toBe(star(10));
     expect(pending.getAttribute("aria-disabled")).toBe("false");
-    expect(pending.getAttribute("aria-checked")).toBe("true");
+    expect(pending.getAttribute("aria-current")).toBe("true");
+    expect(JSON.parse(window.localStorage.getItem(RATINGS_STORAGE_KEY)!)["movie-550"].rating).toBe(9);
 
-    await act(async () => { fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" }); });
-    expect(document.activeElement).toBe(radio(10));
-    expect(radio(10).getAttribute("aria-checked")).toBe("true");
+    await act(async () => { fireEvent.click(document.activeElement!); });
+    expect(star(10).getAttribute("aria-current")).toBe("true");
     expect(JSON.parse(window.localStorage.getItem(RATINGS_STORAGE_KEY)!)["movie-550"].rating).toBe(10);
+  });
+
+  it("hands focus from Clear to the stars without previewing a score", async () => {
+    saveRating();
+    renderRating();
+    const clear = screen.getByRole("button", { name: "Clear" }) as HTMLButtonElement;
+    act(() => clear.focus());
+
+    await act(async () => { fireEvent.click(clear); });
+
+    expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
+    expect(document.activeElement).toBe(star(1));
+    expect(tabStops()).toEqual([star(1)]);
+    expect(filled()).toBe(0);
+    expect(window.localStorage.getItem(RATINGS_STORAGE_KEY)).toBe("{}");
+  });
+
+  it("keeps Clear focusable while a save is pending", async () => {
+    saveRating();
+    const lock = await holdRosterLock();
+    renderRating();
+    const clear = screen.getByRole("button", { name: "Clear" }) as HTMLButtonElement;
+    act(() => clear.focus());
+
+    act(() => { fireEvent.click(clear); });
+
+    expect(clear.disabled).toBe(false);
+    expect(clear.getAttribute("aria-disabled")).toBe("true");
+    expect(document.activeElement).toBe(clear);
+    await act(async () => { lock.release(); await lock.held; });
+    expect(document.activeElement).toBe(star(1));
   });
 });
 
@@ -402,11 +520,11 @@ describe("pending watchlist removal", () => {
     const lock = await holdRosterLock();
     const requests = vi.spyOn(navigator.locks, "request");
     renderRating();
-    const control = screen.getByRole("radio", { name: "8 out of 10" }) as HTMLButtonElement;
+    const control = screen.getByRole("button", { name: "Rate 8 out of 10" }) as HTMLButtonElement;
 
     act(() => {
       fireEvent.click(control);
-      fireEvent.click(screen.getByRole("radio", { name: "9 out of 10" }));
+      fireEvent.click(screen.getByRole("button", { name: "Rate 9 out of 10" }));
     });
     expect(requests).toHaveBeenCalledTimes(1);
     expect(control.disabled).toBe(false);
@@ -414,17 +532,18 @@ describe("pending watchlist removal", () => {
     expect(getWatched()).toEqual([]);
     expect(getWatchlist()).toHaveLength(1);
     expect(toast.showToast).not.toHaveBeenCalled();
-    expect(screen.getByRole("radio", { name: "7 out of 10" }).getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByRole("radio", { name: "8 out of 10" }).getAttribute("aria-checked")).toBe("false");
-    expect(screen.getByRole("radio", { name: "9 out of 10" }).getAttribute("aria-checked")).toBe("false");
-    expect(screen.getAllByRole("radio").every((button) =>
+    expect(screen.getByRole("button", { name: "Rate 7 out of 10" }).getAttribute("aria-current")).toBe("true");
+    expect(screen.getByRole("button", { name: "Rate 8 out of 10" }).getAttribute("aria-current")).toBeNull();
+    expect(screen.getByRole("button", { name: "Rate 9 out of 10" }).getAttribute("aria-current")).toBeNull();
+    expect(screen.getAllByRole("button", { name: /^Rate \d+ out of 10$/ }).every((button) =>
       !(button as HTMLButtonElement).disabled && button.getAttribute("aria-disabled") === "true",
     )).toBe(true);
     const clear = screen.getByRole("button", { name: "Clear" }) as HTMLButtonElement;
-    expect(clear.disabled).toBe(true);
+    expect(clear.disabled).toBe(false);
+    expect(clear.getAttribute("aria-disabled")).toBe("true");
     fireEvent.click(clear);
     fireEvent.keyDown(control, { key: "ArrowRight" });
-    expect(control.getAttribute("aria-checked")).toBe("false");
+    expect(control.getAttribute("aria-current")).toBeNull();
 
     await act(async () => { lock.release(); await lock.held; });
 
@@ -438,7 +557,7 @@ describe("pending watchlist removal", () => {
     const { aliceWatchlist, bobWatchlist, queued } = seedActionProfiles();
     const lock = await holdRosterLock();
     renderRating();
-    const control = screen.getByRole("radio", { name: "8 out of 10" }) as HTMLButtonElement;
+    const control = screen.getByRole("button", { name: "Rate 8 out of 10" }) as HTMLButtonElement;
     await act(async () => { fireEvent.click(control); });
     expect(control.disabled).toBe(false);
     expect(control.getAttribute("aria-disabled")).toBe("true");
@@ -500,7 +619,7 @@ it("applies the entire action after a previously queued restore of the same prof
     ratings: { "movie-11": { rating: 6, ratedAt: "2026-01-01T00:00:00.000Z" } },
   })!;
   const restoring = restoreBackup(imported);
-  const control = screen.getByRole("radio", { name: "8 out of 10" }) as HTMLButtonElement;
+  const control = screen.getByRole("button", { name: "Rate 8 out of 10" }) as HTMLButtonElement;
   await act(async () => { fireEvent.click(control); });
 
   expect(getWatched()).toEqual([]);
@@ -510,7 +629,7 @@ it("applies the entire action after a previously queued restore of the same prof
   expect(getWatched().map((entry) => entry.id)).toEqual([550, 12]);
   expect(getWatchlist().map((entry) => entry.id)).toEqual([11]);
   expect(control.disabled).toBe(false);
-  expect(control.getAttribute("aria-checked")).toBe("true");
+  expect(control.getAttribute("aria-current")).toBe("true");
   const ratings = JSON.parse(window.localStorage.getItem(profileStoreKey(RATINGS_STORAGE_KEY, "alice"))!);
   expect(ratings["movie-550"].rating).toBe(8);
   expect(ratings["movie-11"].rating).toBe(6);

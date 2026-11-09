@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   groupCalendarEvents,
+  isDateOnly,
   sanitizeCalendarSeeds,
   selectCalendarCandidates,
   type CalendarEvent,
@@ -108,6 +109,39 @@ describe("sanitizeCalendarSeeds", () => {
     ]);
 
     expect(seed.releaseDate).toBeNull();
+  });
+
+  it("discards a release date the calendar does not have", () => {
+    const [seed] = sanitizeCalendarSeeds([
+      { id: 550, mediaType: "movie", releaseDate: "2026-02-30" },
+    ]);
+
+    expect(seed.releaseDate).toBeNull();
+  });
+});
+
+// Every date that reaches the `.ics` export has been through this check – the
+// episode air dates, the movie release dates and the stored seeds. A shape-only
+// test let "2026-02-30" through, and it was written out as
+// `DTSTART;VALUE=DATE:20260230`.
+describe("isDateOnly", () => {
+  it("accepts a plain date that exists", () => {
+    expect(isDateOnly("2026-08-01")).toBe(true);
+    expect(isDateOnly("2028-02-29")).toBe(true);
+  });
+
+  it("refuses a day that does not exist", () => {
+    expect(isDateOnly("2026-02-30")).toBe(false);
+    expect(isDateOnly("2026-02-29")).toBe(false);
+    expect(isDateOnly("2026-04-31")).toBe(false);
+    expect(isDateOnly("2026-13-01")).toBe(false);
+  });
+
+  it("refuses anything that is not a plain date", () => {
+    expect(isDateOnly("")).toBe(false);
+    expect(isDateOnly(null)).toBe(false);
+    expect(isDateOnly(20260801)).toBe(false);
+    expect(isDateOnly("2026-08-01T00:00:00Z")).toBe(false);
   });
 });
 

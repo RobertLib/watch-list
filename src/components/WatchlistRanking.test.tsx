@@ -99,7 +99,7 @@ describe("ranking saved across tabs", () => {
     await release();
 
     expect(getRanking()).toEqual(original);
-    expect(button.getAttribute("disabled")).toBeNull();
+    expect(button.getAttribute("aria-disabled")).toBe("false");
     expect(toast.showToast).toHaveBeenCalledExactlyOnceWith("Could not save your choice. Please try again.", "error");
     await click(button);
     expect(getRanking()).toEqual(recordChoice(original, "movie-1", "movie-2"));
@@ -114,8 +114,15 @@ describe("ranking saved across tabs", () => {
     await click(button);
     expect(request).toHaveBeenCalledTimes(1);
     expect(request.mock.calls[0][0]).toBe(PROFILE_ROSTER_LOCK);
-    expect(button.getAttribute("disabled")).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Skip this pair" }).getAttribute("disabled")).not.toBeNull();
+    // Busy, but still focusable: native `disabled` blurs the pressed button.
+    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    const skip = screen.getByRole("button", { name: "Skip this pair" });
+    expect(skip.hasAttribute("disabled")).toBe(false);
+    expect(skip.getAttribute("aria-disabled")).toBe("true");
+    const shown = screen.getAllByRole("button", { name: /^Film \d —$/ }).map((entry) => entry.textContent);
+    await click(skip);
+    expect(screen.getAllByRole("button", { name: /^Film \d —$/ }).map((entry) => entry.textContent)).toEqual(shown);
     expect(getRanking()).toEqual({});
     const otherChoice = recordChoice({}, "movie-2", "movie-3");
     saveRanking(otherChoice);
@@ -377,5 +384,74 @@ describe("refused ranking writes", () => {
     await click(screen.getByRole("button", { name: "Erase the ranking" }));
 
     expect(screen.queryByText(/holds #1/)).toBeNull();
+  });
+});
+
+describe("keyboard focus through a duel", () => {
+  it("keeps focus on the pressed contender while saving and into the next pair", async () => {
+    renderRanking();
+    const release = await holdProfileLock();
+    const button = screen.getByRole("button", { name: "Film 1 —" });
+    act(() => button.focus());
+
+    await click(button);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(document.activeElement).toBe(button);
+
+    vi.mocked(Math.random).mockReturnValue(0.99);
+    await release();
+
+    expect(getRanking()["movie-1"].matches).toBe(1);
+    expect(button.getAttribute("aria-disabled")).toBe("false");
+    // The same button now asks about the next pair, and still has focus.
+    expect(document.activeElement).toBe(button);
+    expect(button.isConnected).toBe(true);
+    expect(screen.getByText(/holds #1|moved from/)).toBeTruthy();
+  });
+
+  it("moves focus to Cancel when a reset is asked for, and back to Reset after cancelling", async () => {
+    saveRanking(recordChoice({}, "movie-1", "movie-2"));
+    renderRanking();
+    const reset = screen.getByRole("button", { name: "Reset" });
+    act(() => reset.focus());
+
+    await click(reset);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
+
+    await click(screen.getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Reset" }));
+  });
+
+  it("keeps focus on Erase while the reset waits, then returns it to Reset", async () => {
+    saveRanking(recordChoice({}, "movie-1", "movie-2"));
+    renderRanking();
+    await click(screen.getByRole("button", { name: "Reset" }));
+    const erase = screen.getByRole("button", { name: "Erase the ranking" });
+    act(() => erase.focus());
+    const release = await holdProfileLock();
+
+    await click(erase);
+    expect(erase.hasAttribute("disabled")).toBe(false);
+    expect(erase.getAttribute("aria-disabled")).toBe("true");
+    expect(document.activeElement).toBe(erase);
+    // A pending reset cannot be cancelled out from under itself.
+    await click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("button", { name: "Erase the ranking" })).toBe(erase);
+
+    await release();
+    expect(getRanking()).toEqual({});
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Reset" }));
+  });
+
+  it("does not pull focus to Reset when the confirmation was not focused", async () => {
+    saveRanking(recordChoice({}, "movie-1", "movie-2"));
+    renderRanking();
+    await click(screen.getByRole("button", { name: "Reset" }));
+    expect(document.activeElement).toBe(document.body);
+
+    await click(screen.getByRole("button", { name: "Erase the ranking" }));
+
+    expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
+    expect(document.activeElement).toBe(document.body);
   });
 });

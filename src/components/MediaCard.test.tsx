@@ -204,6 +204,26 @@ describe("where the card points", () => {
   });
 });
 
+// `next.config.ts` sets `unoptimized`, so the TMDB size named is the file the
+// browser downloads.
+describe("the poster size", () => {
+  it("asks for w500 where the card is wide enough to need it", () => {
+    renderCard({ size: "medium" });
+
+    expect(screen.getByText("Poster for Fight Club").getAttribute("data-src")).toBe(
+      "https://image.tmdb.org/t/p/w500/poster.jpg",
+    );
+  });
+
+  it("asks for w342 for a small card, which w500 would only waste", () => {
+    renderCard({ size: "small" });
+
+    expect(screen.getByText("Poster for Fight Club").getAttribute("data-src")).toBe(
+      "https://image.tmdb.org/t/p/w342/poster.jpg",
+    );
+  });
+});
+
 describe("the year", () => {
   /**
    * The bug `lib/dates.ts` exists for, seen from the component that showed it.
@@ -832,20 +852,17 @@ describe("the overlay", () => {
 
     videoIsOpen = true;
     rerender(<MediaCard item={item()} />);
-    const dialogControl = document.createElement("button");
-    document.body.append(dialogControl);
-    try {
-      act(() => dialogControl.focus());
-      expect(document.activeElement).toBe(dialogControl);
-      expect(play.closest("[inert]")).toBeNull();
+    // The dialog's own control. A stand-in appended to the page would not do:
+    // the dialog hands focus that lands outside it back to this button.
+    const dialogControl = screen.getByRole("button", { name: "Close video player" });
+    act(() => dialogControl.focus());
+    expect(document.activeElement).toBe(dialogControl);
+    expect(play.closest("[inert]")).toBeNull();
 
-      videoIsOpen = false;
-      rerender(<MediaCard item={item()} />);
-      expect(play.closest("[inert]")).toBeNull();
-      act(() => play.focus());
-      expect(document.activeElement).toBe(play);
-    } finally {
-      dialogControl.remove();
-    }
+    videoIsOpen = false;
+    rerender(<MediaCard item={item()} />);
+    expect(play.closest("[inert]")).toBeNull();
+    act(() => play.focus());
+    expect(document.activeElement).toBe(play);
   });
 });

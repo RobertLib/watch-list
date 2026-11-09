@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getImageUrl, getImageUrlOrNull } from "./tmdb-image";
+import { getImageUrl, getImageUrlOrNull, type ImageSize } from "./tmdb-image";
 
 /**
  * `next.config.ts` sets `unoptimized`, so there is no optimiser between these
@@ -32,6 +32,23 @@ describe("getImageUrlOrNull", () => {
     for (const size of ["w92", "w154", "w185", "w300", "w500"] as const) {
       expect(getImageUrlOrNull("/still.jpg", size)).toBe(
         `https://image.tmdb.org/t/p/${size}/still.jpg`,
+      );
+    }
+  });
+
+  // A call site picks the narrowest size that covers its box at 2x, and that
+  // is often one only some image types list: w342 for posters, h632 for
+  // profiles, w45 for logos. The `satisfies` is the real check – a size missing
+  // from the union fails the type check rather than this assertion.
+  it("names every size TMDB serves", () => {
+    const sizes = [
+      "w45", "w92", "w154", "w185", "w300", "w342", "w500", "w780", "w1280",
+      "h632", "original",
+    ] as const satisfies readonly ImageSize[];
+
+    for (const size of sizes) {
+      expect(getImageUrlOrNull("/image.jpg", size)).toBe(
+        `https://image.tmdb.org/t/p/${size}/image.jpg`,
       );
     }
   });

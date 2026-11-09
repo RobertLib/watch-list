@@ -123,7 +123,7 @@ describe("detail-page watched storage outcomes", async () => {
     window.localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, "bob");
     window.localStorage.setItem(WATCHED_STORAGE_KEY, bobWatched);
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Watched" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Watched, mark as not watched" })); });
 
     expect(window.localStorage.getItem(WATCHED_STORAGE_KEY)).toBe(bobWatched);
     expect(toast.showToast).toHaveBeenCalledWith(expect.stringContaining("active profile changed"), "info");
@@ -136,7 +136,7 @@ describe("detail-page watched storage outcomes", async () => {
     renderButton();
     window.localStorage.setItem(WATCHED_STORAGE_KEY, "[]");
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Watched" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Watched, mark as not watched" })); });
 
     expect(getWatched()).toEqual([]);
     expect(screen.getByRole("button", { name: "Mark as watched" })).toBeTruthy();
@@ -164,8 +164,7 @@ describe("detail-page watched storage outcomes", async () => {
 
     expect(getWatched()).toHaveLength(1);
     expect(getWatchlist()).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Watched" }).getAttribute("aria-pressed"))
-      .toBe("true");
+    expect(screen.getByRole("button", { name: "Watched, mark as not watched" })).toBeTruthy();
     expect(toast.showToast).toHaveBeenCalledWith(
       'Marked "Fight Club" as watched, but your browser would not remove it from your watchlist',
       "error",
@@ -194,8 +193,7 @@ describe("detail-page watched storage outcomes", async () => {
 
     expect(getWatched()).toHaveLength(0);
     expect(getWatchlist()).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Mark as watched" }).getAttribute("aria-pressed"))
-      .toBe("false");
+    expect(screen.getByRole("button", { name: "Mark as watched" })).toBeTruthy();
     expect(toast.showToast).toHaveBeenCalledWith(STORAGE_REFUSED_MESSAGE, "error");
   });
 });
@@ -238,14 +236,14 @@ describe("pending watchlist removal", () => {
       fireEvent.click(control);
     });
     expect(requests).toHaveBeenCalledTimes(1);
-    expect(control.disabled).toBe(true);
+    expect(control.getAttribute("aria-disabled")).toBe("true");
     expect(getWatched()).toEqual([]);
     expect(getWatchlist()).toHaveLength(1);
     expect(toast.showToast).not.toHaveBeenCalled();
 
     await act(async () => { lock.release(); await lock.held; });
 
-    expect(control.disabled).toBe(false);
+    expect(control.getAttribute("aria-disabled")).toBe("false");
     expect(getWatched()).toHaveLength(1);
     expect(getWatchlist()).toEqual([]);
     expect(toast.showToast).toHaveBeenCalledExactlyOnceWith('Marked "Fight Club" as watched and removed it from your watchlist', "success");
@@ -257,7 +255,7 @@ describe("pending watchlist removal", () => {
     renderButton();
     const control = screen.getByRole("button", { name: "Mark as watched" }) as HTMLButtonElement;
     await act(async () => { fireEvent.click(control); });
-    expect(control.disabled).toBe(true);
+    expect(control.getAttribute("aria-disabled")).toBe("true");
     expect(toast.showToast).not.toHaveBeenCalled();
 
     act(() => {
@@ -276,7 +274,7 @@ describe("pending watchlist removal", () => {
     });
     await act(async () => { lock.release(); await lock.held; });
 
-    expect(control.disabled).toBe(false);
+    expect(control.getAttribute("aria-disabled")).toBe("false");
     expect(window.localStorage.getItem(bobWatchlist)).toBe(queued);
     expect(getWatchlist()).toHaveLength(1);
     expect(getWatched()).toEqual([]);
@@ -323,7 +321,47 @@ it("applies the entire action after a previously queued restore of the same prof
 
   expect(getWatched().map((entry) => entry.id)).toEqual([550, 12]);
   expect(getWatchlist().map((entry) => entry.id)).toEqual([11]);
-  expect(control.disabled).toBe(false);
-  expect(control.getAttribute("aria-pressed")).toBe("true");
+  expect(control.getAttribute("aria-disabled")).toBe("false");
+  expect(control.textContent).toBe("Watched, mark as not watched");
   expect(toast.showToast).toHaveBeenCalledExactlyOnceWith('Marked "Fight Club" as watched and removed it from your watchlist', "success");
+});
+
+/**
+ * `aria-pressed` on a button whose label also flipped: a screen reader said
+ * "Watched, pressed" and "Mark as watched, not pressed". The name now carries
+ * the state alone, and starts with the words on screen (WCAG 2.5.3).
+ */
+describe("the toggle's name and state", () => {
+  it("names the action without also claiming a pressed state", async () => {
+    renderButton();
+    const control = screen.getByRole("button", { name: "Mark as watched" });
+    expect(control.hasAttribute("aria-pressed")).toBe(false);
+
+    await act(async () => { fireEvent.click(control); });
+
+    const watched = screen.getByRole("button", { name: "Watched, mark as not watched" });
+    expect(watched).toBe(control);
+    expect(watched.hasAttribute("aria-pressed")).toBe(false);
+    // What a sighted visitor reads is where the spoken name begins.
+    const visible = Array.from(watched.childNodes)
+      .filter((node) => !(node instanceof HTMLElement && node.classList.contains("sr-only")))
+      .map((node) => node.textContent)
+      .join("");
+    expect(visible).toBe("Watched");
+  });
+
+  it("keeps keyboard focus while saving", async () => {
+    const lock = await holdRosterLock();
+    renderButton();
+    const control = screen.getByRole("button", { name: "Mark as watched" }) as HTMLButtonElement;
+    act(() => control.focus());
+
+    await act(async () => { fireEvent.click(control); });
+    expect(control.disabled).toBe(false);
+    expect(control.getAttribute("aria-disabled")).toBe("true");
+    expect(document.activeElement).toBe(control);
+
+    await act(async () => { lock.release(); await lock.held; });
+    expect(document.activeElement).toBe(control);
+  });
 });

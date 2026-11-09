@@ -134,3 +134,33 @@ describe("saved platform discovery filters", () => {
     );
   });
 });
+
+// The bar's own transition ends when the URL changes – before the listing has
+// even asked for the new results – so the listing tells it when they are still
+// on their way. The count's live region has to stay mounted throughout: one
+// that appears with its text in it announces nothing.
+describe("result count while the listing reloads", () => {
+  it("says the results are updating until the listing has them", () => {
+    vi.mocked(tmdbFetchJson).mockResolvedValue({ results: [] });
+    const { rerender } = render(
+      <DiscoverFilterBar type="movie" genres={[]} totalResults={120} />,
+    );
+    const status = screen.getByText("120 movies");
+
+    rerender(<DiscoverFilterBar type="movie" genres={[]} resultsPending />);
+    expect(status.textContent).toBe("Updating results…");
+    expect(status.isConnected).toBe(true);
+    expect(status.getAttribute("aria-live")).toBe("polite");
+
+    rerender(<DiscoverFilterBar type="movie" genres={[]} totalResults={7} />);
+    expect(status.textContent).toBe("7 movies");
+    expect(status.isConnected).toBe(true);
+  });
+
+  it("shows no count at all for a listing that does not report one", () => {
+    vi.mocked(tmdbFetchJson).mockResolvedValue({ results: [] });
+    render(<DiscoverFilterBar type="movie" genres={[]} />);
+
+    expect(screen.queryByText("Updating results…")).toBeNull();
+  });
+});

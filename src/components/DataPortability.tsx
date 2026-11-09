@@ -1,8 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import { Download, Upload, AlertTriangle, ShieldCheck } from "lucide-react";
-import { readStoredSettings } from "@/lib/settings";
 import { useWatchlist } from "@/contexts/WatchlistContext";
 import { useWatched } from "@/contexts/WatchedContext";
 import { useEpisodeProgress } from "@/contexts/EpisodeProgressContext";
@@ -27,19 +26,20 @@ import { restoreBackup, restoreFailureLabel } from "@/lib/restore-backup";
 import {
   getActiveProfileId,
   getProfiles,
-  readProfileSlot,
   subscribeProfiles,
 } from "@/lib/profiles";
 import {
   backupFilename,
   buildBackup,
+  describeUnreadable,
+  MAX_BACKUP_FILE_BYTES,
   parseBackup,
-  readStoredStores,
-  storesFromSlot,
+  readBackupSnapshot,
   summarizeBackup,
   type BackupSummary,
   type PortableData,
   type PortableStores,
+  type UnreadableData,
 } from "@/lib/portable-data";
 
 /** Read the active profile's live keys when the backup is requested. */
@@ -54,8 +54,12 @@ function liveStores(): PortableStores {
     goal: getGoal(),
     dailyGame: getGameState(),
     higherLower: getRecord(),
+    // Not counted in the summary; the export reads the stored stamp itself.
+    lastVisit: null,
   };
 }
+
+const MAX_BACKUP_FILE_MEGABYTES = Math.round(MAX_BACKUP_FILE_BYTES / (1024 * 1024));
 
 function getOtherProfileCount(): number {
   return Math.max(0, getProfiles().length - 1);
@@ -117,43 +121,29 @@ export function DataPortability() {
     getServerOtherProfileCount,
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const restoreButtonRef = useRef<HTMLButtonElement>(null);
   const fileProfileId = useRef<string | null>(null);
   const fileReadGeneration = useRef(0);
   const [readingFilename, setReadingFilename] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [pending, setPending] = useState<PendingRestore | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [exportGaps, setExportGaps] = useState<UnreadableData[]>([]);
   const restoring = useRef(false);
+  const exporting = useRef(false);
 
   async function handleExport() {
+    if (exporting.current || restoring.current) return;
+    exporting.current = true;
     setIsExporting(true);
     try {
       // Read the complete snapshot under the same origin-wide lock as edits,
       // profile switches and restores. Even its roster must be read after a
       // queued restore finishes; otherwise a backup can mix two generations.
-      const backup = await withProfileRosterLock<PortableData | null>(() => {
-        const exportedAt = new Date().toISOString();
-        const profiles = getProfiles({ strict: true });
-        const activeId = getActiveProfileId({ strict: true });
-        const active = profiles.find((profile) => profile.id === activeId);
-        if (!active) throw new Error("The active profile is absent from the stored roster");
-
-        const otherProfiles = profiles
-          .filter((profile) => profile.id !== active.id)
-          .map((profile) => ({
-            id: profile.id,
-            name: profile.name,
-            ...storesFromSlot(readProfileSlot(profile.id, { strict: true }), exportedAt),
-          }));
-
-        return buildBackup({
-          stores: withProfileStorage(active.id, () => readStoredStores(exportedAt)),
-          activeProfile: { id: active.id, name: active.name },
-          otherProfiles,
-          settings: readStoredSettings({ strict: true }),
-          exportedAt,
-        });
-      }, null);
+      const backup = await withProfileRosterLock<PortableData | null>(
+        () => readBackupSnapshot(new Date().toISOString()),
+        null,
+      );
       if (!backup) throw new Error("Could not read the backup under the profile lock");
 
       const url = URL.createObjectURL(
@@ -168,11 +158,25 @@ export function DataPortability() {
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
 
-      toast.showToast("Backup downloaded", "success");
+      // A file that looks complete but is not is how the only copy of
+      // something gets deleted with confidence. Name every gap, here and in
+      // the panel below, which stays until the next export.
+      const gaps = backup.unreadable ?? [];
+      setExportGaps(gaps);
+      if (gaps.length > 0) {
+        toast.showToast(
+          `Backup downloaded, but some data could not be read: ${gaps.map(describeUnreadable).join("; ")}.`,
+          "error",
+          10000,
+        );
+      } else {
+        toast.showToast("Backup downloaded", "success");
+      }
     } catch (error) {
       console.error("Error exporting data:", error);
       toast.showToast("Could not build the backup", "error");
     } finally {
+      exporting.current = false;
       setIsExporting(false);
     }
   }
@@ -191,6 +195,16 @@ export function DataPortability() {
     const profileId = fileProfileId.current ?? watchlistProfileId;
     fileProfileId.current = null;
     try {
+      // Checked before reading: `file.text()` holds the whole file in memory and
+      // JSON.parse then blocks the page on it, so picking a video by mistake
+      // used to freeze the tab instead of being told it is the wrong file.
+      if (file.size > MAX_BACKUP_FILE_BYTES) {
+        toast.showToast(
+          `That file is too large to be a WatchList backup – backups stay under ${MAX_BACKUP_FILE_MEGABYTES} MB`,
+          "error",
+        );
+        return;
+      }
       const text = await file.text();
       if (!isCurrent()) return;
       const parsed = parseBackup(JSON.parse(text));
@@ -238,8 +252,23 @@ export function DataPortability() {
         ? restoreBackup(pending.data)
         : withProfileStorage(pending.profileId, () => restoreBackup(pending.data)));
       if (!result.ok) {
+        let currentProfiles: { id: string; name: string }[] = [];
+        try {
+          currentProfiles = getProfiles();
+        } catch {
+          // Names from the file still label most refusals.
+        }
+        const label = restoreFailureLabel(result.key, {
+          activeProfileId: pending.data.activeProfile?.id ?? pending.profileId,
+          // The file's names first: they are the ones the visitor just read.
+          profiles: [
+            ...(pending.data.activeProfile ? [pending.data.activeProfile] : []),
+            ...pending.data.otherProfiles,
+            ...currentProfiles,
+          ],
+        });
         toast.showToast(
-          `Could not restore ${restoreFailureLabel(result.key)} — your browser refused the write. ${
+          `Could not restore ${label} — your browser refused the write. ${
             result.rolledBack
               ? "Your existing data is unchanged; free up space and try again."
               : "Your browser also refused to restore the previous data. Keep your backup file and try again."
@@ -345,16 +374,20 @@ export function DataPortability() {
       </p>
 
       <div className="flex flex-wrap gap-3">
+        {/* The button keeps focus while the backup is built: native `disabled`
+            would blur the very control that was just pressed. */}
         <button
           onClick={handleExport}
-          disabled={isExporting || isReadingStorage || isRestoring}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-sm font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+          disabled={isReadingStorage || isRestoring}
+          aria-disabled={isExporting || undefined}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 aria-disabled:opacity-60 aria-disabled:cursor-wait text-sm font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
         >
           <Download className="w-4 h-4" aria-hidden="true" />
           {isExporting ? "Preparing…" : "Download backup"}
         </button>
 
         <button
+          ref={restoreButtonRef}
           onClick={() => {
             fileProfileId.current = watchlistProfileId;
             fileInputRef.current?.click();
@@ -366,11 +399,16 @@ export function DataPortability() {
           Restore from file
         </button>
 
+        {/* Reached only through the button above. As a Tab stop of its own it
+            was a second, invisible control for the same picker – focusable,
+            announced, and showing no focus at all. */}
         <input
           ref={fileInputRef}
           type="file"
           accept="application/json,.json"
           disabled={isRestoring}
+          tabIndex={-1}
+          aria-hidden="true"
           className="sr-only"
           aria-label="Choose a backup file"
           onChange={(event) => {
@@ -386,6 +424,29 @@ export function DataPortability() {
         </p>
       )}
 
+      {exportGaps.length > 0 && (
+        <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-4 space-y-2">
+          <h3 className="font-semibold text-red-200 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" aria-hidden="true" />
+            Not in your last backup
+          </h3>
+          <p className="text-sm text-red-100/80 leading-relaxed">
+            This browser could not read the following, so restoring that file
+            will not bring them back:
+          </p>
+          <ul className="list-disc pl-5 text-sm text-red-100/80 space-y-1">
+            {exportGaps.map((gap, index) => (
+              <li key={index}>
+                {describeUnreadable(gap)}
+                {gap.raw === null
+                  ? " – the browser refused to read it"
+                  : " – the stored text is kept in the file as it was found"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {pending && (
         <RestoreConfirmation
           filename={pending.filename}
@@ -393,8 +454,11 @@ export function DataPortability() {
           replacesProfiles={pending.data.activeProfile !== null}
           exportedAt={pending.data.exportedAt}
           isRestoring={isRestoring}
+          returnFocusTo={restoreButtonRef}
           onConfirm={confirmRestore}
-          onCancel={() => setPending(null)}
+          onCancel={() => {
+            if (!restoring.current) setPending(null);
+          }}
         />
       )}
     </section>
@@ -407,6 +471,7 @@ function RestoreConfirmation({
   replacesProfiles,
   exportedAt,
   isRestoring,
+  returnFocusTo,
   onConfirm,
   onCancel,
 }: {
@@ -415,13 +480,35 @@ function RestoreConfirmation({
   replacesProfiles: boolean;
   exportedAt: string;
   isRestoring: boolean;
+  returnFocusTo: RefObject<HTMLElement | null>;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  // An alertdialog is announced when focus moves into it; one that appears
+  // beside a file picker and is never focused is silent, and a keyboard user
+  // is left on a control behind it. Focus starts on Cancel, the action that
+  // cannot lose anything.
+  useLayoutEffect(() => {
+    cancelRef.current?.focus();
+  }, []);
+
+  // When it closes, focus would otherwise fall back to the top of the page.
+  // Checked once the dialog is gone: by then a refusal has finished and the
+  // restore button is usable again. Focus the visitor moved elsewhere stays.
+  useEffect(() => () => {
+    const focused = document.activeElement;
+    if (focused === null || focused === document.body) returnFocusTo.current?.focus();
+  }, [returnFocusTo]);
+
   return (
     <div
       role="alertdialog"
       aria-labelledby="restore-heading"
+      aria-describedby={replacesProfiles
+        ? "restore-contents restore-replaces restore-warning"
+        : "restore-contents restore-warning"}
       className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 space-y-3"
     >
       <h3
@@ -436,7 +523,7 @@ function RestoreConfirmation({
         File: <strong>{filename}</strong>
       </p>
 
-      <p className="text-sm text-amber-100/80 leading-relaxed">
+      <p id="restore-contents" className="text-sm text-amber-100/80 leading-relaxed">
         This backup holds <strong>{summary.watchlist}</strong> to watch,{" "}
         <strong>{summary.watched}</strong> watched and{" "}
         <strong>{summary.showsInProgress}</strong> series in progress (
@@ -449,7 +536,7 @@ function RestoreConfirmation({
       </p>
 
       {replacesProfiles && (
-        <p className="text-sm text-amber-100/80 leading-relaxed">
+        <p id="restore-replaces" className="text-sm text-amber-100/80 leading-relaxed">
           This will replace all profiles in this browser. Profiles absent from
           the backup and all their data will be deleted.
           {summary.otherProfiles > 0 && (
@@ -461,23 +548,27 @@ function RestoreConfirmation({
         </p>
       )}
 
-      <p className="text-sm text-amber-100/80">
+      <p id="restore-warning" className="text-sm text-amber-100/80">
         Restoring replaces the lists in this browser. It cannot be undone – if
         you have anything here worth keeping, download a backup first.
       </p>
 
+      {/* aria-disabled rather than disabled while restoring: native disabled
+          blurs the pressed button, and a refused restore keeps this dialog up
+          for a retry with focus nowhere. The handlers refuse a second press. */}
       <div className="flex flex-wrap gap-3">
         <button
           onClick={onConfirm}
-          disabled={isRestoring}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-sm font-semibold text-black transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+          aria-disabled={isRestoring || undefined}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 aria-disabled:opacity-60 aria-disabled:cursor-wait text-sm font-semibold text-black transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
         >
           {isRestoring ? "Restoring…" : "Replace and restore"}
         </button>
         <button
+          ref={cancelRef}
           onClick={onCancel}
-          disabled={isRestoring}
-          className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-60 text-sm font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          aria-disabled={isRestoring || undefined}
+          className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 aria-disabled:opacity-60 aria-disabled:cursor-wait text-sm font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         >
           Cancel
         </button>

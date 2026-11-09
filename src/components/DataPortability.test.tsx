@@ -16,7 +16,15 @@ import { ProfileSwitcher } from "./ProfileSwitcher";
 import { WatchlistProvider } from "@/contexts/WatchlistContext";
 import { WatchedProvider } from "@/contexts/WatchedContext";
 import { EpisodeProgressProvider } from "@/contexts/EpisodeProgressContext";
-import { BACKUP_FORMAT, BACKUP_VERSION, parseBackup, type PortableData } from "@/lib/portable-data";
+import {
+  BACKUP_FORMAT,
+  BACKUP_VERSION,
+  describeUnreadable,
+  MAX_BACKUP_FILE_BYTES,
+  parseBackup,
+  type PortableData,
+  type UnreadableData,
+} from "@/lib/portable-data";
 import { restoreBackup } from "@/lib/restore-backup";
 import { EMPTY_STATE } from "@/lib/daily-game";
 import { WATCHLIST_STORAGE_KEY } from "@/lib/watchlist";
@@ -24,7 +32,8 @@ import { WATCHED_STORAGE_KEY } from "@/lib/watched";
 import { EPISODE_PROGRESS_STORAGE_KEY } from "@/lib/episode-progress";
 import { RATINGS_STORAGE_KEY } from "@/lib/ratings";
 import { COLLECTIONS_STORAGE_KEY } from "@/lib/collections";
-import { deletedProfileKey, initializeProfileStorage, profileStoreKey } from "@/lib/profile-storage";
+import { LAST_VISIT_STORAGE_KEY, LEGACY_LAST_VISIT_STORAGE_KEY } from "@/lib/last-visit";
+import { deletedProfileKey, initializeProfileStorage, PROFILE_STORAGE_OWNER_KEY, profileStoreKey } from "@/lib/profile-storage";
 import {
   ACTIVE_PROFILE_STORAGE_KEY,
   PROFILES_STORAGE_KEY,
@@ -235,18 +244,6 @@ describe("the current backup summary", () => {
 });
 
 describe("exporting a backup", () => {
-  const activeStoreKeys = [
-    WATCHLIST_STORAGE_KEY,
-    WATCHED_STORAGE_KEY,
-    EPISODE_PROGRESS_STORAGE_KEY,
-    RATINGS_STORAGE_KEY,
-    COLLECTIONS_STORAGE_KEY,
-    "ranking",
-    "yearly-goal",
-    "daily-game",
-    "higher-lower",
-  ];
-
   function interceptDownload() {
     const createObjectURL = vi.fn<(blob: Blob) => string>(() => "blob:watchlist/backup");
     vi.stubGlobal("URL", class extends URL {
@@ -372,7 +369,12 @@ describe("exporting a backup", () => {
     act(() => { fireEvent.click(screen.getByRole("button", { name: "Download backup" })); });
 
     expect(requests).toHaveBeenCalledTimes(2);
-    expect((screen.getByRole("button", { name: "Preparing…" }) as HTMLButtonElement).disabled).toBe(true);
+    // Unavailable without native `disabled`, which blurred the pressed button.
+    const preparing = screen.getByRole("button", { name: "Preparing…" }) as HTMLButtonElement;
+    expect(preparing.getAttribute("aria-disabled")).toBe("true");
+    expect(preparing.disabled).toBe(false);
+    act(() => { fireEvent.click(preparing); });
+    expect(requests).toHaveBeenCalledTimes(2);
     expect(intercepted.createObjectURL).not.toHaveBeenCalled();
     expect(intercepted.download).not.toHaveBeenCalled();
     expect(showToast).not.toHaveBeenCalled();
@@ -439,58 +441,231 @@ describe("exporting a backup", () => {
     expect(backup.otherProfiles[0].watched.map((item) => item.id)).toEqual([22]);
   });
 
+  /** A backup that downloads and names exactly what it could not read. */
+  async function expectExportWithGaps(
+    intercepted: ReturnType<typeof interceptDownload>,
+    gaps: UnreadableData[],
+  ): Promise<PortableData> {
+    await downloadBackup();
+    expect(intercepted.download).toHaveBeenCalledOnce();
+    const backup = JSON.parse(await intercepted.createObjectURL.mock.calls[0][0].text()) as PortableData;
+    expect(backup.unreadable).toEqual(gaps);
+    expect(showToast).toHaveBeenCalledWith(
+      `Backup downloaded, but some data could not be read: ${gaps.map(describeUnreadable).join("; ")}.`,
+      "error",
+      10000,
+    );
+    expect(showToast).not.toHaveBeenCalledWith("Backup downloaded", "success");
+    return backup;
+  }
+
+  const ME = { id: "default", name: "Me" };
+  const storeFields: Record<string, string> = {
+    [WATCHLIST_STORAGE_KEY]: "watchlist",
+    [WATCHED_STORAGE_KEY]: "watched",
+    [EPISODE_PROGRESS_STORAGE_KEY]: "episodeProgress",
+    [RATINGS_STORAGE_KEY]: "ratings",
+    [COLLECTIONS_STORAGE_KEY]: "collections",
+    ranking: "ranking",
+    "yearly-goal": "goal",
+    "daily-game": "dailyGame",
+    "higher-lower": "higherLower",
+    [LAST_VISIT_STORAGE_KEY]: "lastVisit",
+  };
+  const settingFields: Record<string, string> = {
+    [REGION_KEY]: "region",
+    [WATCH_PROVIDER_FILTER_KEY]: "watchProviderFilter",
+    [SELECTED_PROVIDERS_KEY]: "selectedProviderIds",
+    [HAS_SETTINGS_KEY]: "hasCustomSettings",
+  };
+
+  function refuseReads(refused: (key: string) => boolean) {
+    const read = Storage.prototype.getItem;
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key: string) {
+      if (refused(key)) throw new DOMException("Read denied", "SecurityError");
+      return read.call(this, key);
+    });
+    return read;
+  }
+
+  // Without these nothing can say whose data is whose, so there is no backup.
   it.each([
-    ...activeStoreKeys,
     PROFILES_STORAGE_KEY,
     ACTIVE_PROFILE_STORAGE_KEY,
-    REGION_KEY,
-    WATCH_PROVIDER_FILTER_KEY,
-    SELECTED_PROVIDERS_KEY,
-    HAS_SETTINGS_KEY,
+    PROFILE_STORAGE_OWNER_KEY,
     "all storage",
   ])("refuses a backup when reading %s fails after hydration", async (refusedKey) => {
     renderSavedWatchlist();
     const intercepted = interceptDownload();
-    const read = Storage.prototype.getItem;
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key: string) {
-      if (key === refusedKey || refusedKey === "all storage") {
-        throw new DOMException("Read denied", "SecurityError");
-      }
-      return read.call(this, key);
-    });
+    const read = refuseReads((key) => key === refusedKey || refusedKey === "all storage");
 
     await expectExportRefused(intercepted);
     expect(read.call(window.localStorage, WATCHLIST_STORAGE_KEY)).toContain("Fight Club");
   });
 
-  it.each([...activeStoreKeys, PROFILES_STORAGE_KEY])(
-    "refuses a backup when %s contains malformed JSON after hydration",
+  it.each(Object.keys(storeFields).filter((key) => key !== WATCHLIST_STORAGE_KEY))(
+    "exports everything else and names the store when reading %s fails",
+    async (refusedKey) => {
+      renderSavedWatchlist();
+      const intercepted = interceptDownload();
+      refuseReads((key) => key === refusedKey);
+
+      const backup = await expectExportWithGaps(intercepted, [
+        { profile: ME, stores: [storeFields[refusedKey]], raw: null },
+      ]);
+      expect(backup.watchlist.map((item) => item.title)).toEqual(["Fight Club"]);
+      expect(parseBackup(backup)).not.toHaveProperty("unreadable");
+    },
+  );
+
+  it("names an unreadable watchlist without falling back to the legacy cookie", async () => {
+    renderSavedWatchlist();
+    const intercepted = interceptDownload();
+    document.cookie = `watchlist=${encodeURIComponent("[]")};path=/`;
+    try {
+      refuseReads((key) => key === WATCHLIST_STORAGE_KEY);
+
+      const backup = await expectExportWithGaps(intercepted, [
+        { profile: ME, stores: ["watchlist"], raw: null },
+      ]);
+      expect(backup.watchlist).toEqual([]);
+    } finally {
+      document.cookie = "watchlist=;max-age=0;path=/";
+    }
+  });
+
+  it.each(Object.keys(settingFields))("exports everything else and names the setting when reading %s fails", async (refusedKey) => {
+    renderSavedWatchlist();
+    const intercepted = interceptDownload();
+    refuseReads((key) => key === refusedKey);
+
+    const backup = await expectExportWithGaps(intercepted, [
+      { profile: null, stores: [`settings.${settingFields[refusedKey]}`], raw: null },
+    ]);
+    expect(backup.watchlist.map((item) => item.title)).toEqual(["Fight Club"]);
+  });
+
+  it.each(Object.keys(storeFields).filter((key) => key !== WATCHLIST_STORAGE_KEY))(
+    "keeps malformed %s in the file for recovery and exports the rest",
     async (key) => {
       renderSavedWatchlist();
       const intercepted = interceptDownload();
       window.localStorage.setItem(key, "{not json");
 
-      await expectExportRefused(intercepted);
+      const backup = await expectExportWithGaps(intercepted, [
+        { profile: ME, stores: [storeFields[key]], raw: "{not json" },
+      ]);
+      expect(backup.watchlist.map((item) => item.title)).toEqual(["Fight Club"]);
       expect(window.localStorage.getItem(key)).toBe("{not json");
     },
   );
 
+  it("keeps a malformed watchlist in the file for recovery", async () => {
+    renderPortability();
+    const intercepted = interceptDownload();
+    window.localStorage.setItem(WATCHLIST_STORAGE_KEY, "{not json");
+
+    const backup = await expectExportWithGaps(intercepted, [
+      { profile: ME, stores: ["watchlist"], raw: "{not json" },
+    ]);
+    expect(backup.watchlist).toEqual([]);
+    expect(window.localStorage.getItem(WATCHLIST_STORAGE_KEY)).toBe("{not json");
+  });
+
   it.each([
-    [PROFILES_STORAGE_KEY, "null"],
-    [PROFILES_STORAGE_KEY, JSON.stringify([{ id: "default", name: "Me" }, { id: "lost", name: "" }])],
-    [ACTIVE_PROFILE_STORAGE_KEY, ""],
-    [ACTIVE_PROFILE_STORAGE_KEY, "missing-profile"],
-    [REGION_KEY, "not-a-region"],
-    [WATCH_PROVIDER_FILTER_KEY, "unsupported-filter"],
-    [SELECTED_PROVIDERS_KEY, "8,337broken"],
-    [HAS_SETTINGS_KEY, "not-a-boolean"],
-  ])("refuses malformed profile metadata or settings in %s", async (key, value) => {
+    ["unparseable", "{not json"],
+    ["not a list", "null"],
+    ["holding a nameless entry", JSON.stringify([{ id: "default", name: "Me" }, { id: "lost", name: "" }])],
+  ])("exports the profiles the app shows when the stored roster is %s, keeping its text", async (_label, raw) => {
+    renderSavedWatchlist();
+    const intercepted = interceptDownload();
+    window.localStorage.setItem(PROFILES_STORAGE_KEY, raw);
+
+    const backup = await expectExportWithGaps(intercepted, [{ profile: null, stores: ["profiles"], raw }]);
+    expect(backup.activeProfile).toEqual(ME);
+    expect(backup.otherProfiles).toEqual([]);
+    expect(backup.watchlist.map((item) => item.title)).toEqual(["Fight Club"]);
+    expect(window.localStorage.getItem(PROFILES_STORAGE_KEY)).toBe(raw);
+  });
+
+  it("exports an empty active pointer as the default profile every reader resolves it to", async () => {
+    renderSavedWatchlist();
+    const intercepted = interceptDownload();
+    window.localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, "");
+
+    await downloadBackup();
+
+    const backup = JSON.parse(await intercepted.createObjectURL.mock.calls[0][0].text()) as PortableData;
+    expect(backup.activeProfile).toEqual(ME);
+    expect(backup).not.toHaveProperty("unreadable");
+    expect(showToast).toHaveBeenCalledWith("Backup downloaded", "success");
+  });
+
+  it("refuses a backup whose live stores belong to an owner no roster names", async () => {
+    // Before rosters existed a nondefault pointer could own the live keys; with
+    // no name to give it, the export cannot say whose they are.
+    renderSavedWatchlist();
+    const intercepted = interceptDownload();
+    window.localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, "missing-profile");
+
+    await expectExportRefused(intercepted);
+  });
+
+  it.each([
+    [REGION_KEY, "region", "not-a-region"],
+    [WATCH_PROVIDER_FILTER_KEY, "watchProviderFilter", "unsupported-filter"],
+    [SELECTED_PROVIDERS_KEY, "selectedProviderIds", "8,337broken"],
+    [HAS_SETTINGS_KEY, "hasCustomSettings", "not-a-boolean"],
+  ])("exports everything else and keeps an invalid %s out of the restorable settings", async (key, field, value) => {
     renderSavedWatchlist();
     const intercepted = interceptDownload();
     window.localStorage.setItem(key, value);
 
-    await expectExportRefused(intercepted);
+    const backup = await expectExportWithGaps(intercepted, [
+      { profile: null, stores: [`settings.${field}`], raw: value },
+    ]);
+    const settings = parseBackup(backup)!.settings as unknown as Record<string, unknown>;
+    // Null restores nothing, so the destination keeps its own value.
+    if (field === "hasCustomSettings") expect(settings).not.toHaveProperty(field);
+    else expect(settings[field]).toBeNull();
+    expect(backup.watchlist.map((item) => item.title)).toEqual(["Fight Club"]);
     expect(window.localStorage.getItem(key)).toBe(value);
+  });
+
+  it("exports each profile's own last visit, with the pre-profile stamp for its original owner", async () => {
+    window.localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify([
+      { id: "default", name: "Me" }, { id: "bob", name: "Bob" },
+    ]));
+    window.localStorage.setItem(LEGACY_LAST_VISIT_STORAGE_KEY, "2026-01-01T00:00:00.000Z");
+    window.localStorage.setItem(profileStoreKey(LAST_VISIT_STORAGE_KEY, "bob"), JSON.stringify("2026-02-02T00:00:00.000Z"));
+    renderPortability();
+    const intercepted = interceptDownload();
+
+    await downloadBackup();
+
+    const backup = JSON.parse(await intercepted.createObjectURL.mock.calls[0][0].text()) as PortableData;
+    expect(backup.lastVisit).toBe("2026-01-01T00:00:00.000Z");
+    expect(backup.otherProfiles[0]).toMatchObject({ id: "bob", lastVisit: "2026-02-02T00:00:00.000Z" });
+  });
+
+  it("lists what the last backup left out until the next one", async () => {
+    renderSavedWatchlist();
+    const intercepted = interceptDownload();
+    window.localStorage.setItem(WATCHED_STORAGE_KEY, "{not json");
+    window.localStorage.setItem(REGION_KEY, "not-a-region");
+
+    await expectExportWithGaps(intercepted, [
+      { profile: ME, stores: ["watched"], raw: "{not json" },
+      { profile: null, stores: ["settings.region"], raw: "not-a-region" },
+    ]);
+    const notice = screen.getByRole("heading", { name: "Not in your last backup" }).parentElement!;
+    expect(within(notice).getByText(/watched list for "Me"/).textContent).toContain("kept in the file");
+    expect(within(notice).getByText(/the region setting/)).toBeDefined();
+
+    window.localStorage.setItem(WATCHED_STORAGE_KEY, "[]");
+    window.localStorage.setItem(REGION_KEY, "CZ");
+    await downloadBackup();
+    expect(screen.queryByRole("heading", { name: "Not in your last backup" })).toBeNull();
   });
 
   it("exports and restores an empty browser without marking its defaults configured", async () => {
@@ -542,23 +717,29 @@ describe("exporting a backup", () => {
     }
   });
 
-  it("refuses malformed legacy cookie data without deleting its only persisted copy", async () => {
+  it("names malformed legacy cookie data without deleting its only persisted copy", async () => {
     renderPortability();
     const intercepted = interceptDownload();
     document.cookie = "watchlist=%7Bnot%20json;path=/";
     try {
-      await expectExportRefused(intercepted);
+      const backup = await expectExportWithGaps(intercepted, [
+        { profile: ME, stores: ["watchlist"], raw: null },
+      ]);
+      expect(backup.watchlist).toEqual([]);
       expect(document.cookie).toContain("watchlist=");
     } finally {
       document.cookie = "watchlist=;max-age=0;path=/";
     }
   });
 
+  const UNREADABLE = { id: "p3", name: "Unreadable" };
+  const everyStore = Object.values(storeFields);
   it.each([
-    ["a refused read", '{"watchlist":"[]"}', true],
-    ["malformed slot JSON", "{not json", false],
-    ["malformed store JSON", '{"watchlist":"[not json"}', false],
-  ])("does not download a partial backup or report success after %s", async (_label, raw, refuseRead) => {
+    ["a refused read", '{"watchlist":"[]"}', true, [{ profile: UNREADABLE, stores: everyStore, raw: null }]],
+    // One parked slot: kept once, for every store that falls back to it.
+    ["malformed slot JSON", "{not json", false, [{ profile: UNREADABLE, stores: everyStore, raw: "{not json" }]],
+    ["malformed store JSON", '{"watchlist":"[not json"}', false, [{ profile: UNREADABLE, stores: ["watchlist"], raw: "[not json" }]],
+  ])("downloads every other profile and names a dormant profile's stores after %s", async (_label, raw, refuseRead, gaps) => {
     window.localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify([
       { id: "default", name: "Me" },
       { id: "p2", name: "Readable" },
@@ -569,27 +750,44 @@ describe("exporting a backup", () => {
     }));
     window.localStorage.setItem("profile-data:p3", raw);
     renderPortability();
-    const read = Storage.prototype.getItem;
-    if (refuseRead) {
-      vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key: string) {
-        if (key === "profile-data:p3") throw new DOMException("Read denied", "SecurityError");
-        return read.call(this, key);
-      });
-    }
-    const createObjectURL = vi.fn();
-    vi.stubGlobal("URL", class extends URL {
-      static createObjectURL = createObjectURL;
-      static revokeObjectURL = vi.fn();
-    });
-    const download = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const read = refuseRead
+      ? refuseReads((key) => key === "profile-data:p3")
+      : Storage.prototype.getItem;
+    const intercepted = interceptDownload();
 
-    await downloadBackup();
+    const backup = await expectExportWithGaps(intercepted, gaps as UnreadableData[]);
 
-    expect(createObjectURL).not.toHaveBeenCalled();
-    expect(download).not.toHaveBeenCalled();
-    expect(showToast).toHaveBeenCalledWith("Could not build the backup", "error");
-    expect(showToast).not.toHaveBeenCalledWith("Backup downloaded", "success");
+    expect(backup.otherProfiles.map(({ id }) => id)).toEqual(["p2", "p3"]);
+    expect(backup.otherProfiles[0].watchlist.map((item) => item.title)).toEqual(["Fight Club"]);
+    expect(backup.otherProfiles[1].watchlist).toEqual([]);
+    expect(showToast.mock.calls.at(-1)?.[0]).toContain('for "Unreadable"');
     expect(read.call(window.localStorage, "profile-data:p3")).toBe(raw);
+  });
+
+  it("restores a backup with gaps without writing the unreadable text back", async () => {
+    window.localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify([
+      { id: "default", name: "Me" }, { id: "p2", name: "Second" },
+    ]));
+    window.localStorage.setItem("profile-data:p2", JSON.stringify({
+      [WATCHLIST_STORAGE_KEY]: "[not json",
+      [WATCHED_STORAGE_KEY]: JSON.stringify([{ id: 11, title: "Star Wars", mediaType: "movie" }]),
+    }));
+    renderPortability();
+    const intercepted = interceptDownload();
+    const backup = await expectExportWithGaps(intercepted, [
+      { profile: { id: "p2", name: "Second" }, stores: ["watchlist"], raw: "[not json" },
+    ]);
+    window.localStorage.clear();
+
+    await chooseBackup(new File([JSON.stringify(backup)], "with-gaps.json", { type: "application/json" }));
+    await confirm();
+
+    expect(showToast).toHaveBeenLastCalledWith("Backup restored", "success");
+    expect(getProfiles().map(({ id }) => id)).toEqual(["default", "p2"]);
+    expect(readProfileSlot("p2", { strict: true })).toMatchObject({
+      [WATCHLIST_STORAGE_KEY]: "[]",
+      [WATCHED_STORAGE_KEY]: expect.stringContaining("Star Wars"),
+    });
   });
 
   it("exports a new empty profile whose slot has not been created", async () => {
@@ -811,7 +1009,7 @@ describe("restoring a backup", () => {
     expect(showToast).toHaveBeenCalledWith("Backup restored", "success");
   });
 
-  it("waits for the roster lock, disables controls and ignores a repeated confirmation", async () => {
+  it("waits for the roster lock, marks controls unavailable and ignores a repeated confirmation", async () => {
     let release!: () => void;
     const held = navigator.locks.request(PROFILE_ROSTER_LOCK, { mode: "exclusive" }, () => new Promise<void>((resolve) => {
       release = resolve;
@@ -821,6 +1019,7 @@ describe("restoring a backup", () => {
     renderPortability();
     await chooseBackup(backupFile({ activeProfile: { id: "default", name: "Imported" } }));
     const confirmButton = screen.getByRole("button", { name: "Replace and restore" });
+    confirmButton.focus();
 
     act(() => {
       fireEvent.click(confirmButton);
@@ -828,8 +1027,15 @@ describe("restoring a backup", () => {
     });
 
     expect(requests).toHaveBeenCalledTimes(1);
-    expect((screen.getByRole("button", { name: "Restoring…" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true);
+    // The dialog's buttons keep focus: a refusal leaves the dialog up for a retry.
+    for (const name of ["Restoring…", "Cancel"]) {
+      const button = screen.getByRole("button", { name }) as HTMLButtonElement;
+      expect(button.getAttribute("aria-disabled")).toBe("true");
+      expect(button.disabled).toBe(false);
+    }
+    expect(document.activeElement).toBe(confirmButton);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("alertdialog")).toBeDefined();
     expect((screen.getByRole("button", { name: "Restore from file" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Download backup" }) as HTMLButtonElement).disabled).toBe(true);
     expect(showToast).not.toHaveBeenCalledWith("Backup restored", "success");
@@ -839,6 +1045,79 @@ describe("restoring a backup", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(screen.getByText(/In this browser:/).textContent).toContain("1 to watch");
     expect(showToast).toHaveBeenCalledExactlyOnceWith("Backup restored", "success");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Restore from file" }));
+  });
+
+  it("moves focus into the confirmation, describes it, and returns focus when it closes", async () => {
+    renderPortability();
+    const restoreButton = screen.getByRole("button", { name: "Restore from file" });
+    restoreButton.focus();
+    await chooseBackup();
+
+    const dialog = screen.getByRole("alertdialog");
+    // Focus inside an alertdialog is what gets it announced; Cancel loses nothing.
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
+    const description = dialog.getAttribute("aria-describedby")!.split(" ")
+      .map((id) => document.getElementById(id)!.textContent).join(" ");
+    expect(description).toContain("This backup holds 1 to watch");
+    expect(description).toContain("It cannot be undone");
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(document.activeElement).toBe(restoreButton);
+  });
+
+  it("keeps focus in the confirmation after a refused restore so it can be retried", async () => {
+    renderPortability();
+    await chooseBackup();
+    const confirmButton = screen.getByRole("button", { name: "Replace and restore" });
+    confirmButton.focus();
+    const setItem = refuseWrites();
+
+    await confirm();
+
+    expect(screen.getByRole("alertdialog")).toBeDefined();
+    expect(document.activeElement).toBe(confirmButton);
+    setItem.mockRestore();
+  });
+
+  it("keeps the hidden file input out of the Tab order behind its visible button", () => {
+    renderPortability();
+    const input = screen.getByLabelText("Choose a backup file") as HTMLInputElement;
+
+    expect(input.tabIndex).toBe(-1);
+    expect(input.getAttribute("aria-hidden")).toBe("true");
+    const click = vi.spyOn(input, "click").mockImplementation(() => {});
+    fireEvent.click(screen.getByRole("button", { name: "Restore from file" }));
+    expect(click).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a file too large to be a backup before reading any of it", async () => {
+    renderPortability();
+    const file = backupFile();
+    Object.defineProperty(file, "size", { value: MAX_BACKUP_FILE_BYTES + 1 });
+    const read = vi.spyOn(file, "text");
+
+    await chooseBackup(file);
+
+    expect(read).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledExactlyOnceWith(
+      `That file is too large to be a WatchList backup – backups stay under ${Math.round(MAX_BACKUP_FILE_BYTES / (1024 * 1024))} MB`,
+      "error",
+    );
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("accepts a file right at the size limit", async () => {
+    renderPortability();
+    const file = backupFile();
+    Object.defineProperty(file, "size", { value: MAX_BACKUP_FILE_BYTES });
+
+    await chooseBackup(file);
+
+    expect(screen.getByRole("alertdialog")).toBeDefined();
   });
 
   it("warns that a single-profile backup deletes other profiles and their data", async () => {
@@ -1109,6 +1388,35 @@ describe("restoring a backup", () => {
     expect(
       screen.getByRole("button", { name: "Replace and restore" }),
     ).toBeDefined();
+  });
+
+  it("names a profile the restore could not remove instead of its storage address", async () => {
+    window.localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify([
+      { id: "default", name: "Me" }, { id: "3f2a-old", name: "Existing" },
+    ]));
+    renderPortability();
+    await chooseBackup(backupFile({ activeProfile: { id: "default", name: "Me" } }));
+    refuseWrites((key) => key === deletedProfileKey("3f2a-old"));
+
+    await confirm();
+
+    const [message] = showToast.mock.calls.at(-1) ?? [];
+    expect(message).toContain('Could not restore the profile "Existing" — your browser refused the write.');
+    expect(message).not.toContain("profile-deleted");
+    expect(message).not.toContain("3f2a");
+  });
+
+  it("names a dormant profile's refused store by the profile's name", async () => {
+    renderPortability();
+    await chooseBackup(backupFile({
+      activeProfile: { id: "default", name: "Me" },
+      otherProfiles: [{ id: "p2", name: "Imported", watchlist: [] }],
+    }));
+    refuseWrites((key) => key === profileStoreKey(WATCHED_STORAGE_KEY, "p2"));
+
+    await confirm();
+
+    expect(showToast.mock.calls.at(-1)?.[0]).toContain('Could not restore watched list for "Imported"');
   });
 
   it("updates the visible roster and active profile immediately after restoring", async () => {

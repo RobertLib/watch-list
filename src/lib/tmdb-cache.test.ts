@@ -695,3 +695,229 @@ describe("cache eviction", () => {
     expect(fetchMock).toHaveBeenCalledTimes(before + 1);
   });
 });
+
+/**
+ * The budgets the background loaders live in.
+ *
+ * Tonight reads two entries per saved title and the statistics page one per
+ * watched title, each in the same order on every visit. They used to share one
+ * 300-entry FIFO with everything else, so a walk past that size evicted, with
+ * each write, the entry its own next visit needed – a 160-title Tonight paid for
+ * all 320 reads on every visit – and flushed every listing on its way through.
+ */
+describe("cache budgets", () => {
+  const movieDetails = {
+    title: "A Film", status: "Released", release_date: "2000-01-01",
+    runtime: 100, genres: [],
+  };
+  const showDetails = {
+    name: "A Series", status: "Ended", first_air_date: "2000-01-01",
+    episode_run_time: [45], genres: [],
+  };
+
+  function catalogue() {
+    return vi.fn(async (url: string) => {
+      if (url.includes("/watch/providers")) return jsonResponse({ id: 1, results: {} });
+      if (url.includes("/tv/")) return jsonResponse(showDetails);
+      if (url.includes("/movie/")) return jsonResponse(movieDetails);
+      return jsonResponse({ ok: true });
+    });
+  }
+
+  function savedTitles(count: number) {
+    return Array.from({ length: count }, (_, index) => ({
+      id: index + 1,
+      mediaType: index % 2 === 0 ? "movie" as const : "tv" as const,
+    }));
+  }
+
+  it("serves a second Tonight visit over 160 saved titles without fetching", async () => {
+    const fetchMock = catalogue();
+    vi.stubGlobal("fetch", fetchMock);
+    await freshModule();
+    const { getTonightCandidates } = await import("./tonight-data");
+    const visits: number[] = [];
+
+    for (let visit = 0; visit < 3; visit++) {
+      const before = fetchMock.mock.calls.length;
+      await expect(getTonightCandidates(savedTitles(160))).resolves.toHaveLength(160);
+      visits.push(fetchMock.mock.calls.length - before);
+    }
+
+    expect(visits).toEqual([320, 0, 0]);
+  });
+
+  it("serves a second look at a 400-title history without fetching", async () => {
+    const fetchMock = catalogue();
+    vi.stubGlobal("fetch", fetchMock);
+    await freshModule();
+    const { getTitleFacts } = await import("./stats-data");
+
+    await getTitleFacts(savedTitles(400));
+    expect(fetchMock).toHaveBeenCalledTimes(400);
+    expect(Object.keys(await getTitleFacts(savedTitles(400)))).toHaveLength(400);
+    expect(fetchMock).toHaveBeenCalledTimes(400);
+  });
+
+  it("keeps listings and detail pages through a background walk", async () => {
+    const fetchMock = catalogue();
+    vi.stubGlobal("fetch", fetchMock);
+    const { tmdbFetchJson } = await freshModule();
+    const { getTonightCandidates } = await import("./tonight-data");
+    const browsed = Array.from({ length: 300 }, (_, i) => `https://example.test/listing-${i}`);
+    for (const url of browsed) await tmdbFetchJson(url, 60);
+
+    await getTonightCandidates(savedTitles(400));
+    const afterWalk = fetchMock.mock.calls.length;
+    for (const url of browsed) await tmdbFetchJson(url, 60);
+
+    expect(fetchMock).toHaveBeenCalledTimes(afterWalk);
+  });
+
+  it("keeps the interactive entry the visitor used most recently", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { tmdbFetchJson } = await freshModule();
+    for (let i = 0; i < 300; i++) await tmdbFetchJson(`https://example.test/entry-${i}`, 60);
+
+    // Read again just before the budget overflows, so it is the newest use.
+    await tmdbFetchJson("https://example.test/entry-0", 60);
+    await tmdbFetchJson("https://example.test/entry-300", 60);
+    expect(fetchMock).toHaveBeenCalledTimes(301);
+
+    await tmdbFetchJson("https://example.test/entry-0", 60);
+    expect(fetchMock).toHaveBeenCalledTimes(301);
+    await tmdbFetchJson("https://example.test/entry-1", 60);
+    expect(fetchMock).toHaveBeenCalledTimes(302);
+  });
+
+  it("keeps the same prefix of a background walk longer than its budget", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { tmdbFetchJson } = await freshModule();
+    const walk = () => Promise.all(Array.from({ length: 1600 }, (_, i) =>
+      tmdbFetchJson(`https://example.test/walk-${i}`, 60, { priority: "background" }),
+    ));
+
+    await walk();
+    expect(fetchMock).toHaveBeenCalledTimes(1600);
+    // Only the hundred reads past the 1,500-entry budget are paid for again,
+    // and paying for them does not push out the part that fitted.
+    await walk();
+    expect(fetchMock).toHaveBeenCalledTimes(1700);
+    await walk();
+    expect(fetchMock).toHaveBeenCalledTimes(1800);
+  });
+
+  it("still shares a background read past the budget while it is in flight", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { tmdbFetchJson } = await freshModule();
+    const background = { priority: "background" } as const;
+    for (let i = 0; i < 1500; i++) {
+      await tmdbFetchJson(`https://example.test/fill-${i}`, 60, background);
+    }
+
+    const url = "https://example.test/past-the-budget";
+    await Promise.all([
+      tmdbFetchJson(url, 60, background),
+      tmdbFetchJson(url, 60, background),
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1501);
+    await tmdbFetchJson(url, 60, background);
+    expect(fetchMock).toHaveBeenCalledTimes(1502);
+  });
+
+  it("moves a background answer the visitor opens into the interactive budget", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { tmdbFetchJson } = await freshModule();
+    const background = { priority: "background" } as const;
+    for (let i = 0; i < 1500; i++) {
+      await tmdbFetchJson(`https://example.test/fill-${i}`, 60, background);
+    }
+
+    await tmdbFetchJson("https://example.test/fill-0", 60);
+    // The promoted entry left room for one more background answer.
+    await tmdbFetchJson("https://example.test/next", 60, background);
+    await tmdbFetchJson("https://example.test/next", 60, background);
+    await tmdbFetchJson("https://example.test/fill-0", 60, background);
+    expect(fetchMock).toHaveBeenCalledTimes(1501);
+  });
+
+  it("makes room in a full background budget once its entries expire", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    const { tmdbFetchJson } = await freshModule();
+    const background = { priority: "background" } as const;
+    for (let i = 0; i < 1500; i++) {
+      await tmdbFetchJson(`https://example.test/old-${i}`, 60, background);
+    }
+
+    now.mockReturnValue(61_000);
+    await tmdbFetchJson("https://example.test/fresh", 60, background);
+    await tmdbFetchJson("https://example.test/fresh", 60, background);
+    expect(fetchMock).toHaveBeenCalledTimes(1501);
+  });
+});
+
+describe("watch providers", () => {
+  it("keeps only the region its URL names", async () => {
+    const offer = { link: "https://x.test", flatrate: [{ provider_id: 8, provider_name: "Netflix" }] };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      id: 550, results: { US: offer, GB: offer, CZ: offer },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { getCachedMovieWatchProviders, getCachedTVWatchProviders } = await freshModule();
+
+    await expect(getCachedMovieWatchProviders(550, "US"))
+      .resolves.toEqual({ id: 550, results: { US: offer } });
+    await expect(getCachedTVWatchProviders(1396, "GB"))
+      .resolves.toEqual({ id: 550, results: { GB: offer } });
+    await expect(getCachedMovieWatchProviders(550, "DE"))
+      .resolves.toEqual({ id: 550, results: {} });
+  });
+});
+
+describe("getCachedMovieDetails append_to_response", () => {
+  async function requestedUrl(append: string) {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 550 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { getCachedMovieDetails } = await freshModule();
+    await getCachedMovieDetails(550, append);
+    return new URL(fetchMock.mock.calls[0][0] as string);
+  }
+
+  // Stripping the slash turned this into "watchproviders", which TMDB ignores.
+  it("keeps the slash in watch/providers", async () => {
+    const url = await requestedUrl("credits,watch/providers");
+
+    expect(url.searchParams.get("append_to_response")).toBe("credits,watch/providers");
+  });
+
+  it("drops a malformed name rather than repairing it into another one", async () => {
+    const url = await requestedUrl(
+      "credits, ../account,/videos,watch//providers,release-dates, images",
+    );
+
+    expect(url.searchParams.get("append_to_response")).toBe("credits,images");
+    expect(url.pathname).toBe("/3/movie/550");
+  });
+
+  it("asks for no appends at all when no name survives", async () => {
+    const url = await requestedUrl("../account?x=1");
+
+    expect(url.search).toBe("");
+  });
+
+  it("stops at a whole name once the list gets long", async () => {
+    const names = Array.from({ length: 30 }, (_, i) => `name_${"abcdefghij"[i % 10]}_${"x".repeat(i % 4)}`);
+    const url = await requestedUrl(names.join(","));
+    const kept = url.searchParams.get("append_to_response")!.split(",");
+
+    expect(kept.join(",").length).toBeLessThanOrEqual(100);
+    expect(kept.every((name) => names.includes(name))).toBe(true);
+    expect(kept.length).toBeGreaterThan(1);
+  });
+});

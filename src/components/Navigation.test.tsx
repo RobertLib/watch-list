@@ -10,6 +10,7 @@ import {
 } from "@testing-library/react";
 import { useState, type ReactNode } from "react";
 import { WatchlistProvider } from "@/contexts/WatchlistContext";
+import { WATCHLIST_STORAGE_KEY } from "@/lib/watchlist";
 import { Navigation } from "./Navigation";
 import { VideoOverlay } from "./VideoOverlay";
 import type { MediaItem, Person } from "@/types/tmdb";
@@ -145,6 +146,11 @@ function wrapper({ children }: { children: ReactNode }) {
 
 function renderNav() {
   return render(<Navigation />, { wrapper });
+}
+
+/** Which keyboard the shortcut should be read for. */
+function onPlatform(platform: "MacIntel" | "Win32") {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
 }
 
 /**
@@ -624,20 +630,105 @@ describe("keyboard shortcuts", () => {
     expect(screen.getByLabelText("Close search")).toBeTruthy();
   });
 
-  it("opens search on Cmd+K and on Ctrl+K", async () => {
-    const { unmount } = renderNav();
+  it("opens search on Cmd+K on a Mac, and leaves Ctrl+K to the text editing it means there", async () => {
+    onPlatform("MacIntel");
+    renderNav();
+
+    const ctrl = new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true, cancelable: true });
+    await act(async () => { document.dispatchEvent(ctrl); });
+    expect(ctrl.defaultPrevented).toBe(false);
+    expect(screen.getByLabelText("Open search")).toBeTruthy();
 
     await act(async () => {
       fireEvent.keyDown(document, { key: "k", metaKey: true });
     });
     expect(screen.getByLabelText("Close search")).toBeTruthy();
-    unmount();
+  });
 
+  it("opens search on Ctrl+K elsewhere, but not on the Windows or Super key", async () => {
+    onPlatform("Win32");
     renderNav();
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "k", metaKey: true });
+    });
+    expect(screen.getByLabelText("Open search")).toBeTruthy();
+
     await act(async () => {
       fireEvent.keyDown(document, { key: "k", ctrlKey: true });
     });
     expect(screen.getByLabelText("Close search")).toBeTruthy();
+  });
+
+  it.each(["textarea", "contenteditable", "input"])("leaves Cmd/Ctrl+K alone inside a %s", async (kind) => {
+    onPlatform("MacIntel");
+    renderNav();
+    const field = kind === "textarea"
+      ? document.createElement("textarea")
+      : kind === "input" ? document.createElement("input") : document.createElement("div");
+    if (kind === "contenteditable") {
+      field.contentEditable = "true";
+      // jsdom does not derive this from the attribute.
+      Object.defineProperty(field, "isContentEditable", { value: true });
+      field.tabIndex = 0;
+    }
+    document.body.appendChild(field);
+    field.focus();
+
+    const chord = new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true, cancelable: true });
+    await act(async () => { field.dispatchEvent(chord); });
+
+    expect(chord.defaultPrevented).toBe(false);
+    expect(screen.getByLabelText("Open search")).toBeTruthy();
+    field.remove();
+  });
+
+  it("still answers Cmd+K from inside the search box itself", async () => {
+    onPlatform("MacIntel");
+    renderNav();
+    await openSearch();
+    const input = screen.getByRole("combobox");
+
+    const chord = new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true, cancelable: true });
+    await act(async () => { input.dispatchEvent(chord); });
+
+    expect(chord.defaultPrevented).toBe(true);
+    expect(screen.getByLabelText("Close search")).toBeTruthy();
+  });
+
+  /**
+   * Escape is how an input method's composition is cancelled. Taken as the
+   * search's Escape too, it closed the results – or, with none up, threw away
+   * the query – in the middle of typing Japanese or Chinese.
+   */
+  it.each([
+    ["isComposing", { isComposing: true }],
+    ["key code 229", { keyCode: 229 }],
+  ])("ignores keys that belong to an IME composition (%s)", async (_, composing) => {
+    vi.mocked(searchMulti).mockResolvedValue({ results: [media("Fight Club", 550)] } as never);
+    renderNav();
+    await openSearch();
+    await search("fight");
+    const input = screen.getByRole("combobox") as HTMLInputElement;
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Escape", ...composing });
+    });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(input.value).toBe("fight");
+
+    // The same Escape after the composition has ended still closes them.
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Escape" });
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(input.value).toBe("fight");
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Escape", ...composing });
+    });
+    expect(screen.getByLabelText("Close search")).toBeTruthy();
+    expect(input.value).toBe("fight");
   });
 
   /**
@@ -879,6 +970,41 @@ describe("the search box as a screen reader meets it", () => {
 });
 
 describe("the mobile menu", () => {
+  it("closes on Escape and hands focus back to its toggle", async () => {
+    renderNav();
+    const toggle = screen.getByLabelText("Open menu");
+    fireEvent.click(toggle);
+    const mobileLink = screen.getAllByRole("link", { name: "Movies" }).find(
+      (link) => link.closest("#mobile-menu"),
+    )!;
+    mobileLink.focus();
+
+    await act(async () => {
+      fireEvent.keyDown(mobileLink, { key: "Escape" });
+    });
+
+    expect(document.getElementById("mobile-menu")?.getAttribute("aria-hidden")).toBe("true");
+    expect(document.getElementById("mobile-menu")?.hasAttribute("inert")).toBe(true);
+    expect(screen.getByLabelText("Open menu").getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(toggle);
+  });
+
+  it("leaves focus that is elsewhere on the page where it is", async () => {
+    renderNav();
+    fireEvent.click(screen.getByLabelText("Open menu"));
+    const pageControl = document.createElement("button");
+    document.body.appendChild(pageControl);
+    pageControl.focus();
+
+    await act(async () => {
+      fireEvent.keyDown(pageControl, { key: "Escape" });
+    });
+
+    expect(document.getElementById("mobile-menu")?.getAttribute("aria-hidden")).toBe("true");
+    expect(document.activeElement).toBe(pageControl);
+    pageControl.remove();
+  });
+
   it("closes empty search and cancels its delayed focus when opening the menu", async () => {
     renderNav();
     fireEvent.click(screen.getByLabelText("Open search"));
@@ -947,6 +1073,56 @@ describe("the mobile menu", () => {
     });
 
     expect(menu?.hasAttribute("inert")).toBe(false);
+  });
+});
+
+describe("the watchlist link", () => {
+  function saveTitles(count: number) {
+    window.localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(
+      Array.from({ length: count }, (_, index) => ({
+        id: index + 1,
+        title: `Film ${index + 1}`,
+        mediaType: "movie",
+        addedAt: "2026-01-01T00:00:00.000Z",
+      })),
+    ));
+  }
+
+  /**
+   * It used to carry `aria-label="My watchlist"`, which replaced its content –
+   * counter included – so a screen reader never heard how many titles waited.
+   */
+  it("includes the number of saved titles in its name", async () => {
+    saveTitles(3);
+    renderNav();
+    await act(async () => {});
+
+    // `hidden` so the collapsed mobile menu's copy of the link counts too.
+    const links = screen.getAllByRole("link", { name: "Watchlist, 3 titles saved", hidden: true });
+    expect(links).toHaveLength(2);
+    expect(links.every((link) => !link.hasAttribute("aria-label"))).toBe(true);
+  });
+
+  it("speaks the real count where the badge caps at 99+", async () => {
+    saveTitles(120);
+    renderNav();
+    await act(async () => {});
+
+    const [link] = screen.getAllByRole("link", { name: "Watchlist, 120 titles saved" });
+    expect(link.textContent).toContain("99+");
+  });
+
+  it("is just \"Watchlist\" with nothing saved", async () => {
+    saveTitles(1);
+    const view = renderNav();
+    await act(async () => {});
+    expect(screen.getAllByRole("link", { name: "Watchlist, 1 title saved", hidden: true })).toHaveLength(2);
+    view.unmount();
+
+    window.localStorage.clear();
+    renderNav();
+    await act(async () => {});
+    expect(screen.getAllByRole("link", { name: "Watchlist", hidden: true })).toHaveLength(2);
   });
 });
 

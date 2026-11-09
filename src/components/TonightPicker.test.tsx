@@ -13,6 +13,7 @@ import {
 } from "@/lib/settings";
 import type { TonightCandidate } from "@/lib/tonight";
 import { TonightCandidatesLoadError } from "@/lib/tonight-data";
+import { createProfileLockManager } from "@/test/profile-locks";
 
 /**
  * What the page says when it cannot pick anything.
@@ -167,6 +168,123 @@ describe("TonightPicker", () => {
     });
     expect(screen.getByRole("link", { name: "Pulp Fiction" })).toBeDefined();
     expect(screen.queryByRole("link", { name: "Fight Club" })).toBeNull();
+  });
+
+  /**
+   * Marking the pick watched from its own card takes it off the watchlist. That
+   * used to blank the page to a spinner and come back with a different title
+   * drawn at random – the one just marked gone, and the button with it.
+   */
+  describe("after marking the pick watched from its card", () => {
+    const series = () => candidate({
+      id: 1396, mediaType: "tv", title: "Breaking Bad", slug: "breaking-bad-1396", runtime: 45,
+    });
+
+    beforeEach(() => {
+      vi.stubGlobal("navigator", { locks: createProfileLockManager() });
+      vi.spyOn(Math, "random").mockReturnValue(0);
+      saveFilmAndSeries();
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("keeps the pick on screen with its new state, then offers the rest", async () => {
+      getTonightShortlist
+        .mockResolvedValueOnce([candidate(), series()])
+        .mockResolvedValueOnce([series()]);
+      await renderPicker();
+      const markWatched = screen.getByRole("button", { name: "Mark Fight Club as watched" });
+      markWatched.focus();
+
+      await act(async () => { fireEvent.click(markWatched); });
+
+      expect(getTonightShortlist).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(screen.getByRole("link", { name: "Fight Club" })).toBeDefined();
+      expect(markWatched.isConnected).toBe(true);
+      expect(document.activeElement).toBe(markWatched);
+      // WatchedButton carries its state in a label that flips, not in
+      // `aria-pressed` – the two together announced a contradiction.
+      expect(markWatched.getAttribute("aria-label")).toBe("Mark Fight Club as not watched");
+      expect(screen.getByText(/1 of 1 saved titles fit\./)).toBeDefined();
+
+      fireEvent.click(screen.getByRole("button", { name: "Something else" }));
+      expect(screen.getByRole("link", { name: "Breaking Bad" })).toBeDefined();
+      expect(screen.queryByRole("link", { name: "Fight Club" })).toBeNull();
+    });
+
+    it("keeps showing the last title once the watchlist is empty", async () => {
+      saveOneTitle();
+      getTonightShortlist.mockResolvedValueOnce([candidate()]);
+      await renderPicker();
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Mark Fight Club as watched" }));
+      });
+
+      expect(screen.getByRole("link", { name: "Fight Club" })).toBeDefined();
+      expect(screen.getByRole("button", { name: "Mark Fight Club as not watched" })).toBeDefined();
+      expect(screen.queryByText("Nothing to pick from yet")).toBeNull();
+
+      fireEvent.click(screen.getByRole("button", { name: "Something else" }));
+      expect(screen.getByText("Nothing to pick from yet")).toBeDefined();
+    });
+  });
+
+  it("keeps the pick while a title removed elsewhere leaves the shortlist", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    saveFilmAndSeries();
+    getTonightShortlist.mockResolvedValueOnce([
+      candidate(),
+      candidate({ id: 1396, mediaType: "tv", title: "Breaking Bad", slug: "breaking-bad-1396" }),
+    ]);
+    await renderPicker();
+    expect(screen.getByRole("link", { name: "Fight Club" })).toBeDefined();
+
+    getTonightShortlist.mockImplementationOnce(() => new Promise(() => {}));
+    await act(async () => {
+      changeSettingInAnotherTab(WATCHLIST_STORAGE_KEY, JSON.stringify([
+        JSON.parse(window.localStorage.getItem(WATCHLIST_STORAGE_KEY)!)[0],
+      ]));
+    });
+
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("link", { name: "Fight Club" })).toBeDefined();
+    expect(screen.getByText(/1 of 1 saved titles fit\./)).toBeDefined();
+  });
+
+  it("does not claim nothing fits while a newly saved title is still being checked", async () => {
+    saveOneTitle();
+    getTonightShortlist.mockResolvedValueOnce([candidate({ runtime: 139 })]);
+    await renderPicker();
+    fireEvent.click(screen.getByRole("button", { name: "Under 1 hour" }));
+    expect(screen.getByText("Nothing on your list fits that.")).toBeDefined();
+
+    let finish!: (shortlist: TonightCandidate[]) => void;
+    getTonightShortlist.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    await act(async () => {
+      changeSettingInAnotherTab(WATCHLIST_STORAGE_KEY, JSON.stringify([
+        ...JSON.parse(window.localStorage.getItem(WATCHLIST_STORAGE_KEY)!),
+        {
+          id: 1396, title: "Breaking Bad", mediaType: "tv", posterPath: null, voteAverage: 8.9,
+          releaseDate: "2008-01-20", addedAt: "2026-01-02T00:00:00.000Z",
+        },
+      ]));
+    });
+
+    expect(screen.getByRole("status").textContent).toContain("Checking 1 newly saved title");
+    expect(screen.queryByText("Nothing on your list fits that.")).toBeNull();
+
+    await act(async () => {
+      finish([
+        candidate({ runtime: 139 }),
+        candidate({ id: 1396, mediaType: "tv", title: "Breaking Bad", slug: "breaking-bad-1396", runtime: 45 }),
+      ]);
+    });
+    expect(screen.getByRole("link", { name: "Breaking Bad" })).toBeDefined();
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("asks for titles before offering to pick one", async () => {

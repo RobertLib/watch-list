@@ -64,39 +64,78 @@ function readItem(key: string, strict: boolean = false): string | null {
   }
 }
 
-/** False when the browser refused the write. */
-function writeItem(key: string, value: string): boolean {
+/**
+ * One stored setting, checked: its value when the stored text is valid or
+ * absent, and otherwise the text exactly as found – null when the browser
+ * refused the read.
+ */
+export type StoredSetting<T> =
+  | { readable: true; value: T }
+  | { readable: false; raw: string | null };
+
+export interface StoredSettingsInspection {
+  region: StoredSetting<string>;
+  watchProviderFilter: StoredSetting<WatchProviderFilter>;
+  selectedProviderIds: StoredSetting<number[]>;
+  hasCustomSettings: StoredSetting<boolean>;
+}
+
+function inspectItem<T>(
+  key: string,
+  parse: (stored: string | null) => T | undefined,
+): StoredSetting<T> {
+  let stored: string | null;
   try {
-    window.localStorage.setItem(key, value);
-    return true;
+    stored = readItem(key, true);
   } catch {
-    return false;
+    return { readable: false, raw: null };
   }
+  const value = parse(stored);
+  return value === undefined ? { readable: false, raw: stored } : { readable: true, value };
+}
+
+/**
+ * Every setting checked on its own, so one invalid value can be named and left
+ * out of a backup instead of costing the visitor the whole file.
+ */
+export function inspectStoredSettings(): StoredSettingsInspection {
+  return {
+    region: inspectItem(REGION_KEY, (stored) =>
+      stored === null ? DEFAULT_REGION : isValidRegion(stored) ? stored : undefined),
+    watchProviderFilter: inspectItem(WATCH_PROVIDER_FILTER_KEY, (stored) =>
+      stored === null ? "all" : isWatchProviderFilter(stored) ? stored : undefined),
+    selectedProviderIds: inspectItem(SELECTED_PROVIDERS_KEY, (stored) => {
+      if (stored === null || stored === "") return [];
+      return stored.split(",").some((value) =>
+        !/^\d+$/.test(value.trim()) ||
+        !Number.isSafeInteger(Number(value)) || Number(value) <= 0,
+      ) ? undefined : parseStoredProviderIds(stored);
+    }),
+    hasCustomSettings: inspectItem(HAS_SETTINGS_KEY, (stored) =>
+      stored === null ? false : stored === "true" ? true : stored === "false" ? false : undefined),
+  };
+}
+
+function settingValue<T>(name: string, setting: StoredSetting<T>): T {
+  if (!setting.readable) throw new Error(`Invalid stored setting: ${name}`);
+  return setting.value;
 }
 
 function computeSnapshot(strict: boolean = false): Settings {
-  const region = readItem(REGION_KEY, strict);
-  const filter = readItem(WATCH_PROVIDER_FILTER_KEY, strict);
-  const providers = readItem(SELECTED_PROVIDERS_KEY, strict);
-  const configured = readItem(HAS_SETTINGS_KEY, strict);
-
   if (strict) {
-    if (region !== null && !isValidRegion(region)) {
-      throw new Error("Invalid stored region");
-    }
-    if (filter !== null && !isWatchProviderFilter(filter)) {
-      throw new Error("Invalid stored watch provider filter");
-    }
-    if (providers !== null && providers !== "" && providers.split(",").some((value) =>
-      !/^\d+$/.test(value.trim()) ||
-      !Number.isSafeInteger(Number(value)) || Number(value) <= 0,
-    )) {
-      throw new Error("Invalid stored provider selection");
-    }
-    if (configured !== null && configured !== "true" && configured !== "false") {
-      throw new Error("Invalid stored settings flag");
-    }
+    const inspected = inspectStoredSettings();
+    return {
+      region: settingValue("region", inspected.region),
+      watchProviderFilter: settingValue("watchProviderFilter", inspected.watchProviderFilter),
+      selectedProviderIds: settingValue("selectedProviderIds", inspected.selectedProviderIds),
+      hasCustomSettings: settingValue("hasCustomSettings", inspected.hasCustomSettings),
+    };
   }
+
+  const region = readItem(REGION_KEY);
+  const filter = readItem(WATCH_PROVIDER_FILTER_KEY);
+  const providers = readItem(SELECTED_PROVIDERS_KEY);
+  const configured = readItem(HAS_SETTINGS_KEY);
 
   return {
     region: region && isValidRegion(region) ? region : DEFAULT_REGION,
@@ -169,7 +208,11 @@ export function getSettings(): Settings {
   return snapshot;
 }
 
-/** Read live values for an export without changing the subscribed snapshot. */
+/**
+ * Read live values without changing the subscribed snapshot. A strict read
+ * throws on any invalid stored setting, so an edit never starts from a default
+ * that merely stands in for it; an export uses `inspectStoredSettings` instead.
+ */
 export function readStoredSettings(options: { strict?: boolean } = {}): Settings {
   return computeSnapshot(options.strict);
 }
@@ -246,44 +289,4 @@ export function setSelectedProviderIds(ids: number[]): boolean {
     SELECTED_PROVIDERS_KEY,
     providerIdsToStoredValue(sanitizeProviderIds(ids)),
   );
-}
-
-/**
- * Restore the settings half of a backup file.
- *
- * A file written before a setting existed carries a null for it, and restoring a
- * null has to leave the current value alone rather than reset it – so a file
- * that names nothing is a success that wrote nothing, not a failure.
- *
- * False when the browser refused a write the file did ask for.
- */
-export function applySettings(settings: {
-  region: string | null;
-  watchProviderFilter: WatchProviderFilter | null;
-  selectedProviderIds: number[] | null;
-}): boolean {
-  const { region, watchProviderFilter, selectedProviderIds } = settings;
-
-  let stored = true;
-
-  if (region && isValidRegion(region)) {
-    stored = writeItem(REGION_KEY, region) && stored;
-  }
-  if (watchProviderFilter) {
-    stored = writeItem(WATCH_PROVIDER_FILTER_KEY, watchProviderFilter) && stored;
-  }
-  if (selectedProviderIds !== null) {
-    stored =
-      writeItem(
-        SELECTED_PROVIDERS_KEY,
-        providerIdsToStoredValue(sanitizeProviderIds(selectedProviderIds)),
-      ) && stored;
-  }
-
-  if (region || watchProviderFilter || selectedProviderIds !== null) {
-    stored = writeItem(HAS_SETTINGS_KEY, "true") && stored;
-    emit();
-  }
-
-  return stored;
 }

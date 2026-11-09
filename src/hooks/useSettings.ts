@@ -28,17 +28,19 @@ export function useSettings(): Settings {
   return useSyncExternalStore(subscribeSettings, getSettings, getServerSettings);
 }
 
-/** Settings writes participate in the same complete snapshot as backup and restore. */
+/**
+ * Settings writes participate in the same complete snapshot as backup and restore.
+ *
+ * The platform selection is only ever changed through an update applied to
+ * the list read under the lock. A whole list computed before waiting for it
+ * would replace whatever another tab or a restore saved in the meantime.
+ */
 export function useSettingsActions() {
   return useMemo(() => ({
     setRegion: (region: string) =>
       withProfileRosterLock(() => setRegion(region), false),
     setWatchProviderFilter: (filter: WatchProviderFilter) =>
       withProfileRosterLock(() => setWatchProviderFilter(filter), false),
-    setSelectedProviderIds: (ids: number[]) => {
-      const selected = [...ids];
-      return withProfileRosterLock(() => setSelectedProviderIds(selected), false);
-    },
     updateSelectedProviderIds: (
       update: (current: number[]) => number[],
       expectedRegion?: string,

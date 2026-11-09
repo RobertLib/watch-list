@@ -91,7 +91,7 @@ describe.each(sections)("Preset dates: $name", ({ datedPreset, fixedPreset, disc
       .mockResolvedValueOnce(page(1, "Current year page one"));
     await act(async () => { render(component()); });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Load more content" }));
+      fireEvent.click(screen.getByRole("button", { name: /^Load More/ }));
     });
     expect(screen.getByText("Previous year page two")).toBeDefined();
 
@@ -128,7 +128,7 @@ describe.each(sections)("Preset dates: $name", ({ datedPreset, fixedPreset, disc
       .mockImplementationOnce(() => new Promise((resolve) => { finishNewDay = resolve; }));
     await act(async () => { render(component()); });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Load more content" }));
+      fireEvent.click(screen.getByRole("button", { name: /^Load More/ }));
     });
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
     await act(async () => { finishOldPage(page(2, "Obsolete page")); });
@@ -147,7 +147,7 @@ describe.each(sections)("Preset dates: $name", ({ datedPreset, fixedPreset, disc
     loader.mockResolvedValueOnce(page(2, "Extra page"));
     await act(async () => { render(component()); });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Load more content" }));
+      fireEvent.click(screen.getByRole("button", { name: /^Load More/ }));
     });
     const requests = loader.mock.calls.length;
 

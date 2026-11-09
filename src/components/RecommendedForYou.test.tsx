@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { MediaItem, Movie } from "@/types/tmdb";
 import type { WatchlistItem } from "@/lib/watchlist";
@@ -18,27 +18,36 @@ const { lists, getMovieRecommendations, ratingFor } = vi.hoisted(() => ({
   lists: {
     watchlist: [] as WatchlistItem[],
     watched: [] as WatchedItem[],
+    profileId: "default",
   },
   getMovieRecommendations: vi.fn(),
   ratingFor: vi.fn(() => null),
 }));
 
 vi.mock("@/contexts/WatchlistContext", () => ({
-  useWatchlist: () => ({ watchlist: lists.watchlist, isLoading: false }),
+  useWatchlist: () => ({
+    watchlist: lists.watchlist, isLoading: false, profileId: lists.profileId,
+  }),
 }));
 vi.mock("@/contexts/WatchedContext", () => ({
-  useWatched: () => ({ watched: lists.watched, isLoading: false }),
+  useWatched: () => ({
+    watched: lists.watched, isLoading: false, profileId: lists.profileId,
+  }),
 }));
 vi.mock("@/hooks/useRatings", () => ({
-  useRatings: () => ({ ratingFor }),
+  useRatings: () => ({ ratingFor, profileId: lists.profileId }),
 }));
 vi.mock("@/lib/tmdb", () => ({
   tmdbApi: { getMovieRecommendations, getTVShowRecommendations: vi.fn() },
 }));
+// A control per card, so a test can tell a card that stayed mounted – focus
+// and all – from one rebuilt in its place.
 vi.mock("@/components/MediaCarousel", () => ({
   MediaCarousel: ({ items }: { items: MediaItem[] }) => (
     <ul>
-      {items.map((item) => <li key={item.id}>{item.title}</li>)}
+      {items.map((item) => (
+        <li key={`${item.id}-${item.media_type}`}><button>{item.title}</button></li>
+      ))}
     </ul>
   ),
 }));
@@ -68,6 +77,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   lists.watchlist = [];
   lists.watched = [];
+  lists.profileId = "default";
   getMovieRecommendations.mockReset();
   getMovieRecommendations.mockImplementation(async (id: number) => ({
     results: id === 1 ? [recommended(9999), recommended(8888)] : [],
@@ -122,7 +132,7 @@ function savedFilm(): WatchlistItem {
   };
 }
 
-it("hides recommendations based on a previous list during the refresh debounce", async () => {
+it("hides another profile's recommendations during the refresh debounce", async () => {
   lists.watchlist = [savedFilm()];
   getMovieRecommendations
     .mockResolvedValueOnce({ results: [recommended(100)] })
@@ -131,6 +141,7 @@ it("hides recommendations based on a previous list during the refresh debounce",
   await act(async () => { await vi.advanceTimersByTimeAsync(550); });
   expect(screen.getByText("Movie 100")).toBeTruthy();
 
+  lists.profileId = "second";
   lists.watchlist = [{ ...savedFilm(), id: 2, title: "Another profile's film" }];
   view.rerender(<RecommendedForYou />);
   expect(screen.queryByText("Movie 100")).toBeNull();
@@ -138,6 +149,84 @@ it("hides recommendations based on a previous list during the refresh debounce",
 
   expect(screen.getByText("Movie 200")).toBeTruthy();
   expect(screen.queryByText("Movie 100")).toBeNull();
+});
+
+/**
+ * The heart or eye on a recommended card edits the very lists the row is built
+ * from. Every such click used to swap the row for a skeleton: the clicked card
+ * unmounted, focus fell to the page, the layout jumped for half a second plus
+ * the request, and a different set of picks came back.
+ */
+describe("after acting on a recommended card", () => {
+  function savedPick(id: number): WatchlistItem {
+    return { ...savedFilm(), id, title: `Movie ${id}`, addedAt: "2026-10-05T12:00:00.000Z" };
+  }
+
+  beforeEach(() => {
+    lists.watchlist = [savedFilm()];
+    getMovieRecommendations.mockImplementation(async (id: number) => ({
+      results: id === 1
+        ? [recommended(100), recommended(200), recommended(300)]
+        : [recommended(300), recommended(400)],
+    }));
+  });
+
+  it("keeps the row and the clicked card's focus while it refreshes, then adds without reshuffling", async () => {
+    const view = render(<RecommendedForYou />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(550); });
+    const clicked = screen.getByRole("button", { name: "Movie 200" });
+    clicked.focus();
+
+    lists.watchlist = [savedPick(200), savedFilm()];
+    view.rerender(<RecommendedForYou />);
+    expect(screen.getByRole("button", { name: "Movie 200" })).toBe(clicked);
+    expect(document.activeElement).toBe(clicked);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(550); });
+    expect(getMovieRecommendations).toHaveBeenCalledTimes(3);
+    expect(screen.getAllByRole("button").map((button) => button.textContent))
+      .toEqual(["Movie 100", "Movie 200", "Movie 300", "Movie 400"]);
+    expect(screen.getByRole("button", { name: "Movie 200" })).toBe(clicked);
+    expect(document.activeElement).toBe(clicked);
+  });
+
+  it("drops a pick that is no longer recommended without moving the others", async () => {
+    getMovieRecommendations.mockImplementation(async (id: number) => ({
+      results: id === 1
+        ? [recommended(100), recommended(200), recommended(300)]
+        : [],
+    }));
+    const view = render(<RecommendedForYou />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(550); });
+
+    getMovieRecommendations.mockImplementation(async (id: number) => ({
+      results: id === 1 ? [recommended(300)] : [recommended(500), recommended(300)],
+    }));
+    lists.watchlist = [savedPick(200), savedFilm()];
+    view.rerender(<RecommendedForYou />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(550); });
+
+    // 100 fell out; 200 is the saved one and stays; 300 now tops the ranking
+    // but keeps its place behind the card that was clicked; 500 joins last.
+    expect(screen.getAllByRole("button").map((button) => button.textContent))
+      .toEqual(["Movie 200", "Movie 300", "Movie 500"]);
+  });
+
+  it("keeps the picks on screen when that refresh fails", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const view = render(<RecommendedForYou />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(550); });
+
+    getMovieRecommendations.mockRejectedValue(new Error("TMDB API error: 503 Unavailable"));
+    lists.watchlist = [savedPick(200), savedFilm()];
+    view.rerender(<RecommendedForYou />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(550); });
+
+    expect(screen.getAllByRole("button").map((button) => button.textContent))
+      .toEqual(["Movie 100", "Movie 200", "Movie 300"]);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(errors).toHaveBeenCalled();
+  });
 });
 
 const settingsChanges = [

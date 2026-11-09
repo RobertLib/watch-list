@@ -9,7 +9,8 @@ import { BACKUP_FORMAT, parseBackup, storesToSlot, type PortableData } from "./p
 import { GOAL_STORAGE_KEY, getGoalSnapshot, subscribeToGoal } from "./goal";
 import { ACTIVE_PROFILE_STORAGE_KEY, PROFILES_STORAGE_KEY, createProfile, deleteProfile, getActiveProfileId, getProfiles, liveProfileChanges, readProfileSlot, subscribeProfiles, switchProfile } from "./profiles";
 import { getRatingsSnapshot, subscribeToRatings } from "./ratings";
-import { restoreBackup } from "./restore-backup";
+import { restoreBackup, restoreFailureLabel } from "./restore-backup";
+import { LAST_VISIT_STORAGE_KEY, LEGACY_LAST_VISIT_STORAGE_KEY, readLastVisit } from "./last-visit";
 import { getSettings, HAS_SETTINGS_KEY, isCustomised, refreshSettings, REGION_KEY, subscribeSettings } from "./settings";
 import { WATCHLIST_STORAGE_KEY, getWatchlist } from "./watchlist";
 import { PROFILE_STORAGE_OWNER_KEY, deletedProfileKey, getProfileStorageOwner, withProfileStorage, writeProfileStore } from "./profile-storage";
@@ -436,5 +437,64 @@ describe("coordinated backup restore", () => {
     expect(getSettings().region).toBe(localStorage.getItem(REGION_KEY));
     expect(listener).toHaveBeenCalledTimes(5);
     unsubscribe.forEach((stop) => stop());
+  });
+
+  it("restores each profile's last visit, and resets one an older file did not carry", async () => {
+    localStorage.setItem(LEGACY_LAST_VISIT_STORAGE_KEY, "2026-01-01T00:00:00.000Z");
+    const backup = parseBackup({
+      format: BACKUP_FORMAT,
+      activeProfile: { id: "default", name: "Me" },
+      otherProfiles: [{ id: "p2", name: "Two", lastVisit: "2026-02-02T00:00:00.000Z" }],
+      lastVisit: "not a date",
+    })!;
+
+    expect((await restoreBackup(backup)).ok).toBe(true);
+
+    expect(readLastVisit("p2")).toBe("2026-02-02T00:00:00.000Z");
+    // The shared pre-profile stamp is replaced with the rest of its owner's data.
+    expect(readLastVisit("default")).toBeNull();
+    expect(localStorage.getItem(LEGACY_LAST_VISIT_STORAGE_KEY)).toBeNull();
+  });
+});
+
+describe("restoreFailureLabel", () => {
+  const profiles = [
+    { id: "default", name: "Alice" }, { id: "bob", name: "Bob" }, { id: "p:3", name: "Third" },
+  ];
+
+  // Storage addresses used to reach the visitor verbatim:
+  // "Could not restore profile-deleted:3f2a…".
+  it.each([
+    [deletedProfileKey("bob"), 'the profile "Bob"'],
+    [deletedProfileKey("p:3"), 'the profile "Third"'],
+    [deletedProfileKey("gone"), "the profile list"],
+    ["profile-data:bob", 'the profile "Bob"'],
+    ["profile-store:bob:watched", 'watched list for "Bob"'],
+    [`profile-store:${encodeURIComponent("p:3")}:episode-progress`, 'episode progress for "Third"'],
+    ["profile-store:unknown:ratings", "the ratings"],
+    ["profile-store:default:yearly-goal", "your yearly goal"],
+    [WATCHLIST_STORAGE_KEY, "your watchlist"],
+    [LAST_VISIT_STORAGE_KEY, "your last-visit date"],
+    [LEGACY_LAST_VISIT_STORAGE_KEY, "your last-visit date"],
+    [PROFILES_STORAGE_KEY, "the profile list"],
+    [ACTIVE_PROFILE_STORAGE_KEY, "the profile list"],
+    [PROFILE_STORAGE_OWNER_KEY, "the profile list"],
+    [REGION_KEY, "your region and platform settings"],
+    [HAS_SETTINGS_KEY, "your region and platform settings"],
+    ["something-unexpected", "this backup"],
+    [null, "this backup"],
+  ])("names %s as %s", (key, label) => {
+    expect(restoreFailureLabel(key, { activeProfileId: "default", profiles })).toBe(label);
+  });
+
+  it("names the original owner's live stores for whoever owns them", () => {
+    localStorage.setItem(PROFILE_STORAGE_OWNER_KEY, "bob");
+    expect(restoreFailureLabel("ratings", { activeProfileId: "default", profiles })).toBe('ratings for "Bob"');
+  });
+
+  it("never shows a storage address, whatever the key", () => {
+    for (const key of ["profile-deleted:%E0%A4%A", "profile-store:x", "profile-data:"]) {
+      expect(restoreFailureLabel(key, { profiles })).not.toContain(key);
+    }
   });
 });

@@ -21,10 +21,20 @@ function mountContainer() {
   return view;
 }
 
-function show(message: string, duration?: number) {
+function show(message: string, duration?: number, type: "success" | "error" | "info" = "success") {
   act(() => {
-    toast.showToast(message, "success", duration);
+    toast.showToast(message, type, duration);
   });
+}
+
+async function advance(ms: number) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+}
+
+function region() {
+  return screen.getByRole("region", { name: "Notifications" });
 }
 
 beforeEach(() => {
@@ -158,11 +168,40 @@ describe("as a screen reader meets it", () => {
     expect(screen.getByRole("region", { name: "Notifications" })).toBeDefined();
   });
 
-  it("announces each toast as an alert", () => {
+  /**
+   * Every toast used to be `role="alert"`, so a routine "Added to your
+   * watchlist" interrupted a screen reader exactly as a failure did.
+   */
+  it("announces confirmations politely and only failures assertively", () => {
     mountContainer();
     show("Added to your watchlist");
+    show("Heads up", undefined, "info");
+    show("Could not save", undefined, "error");
 
-    expect(screen.getByRole("alert")).toBeDefined();
+    const status = screen.getByRole("status");
+    const alert = screen.getByRole("alert");
+    expect(status.textContent).toContain("Added to your watchlist");
+    expect(status.textContent).toContain("Heads up");
+    expect(status.textContent).not.toContain("Could not save");
+    expect(alert.textContent).toContain("Could not save");
+    expect(alert.textContent).not.toContain("Added to your watchlist");
+  });
+
+  // A live region inserted already holding its message is not reliably read,
+  // so both regions are there, empty, before anything is said into them.
+  it("keeps both live regions in place before any toast arrives", () => {
+    mountContainer();
+
+    const status = screen.getByRole("status");
+    const alert = screen.getByRole("alert");
+    expect(status.textContent).toBe("");
+    expect(alert.textContent).toBe("");
+    // A new toast is read on its own, not with the whole stack again.
+    expect(status.getAttribute("aria-atomic")).toBe("false");
+    expect(alert.getAttribute("aria-atomic")).toBe("false");
+
+    show("Added to your watchlist");
+    expect(screen.getByRole("status")).toBe(status);
   });
 
   it("gives the close button a label rather than an icon alone", () => {
@@ -172,5 +211,111 @@ describe("as a screen reader meets it", () => {
     expect(
       screen.getByRole("button", { name: "Dismiss notification" }),
     ).toBeDefined();
+  });
+});
+
+describe("how long a toast stays", () => {
+  it("keeps an error up longer than a confirmation", async () => {
+    mountContainer();
+    show("Saved");
+    show("Could not save", undefined, "error");
+
+    await advance(3000);
+    expect(screen.queryByText("Saved")).toBeNull();
+    expect(screen.getByText("Could not save")).toBeDefined();
+
+    await advance(4999);
+    expect(screen.getByText("Could not save")).toBeDefined();
+    await advance(1);
+    expect(screen.queryByText("Could not save")).toBeNull();
+  });
+
+  it("still honours a duration the caller asks for", async () => {
+    mountContainer();
+    show("Could not save", 1000, "error");
+
+    await advance(1000);
+    expect(screen.queryByText("Could not save")).toBeNull();
+  });
+});
+
+describe("pausing", () => {
+  it("stops the clock while the pointer is over the notifications, then resumes it", async () => {
+    mountContainer();
+    show("Saved", 3000);
+    await advance(1000);
+
+    fireEvent.mouseEnter(region());
+    expect(vi.getTimerCount()).toBe(0);
+    await advance(10_000);
+    expect(screen.getByText("Saved")).toBeDefined();
+
+    fireEvent.mouseLeave(region());
+    // The two seconds it had left, not a fresh three.
+    await advance(1999);
+    expect(screen.getByText("Saved")).toBeDefined();
+    await advance(1);
+    expect(screen.queryByText("Saved")).toBeNull();
+  });
+
+  it("stops the clock while keyboard focus is inside, then resumes it", async () => {
+    mountContainer();
+    show("Saved", 3000);
+    const outside = document.createElement("button");
+    document.body.appendChild(outside);
+
+    act(() => screen.getByRole("button", { name: "Dismiss notification" }).focus());
+    await advance(10_000);
+    expect(screen.getByText("Saved")).toBeDefined();
+
+    act(() => outside.focus());
+    await advance(3000);
+    expect(screen.queryByText("Saved")).toBeNull();
+    outside.remove();
+  });
+
+  it("holds a toast that arrives while paused until the pause ends", async () => {
+    mountContainer();
+    show("First", 3000);
+    fireEvent.mouseEnter(region());
+
+    show("Second", 3000);
+    await advance(10_000);
+    expect(screen.getByText("Second")).toBeDefined();
+
+    fireEvent.mouseLeave(region());
+    await advance(3000);
+    expect(screen.queryByText("First")).toBeNull();
+    expect(screen.queryByText("Second")).toBeNull();
+  });
+
+  /**
+   * Closing a toast from the keyboard removes the focused button, and a removed
+   * element is not reliably blurred. The rest must not stay up for good.
+   */
+  it("resumes the others once the focused toast has been dismissed", async () => {
+    mountContainer();
+    show("First", 3000);
+    show("Second", 3000);
+    const [firstDismiss] = screen.getAllByRole("button", { name: "Dismiss notification" });
+    act(() => firstDismiss.focus());
+    await advance(10_000);
+
+    fireEvent.click(firstDismiss);
+    expect(screen.queryByText("First")).toBeNull();
+
+    await advance(3000);
+    expect(screen.queryByText("Second")).toBeNull();
+  });
+
+  it("resumes when the last toast leaves from under a pointer that did not move", async () => {
+    mountContainer();
+    show("First", 3000);
+    fireEvent.mouseEnter(region());
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
+
+    show("Second", 3000);
+    await advance(3000);
+    expect(screen.queryByText("Second")).toBeNull();
   });
 });

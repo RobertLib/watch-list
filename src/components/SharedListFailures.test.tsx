@@ -80,6 +80,28 @@ afterEach(() => {
 });
 
 describe("shared lists through the real resolver", () => {
+  // Sixty or 120 reads used to run at interactive priority and outlive the page.
+  it.each([
+    ["shared list", "items=m550.m551", () => <SharedListContent />],
+    ["comparison", "mine=m550&theirs=m551", () => <MatchContent />],
+  ])("reads a %s as background work and releases it when the page leaves", async (_page, search, page) => {
+    query = search;
+    const signals: AbortSignal[] = [];
+    vi.mocked(getCachedMovieDetails).mockImplementation((_id, _append, options) => {
+      expect(options?.priority).toBe("background");
+      signals.push(options!.signal!);
+      return new Promise(() => {});
+    });
+    const view = render(page());
+    await act(async () => {});
+
+    expect(signals).toHaveLength(2);
+    expect(signals.every((signal) => !signal.aborted)).toBe(true);
+    view.unmount();
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
   it("reports a catalogue outage and reloads the shared list on retry", async () => {
     query = "items=m550";
     render(<SharedListContent />);

@@ -175,6 +175,46 @@ describe("airing today in the visitor's timezone", () => {
   });
 });
 
+/**
+ * The daily puzzle's guess box. It used to filter page one of /search/multi to
+ * films, and for a title shared with a series or a person ("Friends", "Ray")
+ * that page can hold no film at all.
+ */
+describe("film-only search", () => {
+  it("asks the film endpoint, with no region or platform filter to narrow it", async () => {
+    settings.watchProviderFilter = "streaming-only";
+    settings.selectedProviderIds = "8|337";
+
+    await tmdbDiscoverApi.searchMovies("Ray & Friends", 2);
+
+    const [url, ttl] = request.mock.calls[0];
+    expect(new URL(url).pathname).toBe("/3/search/movie");
+    expect(Object.fromEntries(paramsOf(url))).toEqual({ query: "Ray & Friends", page: "2" });
+    expect(ttl).toBeGreaterThan(0);
+  });
+
+  it("hands back films as titles the board can guess with", async () => {
+    request.mockResolvedValue({
+      page: 1,
+      total_pages: 1,
+      total_results: 2,
+      results: [
+        { id: 4638, title: "Ray", release_date: "2004-10-29", genre_ids: [18] },
+        { id: 1, title: "Untitled", genre_ids: [] },
+      ],
+    });
+
+    const response = await tmdbDiscoverApi.searchMovies("ray");
+
+    expect(response.results.map(({ id, title, media_type, release_date }) => (
+      { id, title, media_type, release_date }
+    ))).toEqual([
+      { id: 4638, title: "Ray", media_type: "movie", release_date: "2004-10-29" },
+      { id: 1, title: "Untitled", media_type: "movie", release_date: "" },
+    ]);
+  });
+});
+
 describe("buildFilteredUrl", () => {
   it("points at the endpoint it was given", () => {
     const url = buildFilteredUrl("/discover/movie", { page: 1 });

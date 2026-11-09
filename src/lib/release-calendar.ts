@@ -3,7 +3,7 @@
 // there so a Client Component could import these types without pulling in a
 // `server-only` module – and is worth keeping for the one it has now: this half
 // is a set of pure functions over dates, and its tests need no network at all.
-import { shiftDate } from "./dates";
+import { isCalendarDate, shiftDate } from "./dates";
 import type { MediaType } from "@/types/tmdb";
 
 /** A title the visitor is following, reduced to what the calendar needs. */
@@ -124,9 +124,17 @@ export function sanitizeCalendarSeeds(input: unknown): CalendarSeed[] {
   return seeds;
 }
 
-/** TMDB reports dates as plain `YYYY-MM-DD`, and empty strings for "unknown". */
+/**
+ * TMDB reports dates as plain `YYYY-MM-DD`, and empty strings for "unknown".
+ *
+ * The shape is not enough. Nothing guarantees that TMDB, or a date read back out
+ * of storage, names a day that exists, and a shape-only check passed
+ * "2026-02-30" straight into the release calendar – where it became
+ * `DTSTART;VALUE=DATE:20260230` in the `.ics` export, a line calendar apps
+ * reject. A day that does not exist is treated like an unknown one.
+ */
 export function isDateOnly(value: unknown): value is string {
-  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+  return typeof value === "string" && isCalendarDate(value);
 }
 
 export interface CalendarCandidates {

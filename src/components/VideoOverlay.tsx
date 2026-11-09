@@ -64,7 +64,30 @@ export function VideoOverlay({
 
     closeButtonRef.current?.focus();
 
+    // Focus that lands outside the dialog is handed back to the close button.
+    // The Escape and Tab handlers below listen on this document, and a click
+    // into the YouTube player moves focus into a cross-origin frame whose key
+    // events never reach it – a platform limit, not something to fight. What
+    // the visitor can still do is Shift+Tab out of the player, which lands on
+    // the close button, or Tab past its last control, which leaves through the
+    // browser's toolbar and comes back in at the page's first link, underneath
+    // the backdrop. This is what catches that second route.
+    const reclaimFocus = (event: FocusEvent) => {
+      const dialog = dialogRef.current;
+      if (
+        dialog &&
+        event.target instanceof Node &&
+        !dialog.contains(event.target)
+      ) {
+        closeButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener("focusin", reclaimFocus);
+
     return () => {
+      // Removed before the opener is refocused, or that refocus would be
+      // "reclaimed" by a dialog that is closing.
+      document.removeEventListener("focusin", reclaimFocus);
       document.body.style.overflow = previousOverflow;
       // Only if the opener is still on the page: a card that unmounted while
       // the trailer played – the visitor navigated – has nothing to focus.

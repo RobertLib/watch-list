@@ -86,12 +86,16 @@ export function WelcomeBack() {
 
   const isLoading = isWatchlistLoading || isProgressLoading;
 
-  // Capture once per session; acknowledge only after a successful check.
+  // Capture once per session and profile; acknowledge only after a successful
+  // check. The interval is the rendered profile's own: whoever else uses this
+  // browser, with whatever they follow, cannot acknowledge it for them.
+  // Repeated calls in one session return the interval already captured.
   useEffect(() => {
+    if (isWatchlistLoading) return;
     /* eslint-disable-next-line react-hooks/set-state-in-effect -- reading and
        capturing a browser-only store, which the server render cannot do */
-    setVisit(beginVisit());
-  }, []);
+    setVisit(beginVisit(profileId));
+  }, [isWatchlistLoading, profileId]);
 
   // Tracked shows are followed even if they were never added to the queue.
   const seeds = useMemo(() => followedSeeds(watchlist, shows), [watchlist, shows]);
@@ -103,7 +107,9 @@ export function WelcomeBack() {
     failure: "sources" | "releases" | null;
   } | null>(null);
 
-  const previousVisit = visit?.previous ?? null;
+  // A visit captured for another profile is never shown or completed here.
+  const ownVisit = visit?.profileId === profileId ? visit : null;
+  const previousVisit = ownVisit?.previous ?? null;
   const worthAsking = isGapWorthShowing(previousVisit) && seeds.length > 0;
   const currentLoad = loaded?.seeds === seeds && loaded.region === region && loaded.attempt === attempt
     ? loaded : null;
@@ -117,7 +123,7 @@ export function WelcomeBack() {
   }, [failed]);
 
   useEffect(() => {
-    if (isLoading || !visit || profileId !== progressProfileId) return;
+    if (isLoading || !ownVisit || profileId !== progressProfileId) return;
 
     let isCurrent = true;
     const controller = new AbortController();
@@ -147,7 +153,7 @@ export function WelcomeBack() {
     (async () => {
       if (!sourcesMatch()) return;
       if (!worthAsking || !previousVisit) {
-        await completeVisit(visit, canComplete);
+        await completeVisit(ownVisit, canComplete);
         return;
       }
 
@@ -159,7 +165,7 @@ export function WelcomeBack() {
         );
         if (isCurrent && !controller.signal.aborted) {
           setLoaded({ seeds, region, attempt, releases: found, failure: null });
-          await completeVisit(visit, canComplete);
+          await completeVisit(ownVisit, canComplete);
         }
       } catch (error) {
         if (!isCurrent || controller.signal.aborted) return;
@@ -172,7 +178,7 @@ export function WelcomeBack() {
       isCurrent = false;
       controller.abort();
     };
-  }, [seeds, visit, previousVisit, worthAsking, isLoading, region, profileId, progressProfileId, attempt, refreshWatchlist, refreshProgress]);
+  }, [seeds, ownVisit, previousVisit, worthAsking, isLoading, region, profileId, progressProfileId, attempt, refreshWatchlist, refreshProgress]);
 
   if (dismissed || isLoading) return null;
 

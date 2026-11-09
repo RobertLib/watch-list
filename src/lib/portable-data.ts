@@ -36,8 +36,30 @@ import {
 } from "./media-list";
 import { getWatchlist, WATCHLIST_STORAGE_KEY, type WatchlistItem } from "./watchlist";
 import { WATCHED_STORAGE_KEY, type WatchedItem } from "./watched";
-import { DEFAULT_PROFILE, DEFAULT_PROFILE_ID, MAX_PROFILES } from "./profiles";
-import { getProfileStorageOwner, readProfileStore, withProfileStorage } from "./profile-storage";
+import {
+  LAST_VISIT_STORAGE_KEY,
+  LEGACY_LAST_VISIT_STORAGE_KEY,
+  readLastVisit,
+  sanitizeLastVisit,
+} from "./last-visit";
+import {
+  ACTIVE_PROFILE_STORAGE_KEY,
+  DEFAULT_PROFILE,
+  DEFAULT_PROFILE_ID,
+  inspectProfileSlot,
+  MAX_PROFILES,
+  parseStoredProfiles,
+  PROFILES_STORAGE_KEY,
+} from "./profiles";
+import {
+  getLegacyProfileStorageOwner,
+  getProfileStorageOwner,
+  resolveProfileStorageOwner,
+  sanitizeProfileId,
+  sanitizeProfileName,
+  withProfileStorage,
+} from "./profile-storage";
+import { inspectStoredSettings, type StoredSetting } from "./settings";
 
 // The two list sanitisers live with the stores they repair – browser storage
 // needs them just as much as a backup file does – and are re-exported here so a
@@ -63,10 +85,28 @@ export const BACKUP_FORMAT = "watch-list-backup";
 // 2 added named lists, the pairwise ranking and the yearly goal.
 // 3 added the profiles that are not active, the streaks every profile owns, and
 //   the name of the profile the top-level stores belong to.
+// 4 added each profile's last-visit stamp, and `unreadable`: what the export
+//   could not read, with its stored text kept for recovery.
 //
 // Older files still restore: every field is rebuilt by its own sanitizer, so
 // whatever a version did not have simply comes back empty.
-export const BACKUP_VERSION = 3;
+export const BACKUP_VERSION = 4;
+
+/**
+ * The largest file a restore will read.
+ *
+ * Everything a backup carries came out of this site's localStorage, which
+ * browsers cap at about five million characters for the whole site – all of
+ * its profiles and settings together. Written out as UTF-8, a character takes
+ * at most three bytes, and the export's indentation plus the escaping of any
+ * stored text it keeps verbatim fit within twice that again. Anything larger
+ * is not a file this app wrote, and reading it whole would only freeze the tab.
+ */
+const LOCAL_STORAGE_QUOTA_CHARACTERS = 5 * 1024 * 1024;
+const MAX_UTF8_BYTES_PER_CHARACTER = 3;
+const FORMATTING_HEADROOM = 2;
+export const MAX_BACKUP_FILE_BYTES =
+  LOCAL_STORAGE_QUOTA_CHARACTERS * MAX_UTF8_BYTES_PER_CHARACTER * FORMATTING_HEADROOM;
 
 /** The settings half of a backup: what the profile screen writes. */
 export interface PortableSettings {
@@ -102,6 +142,11 @@ export interface PortableStores {
   dailyGame: DailyGameState;
   /** Best run at higher-or-lower. Absent from files before version 3. */
   higherLower: HigherLowerRecord;
+  /**
+   * When this profile last acknowledged "since you were last here". Absent
+   * from files before version 4, which restore as a first visit.
+   */
+  lastVisit: string | null;
 }
 
 export const EMPTY_STORES: PortableStores = {
@@ -114,6 +159,7 @@ export const EMPTY_STORES: PortableStores = {
   goal: null,
   dailyGame: EMPTY_DAILY_GAME,
   higherLower: EMPTY_HIGHER_LOWER,
+  lastVisit: null,
 };
 
 /** Who a set of stores belongs to. */
@@ -123,6 +169,28 @@ export interface ProfileRef {
 }
 
 export interface PortableProfile extends ProfileRef, PortableStores {}
+
+/**
+ * Something the export could not read.
+ *
+ * A backup is the only way out of a browser, so it carries everything that
+ * can be read rather than refusing to exist over one damaged store – and says
+ * exactly what is missing instead of looking complete. The stored text rides
+ * along verbatim for manual recovery; a restore never writes it back, because
+ * the app could not read it either.
+ */
+export interface UnreadableData {
+  /** Whose data it is; null for the household's settings or the roster. */
+  profile: ProfileRef | null;
+  /**
+   * What could not be read: store fields such as `watched`, settings such as
+   * `settings.region`, or `profiles` for the roster. Several when they shared
+   * one damaged parked slot, whose text is kept once.
+   */
+  stores: string[];
+  /** The text as stored, or null when the browser refused to read it. */
+  raw: string | null;
+}
 
 export interface PortableData extends PortableStores {
   format: string;
@@ -139,6 +207,8 @@ export interface PortableData extends PortableStores {
    */
   otherProfiles: PortableProfile[];
   settings: PortableSettings;
+  /** Present only when the export could not read everything. Never restored. */
+  unreadable?: UnreadableData[];
 }
 
 export interface BackupSummary {
@@ -212,6 +282,7 @@ export function sanitizeStores(
     goal: sanitizeGoal(record.goal),
     dailyGame: sanitizeGameState(record.dailyGame),
     higherLower: sanitizeHigherLower(record.higherLower),
+    lastVisit: sanitizeLastVisit(record.lastVisit),
   };
 }
 
@@ -222,16 +293,6 @@ export function sanitizeStores(
  * its slot, and the roster then dropped it.
  */
 const MAX_PORTABLE_PROFILES = MAX_PROFILES - 1;
-
-function sanitizeProfileName(value: unknown): string {
-  if (typeof value !== "string") return "";
-
-  return value
-    .replace(/[\p{C}]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 24);
-}
 
 /**
  * The other profiles a file carries, bounded to what a restore can keep.
@@ -255,7 +316,7 @@ export function sanitizePortableProfiles(
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
 
     const record = entry as Record<string, unknown>;
-    const id = typeof record.id === "string" ? record.id.slice(0, 64) : "";
+    const id = sanitizeProfileId(record.id);
     const name = sanitizeProfileName(record.name);
 
     // A profile with no id cannot be parked anywhere, and one with no name has
@@ -274,7 +335,7 @@ function sanitizeProfileRef(input: unknown): ProfileRef | null {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
 
   const record = input as Record<string, unknown>;
-  const id = typeof record.id === "string" ? record.id.slice(0, 64) : "";
+  const id = sanitizeProfileId(record.id);
   const name = sanitizeProfileName(record.name);
 
   return id && name ? { id, name } : null;
@@ -402,33 +463,192 @@ const SLOT_KEYS = {
   goal: GOAL_STORAGE_KEY,
   dailyGame: DAILY_GAME_STORAGE_KEY,
   higherLower: HIGHER_LOWER_STORAGE_KEY,
+  lastVisit: LAST_VISIT_STORAGE_KEY,
 } as const satisfies Record<keyof PortableStores, string>;
+
+/** What each store is called where a person reads about it. */
+const STORE_LABELS: Record<keyof PortableStores, string> = {
+  watchlist: "watchlist",
+  watched: "watched list",
+  episodeProgress: "episode progress",
+  ratings: "ratings",
+  collections: "named lists",
+  ranking: "ranking",
+  goal: "yearly goal",
+  dailyGame: "daily puzzle history",
+  higherLower: "higher-or-lower record",
+  lastVisit: "last-visit date",
+};
+
+const OTHER_LABELS: Record<string, string> = {
+  "settings.region": "region setting",
+  "settings.watchProviderFilter": "what-to-show setting",
+  "settings.selectedProviderIds": "platform selection",
+  "settings.hasCustomSettings": "record of changed settings",
+  profiles: "profile list",
+};
+
+/** The person-facing name of a store, from its storage key; undefined if not a store. */
+export function storeLabelForKey(key: string): string | undefined {
+  if (key === LEGACY_LAST_VISIT_STORAGE_KEY) return STORE_LABELS.lastVisit;
+  const field = (Object.keys(SLOT_KEYS) as (keyof PortableStores)[])
+    .find((candidate) => SLOT_KEYS[candidate] === key);
+  return field ? STORE_LABELS[field] : undefined;
+}
+
+function joinLabels(labels: string[]): string {
+  return labels.length < 2
+    ? labels.join("")
+    : `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)}`;
+}
+
+/** `watched list for "Sam"`, `the region setting` – one line per unreadable entry. */
+export function describeUnreadable(entry: UnreadableData): string {
+  const labels = joinLabels(entry.stores.map((store) =>
+    STORE_LABELS[store as keyof PortableStores] ?? OTHER_LABELS[store] ?? store));
+  return entry.profile ? `${labels} for "${entry.profile.name}"` : `the ${labels}`;
+}
 
 /**
  * Export the active stores from storage, without the UI getters' empty fallback.
- * An absent store is valid; a refused read or broken serialization must abort
- * the backup instead of making its only saved copy look empty.
+ * An absent store is valid; a refused read or broken serialization throws
+ * rather than making its only saved copy look empty. The backup itself uses
+ * `readBackupSnapshot`, which names such a store instead of failing outright.
  */
 export function readStoredStores(fallbackTimestamp: string): PortableStores {
-  return withProfileStorage(getProfileStorageOwner(), () => readOwnedStores(fallbackTimestamp));
+  const owner = getProfileStorageOwner();
+  const unreadable: UnreadableData[] = [];
+  const stores = readProfileStores({ id: owner, name: owner }, fallbackTimestamp, unreadable);
+  if (unreadable.length > 0) {
+    throw new Error(`Unreadable stored data: ${unreadable.flatMap((entry) => entry.stores).join(", ")}`);
+  }
+  return stores;
 }
 
-function readOwnedStores(fallbackTimestamp: string): PortableStores {
-  const stores: Record<string, unknown> = {};
+/**
+ * One profile's stores for a backup. Whatever cannot be read is recorded in
+ * `unreadable` and comes back as that store's empty value.
+ */
+function readProfileStores(
+  profile: ProfileRef,
+  fallbackTimestamp: string,
+  unreadable: UnreadableData[],
+): PortableStores {
+  const { slot, unreadable: failed } = inspectProfileSlot(profile.id);
+  const stores = { ...storesFromSlot(slot, fallbackTimestamp) };
 
-  for (const [field, key] of Object.entries(SLOT_KEYS)) {
-    const raw = readProfileStore(key, getProfileStorageOwner(), true);
-    if (raw !== null) stores[field] = JSON.parse(raw);
+  // The original owner may still have data only in pre-profile storage: the
+  // watchlist cookie, whose migration a refusing browser keeps retrying, and
+  // the shared last-visit stamp. A malformed cookie is named, never exported
+  // as an empty list.
+  withProfileStorage(profile.id, () => {
+    if (slot[WATCHLIST_STORAGE_KEY] === undefined && !(WATCHLIST_STORAGE_KEY in failed)) {
+      try {
+        stores.watchlist = sanitizeWatchlistItems(
+          getWatchlist({ strict: true }), fallbackTimestamp, Number.POSITIVE_INFINITY,
+        );
+      } catch (error) {
+        console.error("Error reading the legacy watchlist for a backup:", error);
+        failed[WATCHLIST_STORAGE_KEY] = null;
+      }
+    }
+    if (slot[LAST_VISIT_STORAGE_KEY] === undefined && !(LAST_VISIT_STORAGE_KEY in failed)) {
+      try {
+        stores.lastVisit = readLastVisit(profile.id);
+      } catch (error) {
+        console.error("Error reading the last visit for a backup:", error);
+        failed[LAST_VISIT_STORAGE_KEY] = null;
+      }
+    }
+  });
+
+  // Stores that fell back to one damaged parked slot share its text; keep it
+  // once. Refused reads, with no text at all, are listed together too.
+  const fields = Object.keys(SLOT_KEYS) as (keyof PortableStores)[];
+  for (const field of fields) {
+    const key = SLOT_KEYS[field];
+    if (!(key in failed)) continue;
+    const raw = failed[key];
+    const shared = unreadable.find((entry) =>
+      entry.profile?.id === profile.id && entry.raw === raw);
+    if (shared) shared.stores.push(field);
+    else unreadable.push({ profile: { id: profile.id, name: profile.name }, stores: [field], raw });
   }
 
-  // Existing visitors may still have their only watchlist in the old cookie.
-  // Keep migration's retry behavior when writes are refused, but reject a
-  // malformed cookie rather than silently exporting an empty list.
-  if (stores.watchlist === undefined) {
-    stores.watchlist = getWatchlist({ strict: true });
-  }
+  return stores;
+}
 
-  return sanitizeStores(stores, fallbackTimestamp);
+/** Settings for a backup: valid ones as values, the rest named and left null. */
+function readSettings(unreadable: UnreadableData[]): PortableSettings {
+  const inspected = inspectStoredSettings();
+  const value = <T>(name: keyof typeof inspected, setting: StoredSetting<T>): T | null => {
+    if (setting.readable) return setting.value;
+    unreadable.push({ profile: null, stores: [`settings.${name}`], raw: setting.raw });
+    return null;
+  };
+
+  const configured = value("hasCustomSettings", inspected.hasCustomSettings);
+  return {
+    // A null restores nothing, so the destination keeps its own value rather
+    // than adopting one this browser could not read.
+    region: value("region", inspected.region),
+    watchProviderFilter: value("watchProviderFilter", inspected.watchProviderFilter),
+    selectedProviderIds: value("selectedProviderIds", inspected.selectedProviderIds),
+    ...(configured === null ? {} : { hasCustomSettings: configured }),
+  };
+}
+
+/**
+ * Everything this browser holds, as one backup. Call it with the roster lock
+ * held, so the snapshot cannot mix two generations of a restore or an edit.
+ *
+ * The roster, the active pointer and the legacy owner marker decide whose data
+ * is whose, so a refused read of any of them still stops the export. Anything
+ * else that cannot be read – a store, a parked slot, a setting, roster entries
+ * the app itself repairs away – is listed in `unreadable` with its stored text
+ * and the rest is exported. Refusing the whole file over one damaged field
+ * left the visitor no copy of anything, and no way out of the browser at all.
+ */
+export function readBackupSnapshot(exportedAt: string): PortableData {
+  const storage = window.localStorage;
+  const unreadable: UnreadableData[] = [];
+
+  // Throws on a refused read or a corrupt marker: no store address is knowable.
+  getLegacyProfileStorageOwner();
+
+  const rosterText = storage.getItem(PROFILES_STORAGE_KEY);
+  const { profiles, canonical } = parseStoredProfiles(rosterText);
+  // The export uses the roster the app shows, and keeps what it had to drop.
+  if (!canonical) unreadable.push({ profile: null, stores: ["profiles"], raw: rosterText });
+
+  const pointer = storage.getItem(ACTIVE_PROFILE_STORAGE_KEY);
+  let activeId = DEFAULT_PROFILE_ID;
+  try {
+    activeId = resolveProfileStorageOwner(pointer || DEFAULT_PROFILE_ID);
+  } catch {
+    // An unparseable roster lists only the default profile, which is also the
+    // owner every reader falls back to.
+  }
+  const active = profiles.find((profile) => profile.id === activeId);
+  if (!active) throw new Error("The active profile is absent from the stored roster");
+
+  const stores = readProfileStores(active, exportedAt, unreadable);
+  const otherProfiles = profiles
+    .filter((profile) => profile.id !== active.id)
+    .map((profile) => ({
+      id: profile.id,
+      name: profile.name,
+      ...readProfileStores(profile, exportedAt, unreadable),
+    }));
+
+  const backup = buildBackup({
+    stores,
+    activeProfile: { id: active.id, name: active.name },
+    otherProfiles,
+    settings: readSettings(unreadable),
+    exportedAt,
+  });
+  return unreadable.length > 0 ? { ...backup, unreadable } : backup;
 }
 
 function parseSlotValue(
@@ -469,6 +689,7 @@ export function storesFromSlot(
       goal: parseSlotValue(raw, SLOT_KEYS.goal),
       dailyGame: parseSlotValue(raw, SLOT_KEYS.dailyGame),
       higherLower: parseSlotValue(raw, SLOT_KEYS.higherLower),
+      lastVisit: parseSlotValue(raw, SLOT_KEYS.lastVisit),
     },
     fallbackTimestamp,
   );

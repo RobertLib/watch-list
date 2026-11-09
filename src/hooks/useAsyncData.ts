@@ -18,13 +18,15 @@ export interface AsyncState<T> {
   reload: () => void;
 }
 
-interface LoadState<T> {
+/** What a load settled with, and which deps and attempt it was started for. */
+interface Settled<T> {
+  deps: readonly unknown[];
+  attempt: number;
   data: T | null;
-  isLoading: boolean;
   error: unknown;
 }
 
-const LOADING: LoadState<never> = { data: null, isLoading: true, error: null };
+const LOADING = { data: null, isLoading: true, error: null } as const;
 
 function sameDeps(a: readonly unknown[], b: readonly unknown[]) {
   return a.length === b.length && a.every((value, i) => Object.is(value, b[i]));
@@ -35,57 +37,73 @@ function sameDeps(a: readonly unknown[], b: readonly unknown[]) {
  *
  * The one shape every page in this app now needs. Server Components used to do
  * this by awaiting in the body; a static export has to do it in an effect, and
- * doing that by hand forty times is forty chances to forget the cancellation
- * flag – a fast click through three titles would otherwise leave whichever
- * request finished last on screen.
+ * doing that by hand forty times is forty chances to forget the cancellation –
+ * a fast click through three titles would otherwise leave whichever request
+ * finished last on screen.
+ *
+ * `load` receives a signal that is aborted once its result can no longer be
+ * shown: when the deps change, on `reload`, or when the page unmounts. Passing
+ * it on to the TMDB transport releases requests nobody else is waiting for.
  */
 export function useAsyncData<T>(
-  load: () => Promise<T>,
+  load: (signal: AbortSignal) => Promise<T>,
   deps: readonly unknown[],
 ): AsyncState<T> {
-  const [state, setState] = useState<LoadState<T>>(LOADING);
+  const [settled, setSettled] = useState<Settled<T> | null>(null);
 
   // Bumped by `reload`, and a dependency of the effect below – which is the
-  // whole mechanism. Nothing else reads it.
+  // whole mechanism for running the load again.
   const [attempt, setAttempt] = useState(0);
 
-  // Reset to loading *during* the render that first sees new deps, rather than
-  // from the effect below. Both orders paint the same frames, but doing it here
-  // keeps the stale data of the previous deps off screen for good and keeps the
-  // effect free of the cascading render that `react-hooks/set-state-in-effect`
-  // warns about.
+  // One array per distinct set of deps: the identity a result is filed under.
+  // Replaced during the render that first sees new deps, so that render and
+  // every later one compare results against the new identity.
   const [renderedDeps, setRenderedDeps] = useState(deps);
-  if (!sameDeps(renderedDeps, deps)) {
-    setRenderedDeps(deps);
-    setState(LOADING);
-  }
+  const currentDeps = sameDeps(renderedDeps, deps) ? renderedDeps : deps;
+  if (currentDeps !== renderedDeps) setRenderedDeps(currentDeps);
 
-  const reload = useCallback(() => {
-    setState(LOADING);
-    setAttempt((n) => n + 1);
-  }, []);
+  const reload = useCallback(() => setAttempt((n) => n + 1), []);
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
+    // Filed under the identity this effect was started for, never "whatever
+    // is current when it settles".
+    const request = { deps: renderedDeps, attempt };
 
-    load().then(
+    load(controller.signal).then(
       (data) => {
-        if (!cancelled) setState({ data, isLoading: false, error: null });
+        if (!cancelled) setSettled({ ...request, data, error: null });
       },
       (error) => {
         if (cancelled) return;
         console.error("Failed to load page data:", error);
-        setState({ data: null, isLoading: false, error });
+        setSettled({ ...request, data: null, error });
       },
     );
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
     // `load` is a fresh closure on every render by design – the caller lists
-    // what it actually depends on instead.
+    // what it actually depends on instead, and `renderedDeps` changes exactly
+    // when those do.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, attempt]);
+  }, [renderedDeps, attempt]);
 
-  return { ...state, reload };
+  // A result is shown only under the deps and attempt it was loaded for. The
+  // cancellation flag alone could not promise that: a navigation commits as a
+  // transition, and its cleanup runs after the commit, so the previous load
+  // could still settle in between and put the old film's details on the new
+  // film's page until the new load answered.
+  if (
+    !settled ||
+    settled.deps !== currentDeps ||
+    settled.attempt !== attempt
+  ) {
+    return { ...LOADING, reload };
+  }
+
+  return { data: settled.data, isLoading: false, error: settled.error, reload };
 }

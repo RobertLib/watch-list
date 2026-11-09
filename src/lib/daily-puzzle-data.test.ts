@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { PUZZLE_POOL } from "./daily-puzzle-pool";
+import { PUZZLE_POOL, PUZZLE_POOL_GENERATIONS } from "./daily-puzzle-pool";
 import { PUZZLE_EPOCH, puzzleNumberForDay } from "./daily-puzzle";
 import { isCorrectGuess, pickPuzzleForDay } from "./daily-puzzle-data";
+import { shiftDate } from "./dates";
 
 /**
  * Which film the daily puzzle lands on, and how the walk through the pool moves.
@@ -63,20 +64,53 @@ describe("pickPuzzleForDay", () => {
    * the pool forever, and the game would feel much smaller than it is.
    */
   it("visits every entry in the pool before repeating one", () => {
+    // Counted from the newest generation, the one that walks the whole pool.
+    const from = PUZZLE_POOL_GENERATIONS.at(-1)!.from;
     const seen = new Set<number>();
 
     for (let i = 0; i < PUZZLE_POOL.length; i++) {
-      seen.add(pickPuzzleForDay(dayAfterEpoch(i))!.entry.id);
+      seen.add(pickPuzzleForDay(shiftDate(from, i))!.entry.id);
     }
 
     expect(seen.size).toBe(PUZZLE_POOL.length);
   });
 
   it("wraps back round after a full cycle", () => {
-    const first = pickPuzzleForDay(dayAfterEpoch(0))!;
-    const wrapped = pickPuzzleForDay(dayAfterEpoch(PUZZLE_POOL.length))!;
+    const from = PUZZLE_POOL_GENERATIONS.at(-1)!.from;
+    const first = pickPuzzleForDay(from)!;
+    const wrapped = pickPuzzleForDay(shiftDate(from, PUZZLE_POOL.length))!;
 
     expect(wrapped.entry.id).toBe(first.entry.id);
+  });
+
+  /**
+   * Days that have already run – and one from before the epoch, which the
+   * archive's arithmetic can reach – with the film each one was. Recorded from
+   * the schedule as it stood before generations existed, when the walk read the
+   * pool's whole length of 398: the proof that introducing them moved nothing,
+   * and the tripwire for any later change that would.
+   *
+   * A past day's answer is not just trivia: the archive keeps every finished
+   * board, and its guesses were marked right or wrong against this film. Change
+   * it and a solved board shows a correct guess beside a different answer.
+   */
+  it.each([
+    ["2026-07-27", 83533],
+    ["2026-08-01", 177677],
+    ["2026-08-02", 674],
+    ["2026-08-15", 675],
+    ["2026-08-31", 218],
+    ["2026-09-01", 290098],
+    ["2026-09-14", 293660],
+    ["2026-09-30", 100402],
+    ["2026-10-01", 550],
+    ["2026-10-15", 359940],
+    ["2026-10-31", 209112],
+    ["2026-11-01", 767],
+    ["2026-11-08", 102651],
+    ["2026-11-09", 559],
+  ])("still answers %s with the film it was served with", (day, id) => {
+    expect(pickPuzzleForDay(day)!.entry.id).toBe(id);
   });
 
   /**

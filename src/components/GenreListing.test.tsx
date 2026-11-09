@@ -28,7 +28,24 @@ vi.mock("@/lib/tmdb-discover", () => ({ tmdbDiscoverApi: api }));
 vi.mock("@/lib/wikipedia", () => ({
   getGenreWikipediaContent: vi.fn().mockResolvedValue(null),
 }));
-vi.mock("./DiscoverFilterBar", () => ({ DiscoverFilterBar: () => <div>Filters</div> }));
+// Counts its own mounts and offers a real control to hold focus, so a test can
+// tell a filter bar that stayed put from one that was torn down and rebuilt.
+const filterBar = vi.hoisted(() => ({ mounts: 0 }));
+vi.mock("./DiscoverFilterBar", async () => {
+  const { useEffect } = await import("react");
+  return {
+    DiscoverFilterBar: ({ totalResults, resultsPending }: { totalResults?: number; resultsPending?: boolean }) => {
+      useEffect(() => { filterBar.mounts += 1; }, []);
+      return (
+        <div>
+          Filters
+          <select aria-label="Release year"><option>All Years</option></select>
+          <span>{resultsPending ? "Updating results…" : `${totalResults} results`}</span>
+        </div>
+      );
+    },
+  };
+});
 vi.mock("./MediaSection", () => ({
   MediaSection: ({ items, emptyMessage }: { items: MediaItem[]; emptyMessage: string }) =>
     items.length ? <ul>{items.map((item) => <li key={item.id}>{item.title}</li>)}</ul> : <p>{emptyMessage}</p>,
@@ -46,6 +63,7 @@ const title: Movie & TVShow = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  filterBar.mounts = 0;
   state.query = "genre=action-28&page=20";
   state.settingsKey = "US|all|";
   api.getMovieGenres.mockResolvedValue({ genres: [{ id: 28, name: "Action" }] });
@@ -144,5 +162,111 @@ describe("GenreListing pagination recovery", () => {
     expect(screen.getByText("No action movies found.")).toBeTruthy();
     expect(replace).toHaveBeenCalledTimes(1);
     expect(api.discoverMoviesByGenre.mock.calls.map((call) => call[1])).toEqual([20, 1]);
+  });
+});
+
+function deferredPage() {
+  let resolve!: (value: { results: unknown[]; total_pages: number; total_results: number }) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<{ results: unknown[]; total_pages: number; total_results: number }>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+/**
+ * A filter change used to reset the one load behind the whole page, which put
+ * the page back to its skeleton – the filter bar included. The control being
+ * used was unmounted under the visitor and focus fell to <body>; with arrow
+ * keys on a closed <select> firing `change` on every step, a keyboard user
+ * could not get past the first option.
+ */
+describe("GenreListing filter changes", () => {
+  const filtered = { ...title, id: 2, title: "Filtered title", name: "Filtered title" };
+
+  it("keeps the filter bar mounted, and focused, while only the results reload", async () => {
+    state.query = "genre=action-28";
+    let view!: ReturnType<typeof render>;
+    await act(async () => { view = render(<GenreListing mediaType="movie" />); });
+    expect(screen.getByText("Available title")).toBeTruthy();
+    expect(filterBar.mounts).toBe(1);
+
+    const select = screen.getByRole("combobox", { name: "Release year" });
+    select.focus();
+
+    const next = deferredPage();
+    api.discoverMoviesByGenre.mockReturnValueOnce(next.promise);
+    state.query = "genre=action-28&year=2020";
+    await act(async () => { view.rerender(<GenreListing mediaType="movie" />); });
+
+    // Only the results are waiting.
+    expect(screen.getByText("Loading titles")).toBeTruthy();
+    expect(screen.queryByText("Available title")).toBeNull();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Action Movies");
+    expect(screen.getByText("Updating results…")).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Release year" })).toBe(select);
+    expect(document.activeElement).toBe(select);
+    expect(filterBar.mounts).toBe(1);
+    expect(api.getMovieGenres).toHaveBeenCalledTimes(1);
+
+    await act(async () => { next.resolve({ results: [filtered], total_pages: 1, total_results: 1 }); });
+
+    expect(screen.getByText("Filtered title")).toBeTruthy();
+    expect(screen.getByText("1 results")).toBeTruthy();
+    expect(document.activeElement).toBe(select);
+    expect(filterBar.mounts).toBe(1);
+    expect(api.discoverMoviesByGenre.mock.calls.at(-1)![2]).toMatchObject({ year: "2020" });
+  });
+
+  it("reports a failed listing in place of the results, filters and all still there", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    state.query = "genre=action-28";
+    let view!: ReturnType<typeof render>;
+    await act(async () => { view = render(<GenreListing mediaType="movie" />); });
+
+    api.discoverMoviesByGenre.mockRejectedValueOnce(new Error("TMDB API error: 503"));
+    state.query = "genre=action-28&year=2020";
+    await act(async () => { view.rerender(<GenreListing mediaType="movie" />); });
+
+    expect(screen.getByRole("heading", { name: "Could not load these movies" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Action Movies");
+    expect(screen.getByRole("combobox", { name: "Release year" })).toBeTruthy();
+    expect(filterBar.mounts).toBe(1);
+
+    api.discoverMoviesByGenre.mockResolvedValueOnce({ results: [filtered], total_pages: 1, total_results: 1 });
+    await act(async () => { screen.getByRole("button", { name: "Try again" }).click(); });
+
+    expect(screen.getByText("Filtered title")).toBeTruthy();
+    expect(filterBar.mounts).toBe(1);
+  });
+
+  it("keeps the page when it moves to another page of the same genre", async () => {
+    state.query = "genre=action-28";
+    api.discoverMoviesByGenre.mockResolvedValue({ results: [title], total_pages: 3, total_results: 60 });
+    let view!: ReturnType<typeof render>;
+    await act(async () => { view = render(<GenreListing mediaType="movie" />); });
+
+    const next = deferredPage();
+    api.discoverMoviesByGenre.mockReturnValueOnce(next.promise);
+    state.query = "genre=action-28&page=2";
+    await act(async () => { view.rerender(<GenreListing mediaType="movie" />); });
+
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Action Movies");
+    expect(screen.getByText("Loading titles")).toBeTruthy();
+    expect(filterBar.mounts).toBe(1);
+
+    await act(async () => { next.resolve({ results: [filtered], total_pages: 3, total_results: 60 }); });
+    expect(screen.getByText("Page 2 of 3")).toBeTruthy();
+  });
+
+  it("gives a failed genre page its own h1", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    state.query = "genre=action-28";
+    api.getMovieGenres.mockRejectedValueOnce(new Error("TMDB API error: 503"));
+    await act(async () => { render(<GenreListing mediaType="movie" />); });
+
+    expect(screen.getByRole("heading", { level: 1, name: "Could not load this genre" })).toBeTruthy();
+    expect(screen.queryByText("Filters")).toBeNull();
   });
 });

@@ -105,6 +105,8 @@ const SPECS: BadgeSpec[] = [
     label: "Archivist",
     description: "Catch up on five puzzles you missed.",
     emoji: "📼",
+    // Catch-ups only: a day with a result from the day is never counted, even
+    // where an older version let the archive replay it.
     measure: archiveSolvedCount,
     target: 5,
   },

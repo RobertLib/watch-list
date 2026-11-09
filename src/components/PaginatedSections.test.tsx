@@ -62,13 +62,13 @@ describe.each(sections)("Paginated $name", ({ component }) => {
     render(component(1, fetchPage));
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Load more content" }));
+      fireEvent.click(screen.getByRole("button", { name: /^Load More/ }));
     });
     expect(screen.getByText("Title 1")).toBeTruthy();
     expect(screen.getByRole("alert")).toBeTruthy();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Retry loading more content" }));
+      fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     });
 
     expect(fetchPage).toHaveBeenNthCalledWith(1, 2);
@@ -83,19 +83,19 @@ describe.each(sections)("Paginated $name", ({ component }) => {
     render(component(499, fetchPage));
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Load more content" }));
+      fireEvent.click(screen.getByRole("button", { name: /^Load More/ }));
     });
 
     expect(fetchPage).toHaveBeenCalledExactlyOnceWith(500);
     expect(screen.getByText("Title 500")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Load more content" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Load More/ })).toBeNull();
   });
 
   it("does not offer a page beyond the transport limit on initial render", () => {
     const fetchPage = vi.fn<FetchPage>();
     render(component(500, fetchPage));
 
-    expect(screen.queryByRole("button", { name: "Load more content" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Load More/ })).toBeNull();
     expect(fetchPage).not.toHaveBeenCalled();
   });
 });

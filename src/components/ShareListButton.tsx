@@ -33,6 +33,7 @@ export function ShareListButton({
   const id = useId();
   const titleId = `${id}-title`;
   const urlId = `${id}-url`;
+  const panelId = `${id}-panel`;
   const [open, setOpen] = useState(false);
   // Follow list renames until the visitor chooses a separate share title.
   // An intentionally empty title is an override too.
@@ -91,7 +92,9 @@ export function ShareListButton({
       }
     }
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
+      // Escape during IME composition in the name field cancels the
+      // composition, not the panel.
+      if (event.key !== "Escape" || event.isComposing) return;
       if (panelRef.current?.contains(document.activeElement)) {
         event.preventDefault();
         triggerRef.current?.focus();
@@ -148,6 +151,8 @@ export function ShareListButton({
         onClick={() => setOpen((value) => !value)}
         className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg font-semibold transition-colors shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         aria-expanded={open}
+        // The panel exists only while open, so it is referenced only then.
+        aria-controls={open ? panelId : undefined}
       >
         <Share2 className="w-4 h-4" aria-hidden="true" />
         Share
@@ -156,6 +161,7 @@ export function ShareListButton({
       {open && (
         <div
           ref={panelRef}
+          id={panelId}
           className="absolute right-0 top-full mt-2 z-50 w-80 max-w-[calc(100vw-32px)] rounded-xl bg-gray-800 border border-white/10 shadow-xl p-4 space-y-3"
         >
           <div className="flex items-start justify-between gap-2">

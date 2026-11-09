@@ -9,6 +9,7 @@ const EMPTY_STATS: WatchStats = {
   episodes: 0,
   minutes: 0,
   titlesWithoutRuntime: 0,
+  seriesWithUndatedTime: 0,
   topGenres: [],
   decades: [],
   ratingHistogram: Array.from({ length: 10 }, () => 0),

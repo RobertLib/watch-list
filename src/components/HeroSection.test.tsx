@@ -20,7 +20,7 @@ vi.mock("@/lib/tmdb-cache", async (importOriginal) => ({
 }));
 vi.mock("./HeroButtons", () => ({ HeroButtons: () => null }));
 vi.mock("next/image", () => ({
-  default: ({ alt }: { alt: string }) => <span>{alt}</span>,
+  default: ({ alt, src }: { alt: string; src: string }) => <span data-src={src}>{alt}</span>,
 }));
 vi.mock("next/link", () => ({
   default: ({ href, children }: { href: string; children: ReactNode }) => (
@@ -46,7 +46,7 @@ function moviePage(): TMDBResponse<Movie> {
       original_title: "Featured film",
       overview: "A film to watch tonight.",
       poster_path: null,
-      backdrop_path: null,
+      backdrop_path: "/backdrop.jpg",
       release_date: "2020-01-01",
       vote_average: 8,
       vote_count: 100,
@@ -127,5 +127,16 @@ describe("HeroSection", () => {
     for (const [rawUrl] of request.mock.calls.slice(2)) {
       expect(new URL(rawUrl).searchParams.get("with_watch_providers")).toBe("8");
     }
+  });
+
+  // The page's largest paint. `original` is often 1920–3840px wide, and with
+  // `unoptimized` set the size named is the size downloaded.
+  it("asks for the w1280 backdrop rather than the original", async () => {
+    request.mockImplementation(resolveFeaturedMovie);
+    await act(async () => { render(<HeroSection />); });
+
+    expect(
+      screen.getByText("Featured backdrop for Featured film").getAttribute("data-src"),
+    ).toBe("https://image.tmdb.org/t/p/w1280/backdrop.jpg");
   });
 });

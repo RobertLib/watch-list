@@ -274,20 +274,26 @@ describe("regional platform selection", () => {
     expect(getSettings().selectedProviderIds).toEqual(restoredSelection);
   });
 
-  it("disables platform choices and quick actions while a settings write is pending", async () => {
+  it("refuses platform choices and quick actions while a settings write is pending, without losing focus", async () => {
     answerRegions({ US: [provider(8, 0)] });
     const onUpdate = vi.fn();
     const view = render(
       <StreamingProviderSelector region="US" selectedProviderIds={[8]} onUpdate={onUpdate} disabled />,
     );
     const selected = await screen.findByRole("checkbox", { name: "Platform 8" });
+    // The catalogue's own reconciliation is not a press, and still runs.
     expect(onUpdate).toHaveBeenCalledExactlyOnceWith(expect.any(Function), "US");
     expect(onUpdate.mock.calls[0][0]([8])).toEqual([8]);
     onUpdate.mockClear();
 
     for (const button of [selected, ...screen.getAllByRole("button")]) {
-      expect((button as HTMLButtonElement).disabled).toBe(true);
+      // aria-disabled rather than disabled: native `disabled` blurred the
+      // platform just toggled and left keyboard focus nowhere.
+      expect(button.getAttribute("aria-disabled")).toBe("true");
+      expect((button as HTMLButtonElement).disabled).toBe(false);
+      button.focus();
       fireEvent.click(button);
+      expect(document.activeElement).toBe(button);
     }
     expect(onUpdate).not.toHaveBeenCalled();
 

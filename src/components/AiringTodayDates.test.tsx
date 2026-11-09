@@ -95,7 +95,7 @@ describe("TV listing pagination across dates", () => {
       const airing = screen.getByRole("region", { name: "Airing Today" }).parentElement!;
       for (const section of [discover, trending, topRated, airing]) {
         await act(async () => {
-          fireEvent.click(within(section).getByRole("button", { name: "Load more content" }));
+          fireEvent.click(within(section).getByRole("button", { name: /^Load More/ }));
         });
         expect(section.textContent).toContain("Programme 6 page 2");
       }
@@ -126,7 +126,7 @@ describe("TV listing pagination across dates", () => {
         expect(section.isConnected).toBe(true);
         expect(section.textContent).toContain("Programme 6 page 2");
         await act(async () => {
-          fireEvent.click(within(section).getByRole("button", { name: "Load more content" }));
+          fireEvent.click(within(section).getByRole("button", { name: /^Load More/ }));
         });
         expect(section.textContent).toContain("Programme 7 page 3");
       }

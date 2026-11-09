@@ -7,6 +7,7 @@ import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useUtcDay } from "@/hooks/useUtcDay";
 import {
+  archiveBoardFor,
   getGameStateSnapshot,
   getServerGameStateSnapshot,
   outcomeForDay,
@@ -76,7 +77,8 @@ export function DailyArchiveGrid() {
 const OUTCOME_TEXT: Record<DayOutcome, string> = {
   won: "Solved",
   lost: "Not solved",
-  archived: "Caught up",
+  "archive-won": "Caught up",
+  "archive-lost": "Caught up, not solved",
   today: "Today",
   missed: "Not played",
 };
@@ -93,8 +95,12 @@ function ArchiveCard({
   const outcome = outcomeForDay(state, day, today);
   const isToday = day === today;
   // A day in progress from the archive is neither finished nor untouched, and the
-  // card should say "resume" rather than either.
-  const inProgress = state.archive[day]?.status === "playing";
+  // card should say "resume" rather than either. That includes a live board the
+  // day ended on before it was finished, which the archive continues even
+  // before the next live guess moves it there.
+  const pastBoard = isToday ? null : archiveBoardFor(state, day);
+  const inProgress =
+    pastBoard?.status === "playing" && pastBoard.guesses.length > 0;
 
   return (
     <Link
@@ -103,7 +109,8 @@ function ArchiveCard({
       className={cn(
         "flex items-center gap-3 rounded-xl border p-3 transition-colors group focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
         outcome === "won" && "border-green-500/40 bg-green-500/10",
-        outcome === "archived" && "border-blue-500/40 bg-blue-500/10",
+        outcome === "archive-won" && "border-blue-500/40 bg-blue-500/10",
+        outcome === "archive-lost" && "border-blue-500/25 bg-blue-500/5",
         outcome === "lost" && "border-red-500/30 bg-red-500/5",
         (outcome === "missed" || outcome === "today") &&
           "border-gray-800 bg-gray-900/60 hover:border-gray-700 hover:bg-gray-900",
@@ -113,15 +120,16 @@ function ArchiveCard({
         className={cn(
           "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
           outcome === "won" && "bg-green-500/20 text-green-300",
-          outcome === "archived" && "bg-blue-500/20 text-blue-300",
+          outcome === "archive-won" && "bg-blue-500/20 text-blue-300",
+          outcome === "archive-lost" && "bg-blue-500/10 text-red-300",
           outcome === "lost" && "bg-red-500/15 text-red-300",
           (outcome === "missed" || outcome === "today") &&
             "bg-gray-800 text-gray-500",
         )}
       >
-        {outcome === "won" || outcome === "archived" ? (
+        {outcome === "won" || outcome === "archive-won" ? (
           <Check className="w-4 h-4" aria-hidden="true" />
-        ) : outcome === "lost" ? (
+        ) : outcome === "lost" || outcome === "archive-lost" ? (
           <X className="w-4 h-4" aria-hidden="true" />
         ) : outcome === "today" ? (
           <Circle className="w-4 h-4" aria-hidden="true" />

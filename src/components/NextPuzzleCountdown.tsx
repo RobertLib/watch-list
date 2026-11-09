@@ -27,15 +27,37 @@ export function NextPuzzleCountdown() {
   if (remaining === null) return null;
 
   return (
-    <time
-      // A live region would announce every tick, which is noise. The label is
-      // read once, and the value is decoration on top of it.
-      aria-hidden="true"
-      className="font-mono tabular-nums text-gray-400"
-    >
-      {formatRemaining(remaining)}
-    </time>
+    <>
+      <time
+        // A live region would announce every tick, which is noise – so the
+        // ticking clock is for the eye only.
+        aria-hidden="true"
+        className="font-mono tabular-nums text-gray-400"
+      >
+        {formatRemaining(remaining)}
+      </time>
+      {/* What a screen reader reads instead. Hiding the clock used to leave
+          just "Next puzzle in", with no time at all. Not a live region, so
+          nothing is announced as it changes, and to the minute rather than
+          the second, so the text only moves when the answer does. */}
+      <span className="sr-only">{describeRemaining(remaining)}</span>
+    </>
   );
+}
+
+/** The wait in words, to the minute: "3 hours 12 minutes". */
+export function describeRemaining(ms: number): string {
+  const totalMinutes = Math.floor(ms / 60_000);
+  if (totalMinutes < 1) return "less than a minute";
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const unit = (value: number, word: string) =>
+    `${value} ${word}${value === 1 ? "" : "s"}`;
+
+  if (hours === 0) return unit(minutes, "minute");
+  if (minutes === 0) return unit(hours, "hour");
+  return `${unit(hours, "hour")} ${unit(minutes, "minute")}`;
 }
 
 function formatRemaining(ms: number): string {

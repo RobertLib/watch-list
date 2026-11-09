@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getMovieWikipediaContent, getPersonWikipediaContent } from "./wikipedia";
+import { getGenreWikipediaContent, getPersonWikipediaContent } from "./wikipedia";
 
 beforeEach(() => vi.useFakeTimers());
 
@@ -63,7 +63,7 @@ describe("Wikipedia JSON transport", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const content = getMovieWikipediaContent("The Matrix", 1999);
+    const content = getGenreWikipediaContent("Science fiction", "movie");
     await vi.advanceTimersByTimeAsync(200);
 
     await expect(content).resolves.toMatchObject({

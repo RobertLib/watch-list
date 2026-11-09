@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { TOTAL_BADGES, badgesFor } from "./daily-badges";
-import { EMPTY_STATE, recordArchiveGuess, type DailyGameState } from "./daily-game";
+import {
+  EMPTY_STATE,
+  recordArchiveGuess,
+  recordResult,
+  type DailyGameState,
+} from "./daily-game";
 import { MAX_GUESSES } from "./daily-puzzle";
 import { shiftDate } from "./dates";
 
@@ -115,6 +120,29 @@ describe("badgesFor", () => {
     expect(Object.values(state.archive).every((board) => board.status === "playing")).toBe(true);
     expect(byId(state, "archivist").earned).toBe(true);
     expect(byId(state, "archivist").progress).toEqual({ current: 5, target: 5 });
+  });
+
+  /**
+   * "Catch up on five puzzles you missed" – and a day won on the day was not
+   * missed. Replaying those from the archive used to earn the badge without a
+   * single missed day; stores written then still carry the inflated wins.
+   */
+  it("is not earned by replaying days already played on the day", () => {
+    let state = EMPTY_STATE;
+    for (let index = 0; index < 5; index++) {
+      const day = shiftDate("2026-08-01", index);
+      state = recordResult(state, day, true, 1);
+      state = recordArchiveGuess(state, day, { id: 1, title: "Replay", correct: true });
+    }
+
+    expect(byId(state, "archivist").progress).toEqual({ current: 0, target: 5 });
+
+    const inflated = stateWith({
+      history: state.history,
+      archiveWonDays: Object.keys(state.history),
+    });
+    expect(byId(inflated, "archivist").earned).toBe(false);
+    expect(byId(inflated, "archivist").progress).toEqual({ current: 0, target: 5 });
   });
 
   it("counts the badges a player has actually earned", () => {

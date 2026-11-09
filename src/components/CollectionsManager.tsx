@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ListPlus, Pencil, Plus, Trash2, X } from "lucide-react";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { ShareListButton } from "@/components/ShareListButton";
 import { toast } from "@/components/Toast";
 import {
@@ -28,6 +29,7 @@ import { createSlug, mediaItemKey } from "@/lib/utils";
 import { mediaHref } from "@/lib/routes";
 import { STORAGE_REFUSED_MESSAGE } from "@/lib/media-list";
 import { useProfileGuard } from "@/hooks/useProfileGuard";
+import { useHydrated } from "@/hooks/useHydrated";
 import { withProfileStorage } from "@/lib/profile-storage";
 import { withProfileRosterLock } from "@/lib/profile-roster-lock";
 
@@ -90,6 +92,10 @@ function ProfileCollectionsManager({ profileId, checkProfile }: {
     getCollectionsSnapshot,
     getServerCollectionsSnapshot,
   );
+  // The prerendered page has no storage, so its snapshot is always empty. Until
+  // the browser has read the real one, "No lists yet" would be a claim made to
+  // everyone – including visitors with a dozen lists – so it waits.
+  const hydrated = useHydrated();
 
   const [newName, setNewName] = useState("");
   const { mutate, isSaving } = useCollectionMutation(profileId, checkProfile);
@@ -136,7 +142,9 @@ function ProfileCollectionsManager({ profileId, checkProfile }: {
             id="new-list"
             type="text"
             value={newName}
-            disabled={isSaving}
+            // Read-only rather than disabled while saving: browsers blur a
+            // disabled field, so pressing Enter here used to drop focus.
+            readOnly={isSaving}
             maxLength={MAX_COLLECTION_NAME_LENGTH}
             onChange={(event) => setNewName(event.target.value)}
             placeholder="Films to show my dad"
@@ -144,9 +152,9 @@ function ProfileCollectionsManager({ profileId, checkProfile }: {
           />
           <button
             type="submit"
-            disabled={isSaving}
+            aria-disabled={isSaving}
             aria-busy={isSaving}
-            className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+            className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 aria-disabled:opacity-60 aria-disabled:cursor-wait font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
           >
             <Plus className="w-4 h-4" aria-hidden="true" />
             Create
@@ -154,7 +162,9 @@ function ProfileCollectionsManager({ profileId, checkProfile }: {
         </div>
       </form>
 
-      {collections.length === 0 ? (
+      {!hydrated ? (
+        <LoadingSpinner className="py-12" />
+      ) : collections.length === 0 ? (
         <EmptyState />
       ) : (
         <ul className="space-y-4">
@@ -182,9 +192,29 @@ function CollectionCard({
   const [draft, setDraft] = useState(collection.name);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const { mutate, isSaving } = useCollectionMutation(profileId, checkProfile);
+  const renameButtonRef = useRef<HTMLButtonElement>(null);
+  const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const cancelDeleteRef = useRef<HTMLButtonElement>(null);
+  // Leaving the rename form or the delete confirmation unmounts the control
+  // that was just pressed, which would leave focus on the page body. Where it
+  // should go once the swap has rendered – set only when that control actually
+  // held focus, so a click that never focused it does not move anything.
+  const focusAfterSwap = useRef<React.RefObject<HTMLButtonElement | null> | null>(null);
+  useEffect(() => {
+    focusAfterSwap.current?.current?.focus();
+    focusAfterSwap.current = null;
+  }, [isRenaming, confirmingDelete]);
+
+  function focusAfterRender(
+    pressed: HTMLElement,
+    target: React.RefObject<HTMLButtonElement | null>,
+  ) {
+    // `pressed` may be the rename form, submitted from its input or Save.
+    if (pressed.contains(document.activeElement)) focusAfterSwap.current = target;
+  }
 
   function startRename() {
-    if (!checkProfile()) return;
+    if (isSaving || !checkProfile()) return;
     const current = withProfileStorage(profileId, () =>
       getCollectionsSnapshot().find((entry) => entry.id === collection.id),
     );
@@ -198,8 +228,9 @@ function CollectionCard({
     setIsRenaming(true);
   }
 
-  async function commitRename(event: React.FormEvent) {
+  async function commitRename(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = event.currentTarget;
     await mutate(() => {
       const latest = getCollectionsSnapshot({ strict: true });
       const current = latest.find((entry) => entry.id === collection.id);
@@ -215,10 +246,12 @@ function CollectionCard({
       }
       if (renamed.find((entry) => entry.id === collection.id)?.name === current.name) {
         notifyCollectionsChanged();
+        focusAfterRender(form, renameButtonRef);
         setIsRenaming(false);
         return;
       }
       if (!saveCollectionChanges(renamed)) return;
+      focusAfterRender(form, renameButtonRef);
       setIsRenaming(false);
     });
   }
@@ -256,7 +289,11 @@ function CollectionCard({
             <input
               autoFocus
               value={draft}
-              disabled={isSaving}
+              // Read-only, not disabled, while saving: browsers blur a
+              // disabled field. The same goes for every button on this card,
+              // which say they are busy with `aria-disabled` and refuse a
+              // second action in their handlers instead.
+              readOnly={isSaving}
               maxLength={MAX_COLLECTION_NAME_LENGTH}
               onChange={(event) => setDraft(event.target.value)}
               aria-label="List name"
@@ -264,20 +301,22 @@ function CollectionCard({
             />
             <button
               type="submit"
-              disabled={isSaving}
+              aria-disabled={isSaving}
               aria-busy={isSaving}
-              className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
+              className="text-sm text-blue-400 hover:text-blue-300 aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
             >
               Save
             </button>
             <button
               type="button"
-              disabled={isSaving}
-              onClick={() => {
+              aria-disabled={isSaving}
+              onClick={(event) => {
+                if (isSaving) return;
+                focusAfterRender(event.currentTarget, renameButtonRef);
                 setDraft(collection.name);
                 setIsRenaming(false);
               }}
-              className="text-sm text-gray-500 hover:text-white transition-colors"
+              className="text-sm text-gray-500 hover:text-white aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
             >
               Cancel
             </button>
@@ -302,10 +341,11 @@ function CollectionCard({
             />
           )}
           <button
+            ref={renameButtonRef}
             onClick={startRename}
-            disabled={isSaving}
+            aria-disabled={isSaving}
             aria-label={`Rename ${collection.name}`}
-            className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+            className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
           >
             <Pencil className="w-4 h-4" aria-hidden="true" />
           </button>
@@ -313,28 +353,37 @@ function CollectionCard({
             <span className="flex items-center gap-2 text-sm">
               <button
                 onClick={commitDelete}
-                disabled={isSaving}
+                aria-disabled={isSaving}
                 aria-busy={isSaving}
-                className="text-red-400 hover:text-red-300 transition-colors"
+                className="text-red-400 hover:text-red-300 aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
               >
                 Delete
               </button>
               <button
-                onClick={() => setConfirmingDelete(false)}
-                disabled={isSaving}
-                className="text-gray-500 hover:text-white transition-colors"
+                ref={cancelDeleteRef}
+                onClick={(event) => {
+                  if (isSaving) return;
+                  focusAfterRender(event.currentTarget, deleteButtonRef);
+                  setConfirmingDelete(false);
+                }}
+                aria-disabled={isSaving}
+                className="text-gray-500 hover:text-white aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
               >
                 Cancel
               </button>
             </span>
           ) : (
             <button
-              disabled={isSaving}
-              onClick={() => {
-                if (checkProfile()) setConfirmingDelete(true);
+              ref={deleteButtonRef}
+              aria-disabled={isSaving}
+              onClick={(event) => {
+                if (isSaving || !checkProfile()) return;
+                // Onto the safe answer, so a second Enter cannot delete.
+                focusAfterRender(event.currentTarget, cancelDeleteRef);
+                setConfirmingDelete(true);
               }}
               aria-label={`Delete ${collection.name}`}
-              className="p-2 rounded-lg text-gray-400 hover:text-red-300 hover:bg-white/10 transition-colors"
+              className="p-2 rounded-lg text-gray-400 hover:text-red-300 hover:bg-white/10 aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
             >
               <Trash2 className="w-4 h-4" aria-hidden="true" />
             </button>
@@ -373,10 +422,13 @@ function CollectionCard({
               </Link>
               <button
                 onClick={() => removeItem(item.id, item.mediaType)}
-                disabled={isSaving}
+                aria-disabled={isSaving}
                 aria-busy={isSaving}
                 aria-label={`Remove ${item.title} from ${collection.name}`}
-                className="absolute -top-1.5 -right-1.5 p-1 rounded-full bg-black/80 text-gray-300 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-red-300 transition-opacity"
+                // Revealed on hover only where there is hover. On a touch
+                // screen it used to be invisible yet still tappable, so a tap
+                // near a poster's corner removed the title without warning.
+                className="absolute -top-1.5 -right-1.5 p-1 rounded-full bg-black/80 text-gray-300 opacity-100 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-red-300 aria-disabled:cursor-wait transition-opacity"
               >
                 <X className="w-3 h-3" aria-hidden="true" />
               </button>

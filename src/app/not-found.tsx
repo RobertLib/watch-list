@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Compass } from "lucide-react";
+import { LegacyPathRedirect } from "@/components/LegacyPathRedirect";
 
 /**
  * Declared here rather than inherited, for the robots directive.
@@ -23,14 +24,19 @@ export const metadata: Metadata = {
 
 /**
  * Rendered for every `notFound()` in the app, and for URLs that match no route.
+ * In the static export it is `404.html`, which GitHub Pages serves for every
+ * path it has no file for.
  *
  * The point of having one at all is the links: the default Next.js 404 is a bare
  * message on a white page with no way out, which for a crawler is a dead end and
- * for a visitor who mistyped a slug is worse than the page they wanted.
+ * for a visitor who mistyped a slug is worse than the page they wanted. A URL
+ * from before the static export – `/movie/550-fight-club` and the like – gets
+ * more than links: `LegacyPathRedirect` sends it on to the page it became.
  */
 export default function NotFound() {
   return (
     <div className="container mx-auto px-6 py-24 text-center">
+      <LegacyPathRedirect />
       <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gray-800 flex items-center justify-center">
         <Compass className="w-10 h-10 text-gray-500" aria-hidden="true" />
       </div>

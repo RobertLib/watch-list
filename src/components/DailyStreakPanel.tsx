@@ -23,7 +23,8 @@ const CALENDAR_DAYS = 56;
 const OUTCOME_STYLE: Record<DayOutcome, string> = {
   won: "bg-green-500",
   lost: "bg-red-500/70",
-  archived: "bg-blue-500/60",
+  "archive-won": "bg-blue-500/60",
+  "archive-lost": "bg-blue-500/25",
   today: "bg-gray-700 ring-1 ring-blue-400",
   missed: "bg-gray-800",
 };
@@ -31,10 +32,32 @@ const OUTCOME_STYLE: Record<DayOutcome, string> = {
 const OUTCOME_LABEL: Record<DayOutcome, string> = {
   won: "solved",
   lost: "played, not solved",
-  archived: "caught up later",
+  "archive-won": "caught up later",
+  "archive-lost": "caught up later, not solved",
   today: "today, not played yet",
   missed: "not played",
 };
+
+/**
+ * The grid in words, for the one element a screen reader reads out.
+ *
+ * Counted over the squares actually drawn. It used to name "the last 56 days"
+ * and then report lifetime totals, which stop agreeing with the grid as soon as
+ * anyone has played for longer than eight weeks.
+ */
+function describeCalendar(outcomes: DayOutcome[]): string {
+  const count = (...kinds: DayOutcome[]) =>
+    outcomes.filter((outcome) => kinds.includes(outcome)).length;
+  const days = outcomes.length;
+
+  return (
+    `Daily puzzle results for the last ${days} day${days === 1 ? "" : "s"}: ` +
+    `${count("won")} solved, ${count("lost")} not solved, ` +
+    `${count("archive-won")} caught up later, ` +
+    `${count("archive-lost")} caught up but not solved, ` +
+    `${count("missed", "today")} not played.`
+  );
+}
 
 /**
  * The record behind the streak: which days went how, and what has been earned.
@@ -57,6 +80,7 @@ export function DailyStreakPanel() {
     [today],
   );
 
+  const outcomes = days.map((day) => outcomeForDay(state, day, today));
   const badges = useMemo(() => badgesFor(state), [state]);
   const earned = badges.filter((badge) => badge.earned);
   const streak = effectiveStreak(state, today);
@@ -104,12 +128,10 @@ export function DailyStreakPanel() {
         <div
           className="grid grid-flow-col grid-rows-7 gap-1 justify-start"
           role="img"
-          aria-label={`Daily puzzle results for the last ${days.length} days: ${
-            state.won
-          } solved, ${state.played - state.won} missed.`}
+          aria-label={describeCalendar(outcomes)}
         >
-          {days.map((day) => {
-            const outcome = outcomeForDay(state, day, today);
+          {days.map((day, index) => {
+            const outcome = outcomes[index];
             return (
               <span
                 key={day}
@@ -123,7 +145,8 @@ export function DailyStreakPanel() {
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
           <Legend className="bg-green-500" label="Solved" />
           <Legend className="bg-red-500/70" label="Missed" />
-          <Legend className="bg-blue-500/60" label="From the archive" />
+          <Legend className="bg-blue-500/60" label="Caught up" />
+          <Legend className="bg-blue-500/25" label="Caught up, not solved" />
           <Legend className="bg-gray-800" label="Never played" />
         </div>
       </div>

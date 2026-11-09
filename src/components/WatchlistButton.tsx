@@ -107,13 +107,16 @@ export function WatchlistButton({
   return (
     <button
       onClick={handleClick}
-      disabled={isSaving}
+      // Not native `disabled`: browsers blur a disabled button, so saving a
+      // title from the keyboard dropped focus. `handleClick` refuses a repeat.
+      aria-disabled={isSaving}
       aria-busy={isSaving}
       className={cn(
         "group relative bg-black/70 backdrop-blur-sm rounded-full transition-all duration-300 hover:bg-black/80 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-transparent",
         getVariantStyles(),
         isAnimating && "scale-125",
         isMounted && inWatchlist && "bg-red-600/80 hover:bg-red-600/90",
+        "aria-disabled:cursor-wait",
         className,
       )}
       aria-label={

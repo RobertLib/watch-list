@@ -332,6 +332,63 @@ describe("summarizeYear", () => {
 
     expect(stats.episodes).toBe(0);
   });
+
+  /**
+   * A 100-minute film and a series with fifty ticked 45-minute episodes used to
+   * read "around 2 hours" for the year with nothing to say the series' 2,250
+   * minutes had been dropped – while the all-time page counted them.
+   */
+  it("says how many finished series' time it could not place in the year", () => {
+    const record = input({
+      watched: [
+        watched(1),
+        watched(2, { mediaType: "tv" }),
+        // Finished, but nothing ticked: no time to leave out.
+        watched(3, { mediaType: "tv" }),
+        // Ticked, but finished another year.
+        watched(4, { mediaType: "tv", watchedAt: "2025-06-01T12:00:00.000Z" }),
+      ],
+      episodesByShow: { 2: 50, 4: 10 },
+      facts: Object.fromEntries([
+        facts(1, { runtime: 100 }),
+        facts(2, { mediaType: "tv", runtime: 45 }),
+        facts(3, { mediaType: "tv", runtime: 45 }),
+        facts(4, { mediaType: "tv", runtime: 45 }),
+      ]),
+    });
+
+    expect(summarize(record).minutes).toBe(100 + 50 * 45 + 10 * 45);
+    expect(summarize(record).seriesWithUndatedTime).toBe(0);
+
+    const year = summarizeYear(record, "2026");
+    expect(year.minutes).toBe(100);
+    expect(year.seriesWithUndatedTime).toBe(1);
+    expect(buildStatsShareText(year, "2026 in review", "https://x.test"))
+      .toContain("⏱️ 2 hours, not counting 1 series");
+  });
+
+  it("leaves a series with an unknown runtime to the existing unknown-runtime count", () => {
+    const year = summarizeYear(input({
+      watched: [watched(2, { mediaType: "tv" })],
+      episodesByShow: { 2: 50 },
+      facts: Object.fromEntries([facts(2, { mediaType: "tv", runtime: null })]),
+    }), "2026");
+
+    expect(year.titlesWithoutRuntime).toBe(1);
+    expect(year.seriesWithUndatedTime).toBe(0);
+  });
+
+  it("does not let a year of series alone pass for no time at all when shared", () => {
+    const year = summarizeYear(input({
+      watched: [watched(2, { mediaType: "tv" })],
+      episodesByShow: { 2: 50 },
+      facts: Object.fromEntries([facts(2, { mediaType: "tv", runtime: 45 })]),
+    }), "2026");
+
+    expect(year.minutes).toBe(0);
+    expect(buildStatsShareText(year, "2026 in review", "https://x.test"))
+      .toContain("⏱️ time on 1 series not counted");
+  });
 });
 
 describe("yearsCovered", () => {

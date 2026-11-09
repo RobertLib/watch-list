@@ -108,9 +108,34 @@ const NO_AVAILABILITY: WatchlistAvailability = {
   failedKeys: [],
 };
 
+// `history.replaceState` fires no `hashchange`, so the tab buttons notify the
+// store themselves. `hashchange` still covers links, typed URLs and Back.
+const fragmentListeners = new Set<() => void>();
+
 function subscribeToFragment(onChange: () => void) {
+  fragmentListeners.add(onChange);
   window.addEventListener("hashchange", onChange);
-  return () => window.removeEventListener("hashchange", onChange);
+  return () => {
+    fragmentListeners.delete(onChange);
+    window.removeEventListener("hashchange", onChange);
+  };
+}
+
+/**
+ * Record the open tab in the URL without navigating.
+ *
+ * Assigning `location.hash` used to do this, and it was a navigation: an empty
+ * fragment means "the top of the document", so going back to "To Watch" jumped
+ * the page to the top, and every switch – one per arrow key – stacked another
+ * entry for the Back button to wade through. Replacing the current entry keeps
+ * the link shareable with neither side effect. `null` state is what Next.js
+ * expects here: it copies its own router state into the entry itself.
+ */
+function writeTabToFragment(tab: Tab) {
+  const { pathname, search } = window.location;
+  const fragment = tab === "watched" ? `#${WATCHED_FRAGMENT}` : "";
+  window.history.replaceState(null, "", `${pathname}${search}${fragment}`);
+  for (const listener of fragmentListeners) listener();
 }
 
 function readTabFromFragment(): Tab {
@@ -413,9 +438,9 @@ export function WatchlistPageContent() {
   }
 
   // Writing the fragment is what switches the tab: it notifies the store above
-  // and leaves a URL that can be linked to or reached with the Back button.
+  // and leaves a URL that can be linked to, without a scroll or a Back entry.
   const selectTab = (next: Tab) => {
-    window.location.hash = next === "watched" ? WATCHED_FRAGMENT : "";
+    writeTabToFragment(next);
   };
 
   // The WAI-ARIA tabs pattern: one tab stop for the whole list, and the arrow
@@ -576,8 +601,10 @@ export function WatchlistPageContent() {
             />
             <button
               onClick={handleClearAll}
-              disabled={isClearing}
-              className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-lg font-semibold transition-colors shrink-0"
+              // Not native `disabled`, which blurs the focused button in
+              // browsers; `handleClearAll` already refuses a second clear.
+              aria-disabled={isClearing}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 aria-disabled:opacity-50 aria-disabled:cursor-wait rounded-lg font-semibold transition-colors shrink-0"
             >
               <Trash2 className="w-4 h-4" />
               Clear All

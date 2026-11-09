@@ -11,19 +11,28 @@ on:
   pull_request:
     branches: [main]
 
+# Nothing here writes anywhere. `npm ci` runs every dependency's install
+# scripts, and on a push to main the default token could otherwise write to the
+# repository.
+permissions:
+  contents: read
+
 # A second push to the same branch makes the first run pointless.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Every action is on a major that runs on Node 24. The v4 line ran on Node 20,
+# which the runners have deprecated: they force it onto 24 and annotate every
+# run with a warning saying so.
 jobs:
   check:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           # 26 rather than the `>=20.9.0` next itself asks for: vitest 5 declares
           # `^22.12.0 || ^24.0.0 || >=26.0.0`, so 20 cannot run the suite at all.
@@ -72,7 +81,7 @@ jobs:
       # nothing twice over: `setup-node` above already caches it via `cache: npm`,
       # and this step restores *after* `npm ci` has run, so the copy it put back
       # was one no install would ever read.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}/.next/cache
           key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('src/**/*.ts', 'src/**/*.tsx') }}

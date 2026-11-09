@@ -146,7 +146,11 @@ export function ContinueWatching() {
       <div className="flex gap-4 overflow-x-auto pb-2 snap-x scrollbar-thin">
         {episodes.map((episode) => (
           <UpNextCard
-            key={`${episode.tvId}-${episode.seasonNumber}-${episode.episodeNumber}`}
+            // One card per show, kept across its episodes: when the next
+            // episode replaces a ticked one it arrives in the same card, so
+            // the Watched button that was just pressed keeps keyboard focus
+            // instead of being unmounted from under it.
+            key={episode.tvId}
             episode={episode}
             isWatched={isEpisodeWatched(
               episode.tvId,
@@ -310,8 +314,11 @@ function UpNextCard({
                 setIsSaving(false);
               }
             }}
-            disabled={isWatched || isSaving}
-            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-default text-sm font-medium text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
+            // Not native `disabled`: browsers blur a disabled button, and this
+            // one stays inactive until the next episode loads into the card.
+            // The handler above already refuses a repeat click.
+            aria-disabled={isWatched || isSaving}
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 aria-disabled:opacity-60 aria-disabled:cursor-default text-sm font-medium text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
             aria-label={
               isWatched
                 ? `${episode.showName} ${code} is watched`

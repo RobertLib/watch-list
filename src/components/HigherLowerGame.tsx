@@ -32,7 +32,15 @@ import type {
 } from "@/lib/rating-duel-data";
 import { movieHref } from "@/lib/routes";
 
-type Phase = "loading" | "playing" | "revealed" | "over" | "error" | "next-error";
+type Phase =
+  | "loading"
+  | "playing"
+  /** A guess is being settled: the pair stays up, the choices wait. */
+  | "judging"
+  | "revealed"
+  | "over"
+  | "error"
+  | "next-error";
 
 /**
  * Higher or lower, on TMDB's average score.
@@ -58,6 +66,20 @@ export function HigherLowerGame() {
   const runVersion = useRef(0);
   const pendingRoundVersion = useRef<number | null>(null);
   const isMounted = useRef(false);
+  // Whether this run has saved a streak above the best that stood before it.
+  // Comparing the final streak with `record.best` cannot say: the record is
+  // raised as the run goes, so a run that only equalled the old best matched it
+  // too and was congratulated on "a new best".
+  const [beatBest, setBeatBest] = useState(false);
+
+  // Each control that takes a click is replaced by the next one once the round
+  // moves on, and focus would otherwise fall back to the page. `focusNext` says
+  // where it goes when the next phase renders; set only by the player's own
+  // clicks, so loading the page never pulls focus anywhere.
+  const choicesRef = useRef<HTMLButtonElement>(null);
+  const nextRoundRef = useRef<HTMLButtonElement>(null);
+  const playAgainRef = useRef<HTMLButtonElement>(null);
+  const focusNext = useRef<"choices" | "result" | null>(null);
 
   // Everything already shown this run, so a long streak never repeats a film.
   const seen = useRef<number[]>([]);
@@ -81,6 +103,7 @@ export function HigherLowerGame() {
         setChallenger(null);
         setRevealed(null);
         setStreak(0);
+        setBeatBest(false);
         setPhase("loading");
         setRunId((id) => id + 1);
       }
@@ -122,6 +145,7 @@ export function HigherLowerGame() {
         setChallenger(duel.challenger);
         setRevealed(null);
         setStreak(0);
+        setBeatBest(false);
         setPhase("playing");
       } catch (error) {
         console.error("Error starting higher or lower:", error);
@@ -134,8 +158,25 @@ export function HigherLowerGame() {
     };
   }, [runId]);
 
+  // Focus follows the round. Runs after the phase has rendered, so the control
+  // it moves to exists.
+  useEffect(() => {
+    if (focusNext.current === "result") {
+      if (phase === "revealed") nextRoundRef.current?.focus();
+      else if (phase === "over") playAgainRef.current?.focus();
+      else return;
+    } else if (focusNext.current === "choices") {
+      if (phase !== "playing") return;
+      choicesRef.current?.focus();
+    } else {
+      return;
+    }
+    focusNext.current = null;
+  }, [phase]);
+
   function restart() {
     runVersion.current += 1;
+    focusNext.current = "choices";
     setPhase("loading");
     setRunId((id) => id + 1);
   }
@@ -146,7 +187,9 @@ export function HigherLowerGame() {
     if (phase !== "playing" || pendingRoundVersion.current === version || !champion || !challenger || active === null || active !== getActiveProfileId()) return;
 
     pendingRoundVersion.current = version;
-    setPhase("loading");
+    // Not "loading": that takes the pair and the choices off the screen, and the
+    // button just pressed – focus included – with them.
+    setPhase("judging");
     const isCurrent = () => isMounted.current && version === runVersion.current && active === getActiveProfileId();
 
     try {
@@ -162,6 +205,7 @@ export function HigherLowerGame() {
         setPhase("playing");
         return;
       }
+      focusNext.current = "result";
 
       setRevealed(result.challengerRating);
 
@@ -182,6 +226,9 @@ export function HigherLowerGame() {
           if (!saveRecord(updated)) return "refused";
           pendingRecord.current = EMPTY_RECORD;
           setRecord(updated);
+          // Strictly above what stood before this save; equalling it is not
+          // a new best.
+          if (nextStreak > stored.best) setBeatBest(true);
           return "saved";
         });
       }, "unavailable");
@@ -211,6 +258,7 @@ export function HigherLowerGame() {
     // The film just judged becomes the one to beat – which is what makes this a
     // run rather than a series of unrelated pairs.
     const promoted: RatedFilm = { ...challenger, rating: revealed };
+    focusNext.current = "choices";
     setChampion(promoted);
     setChallenger(null);
     setRevealed(null);
@@ -297,24 +345,41 @@ export function HigherLowerGame() {
         )}
       </div>
 
-      {phase === "playing" && challenger && (
+      {/* Always rendered, so a result written into it is announced; a region
+          that mounts already holding its text is not. */}
+      <p role="status" className="sr-only">
+        {phase === "revealed" && challenger && revealed !== null
+          ? `Correct. ${challenger.title} scored ${revealed.toFixed(1)}. Streak ${streak}.`
+          : phase === "over" && challenger && revealed !== null
+            ? `That one went the other way. ${challenger.title} scored ${revealed.toFixed(1)}. You got ${streak} right${beatBest ? " – a new best" : ""}.`
+            : ""}
+      </p>
+
+      {(phase === "playing" || phase === "judging") && challenger && (
         <div className="space-y-3">
           <p className="text-center text-gray-400 text-sm">
             Did <span className="text-white">{challenger.title}</span> score
             higher or lower than{" "}
             <span className="text-white">{champion.title}</span>?
           </p>
-          <div className="flex gap-3 justify-center">
+          {/* Kept on screen while the round is settled, aria-disabled rather
+              than disabled: native disabled blurs the button just pressed,
+              and unmounting it – as the spinner used to – loses focus too.
+              `guess` refuses a second answer while one is pending. */}
+          <div className="flex gap-3 justify-center" aria-busy={phase === "judging"}>
             <button
+              ref={choicesRef}
               onClick={() => guess("higher")}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-green-600 hover:bg-green-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
+              aria-disabled={phase === "judging"}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-green-600 hover:bg-green-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400 aria-disabled:opacity-60 aria-disabled:cursor-wait"
             >
               <ArrowUp className="w-4 h-4" aria-hidden="true" />
               Higher
             </button>
             <button
               onClick={() => guess("lower")}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-red-600 hover:bg-red-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+              aria-disabled={phase === "judging"}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-red-600 hover:bg-red-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 aria-disabled:opacity-60 aria-disabled:cursor-wait"
             >
               <ArrowDown className="w-4 h-4" aria-hidden="true" />
               Lower
@@ -333,6 +398,7 @@ export function HigherLowerGame() {
         <div className="text-center space-y-3">
           <p className="text-green-300 font-semibold">Correct.</p>
           <button
+            ref={nextRoundRef}
             onClick={next}
             className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
           >
@@ -348,9 +414,10 @@ export function HigherLowerGame() {
           </p>
           <p className="text-gray-400 text-sm">
             You got {streak} right
-            {streak > 0 && streak === record.best && " – a new best."}
+            {beatBest && " – a new best."}
           </p>
           <button
+            ref={playAgainRef}
             onClick={restart}
             className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
           >

@@ -24,26 +24,18 @@ nothing runs on a server at request time. See [Architecture](#architecture).
 - **Compare two lists** — Paste a friend's share link and see what you have both already saved. Both lists live in the URL, so the overlap needs no accounts on either side
 - **Named lists** — Lists of your own beyond the watchlist ("October horror", "films to show my dad"), each shareable as a link
 - **Your stats** — Hours watched, top genres, decades you live in, a histogram of your own scores, achievements, a yearly target and a year in review worth sharing
-- **Profiles** — More than one person per browser, with separate watchlists, ticks, ratings and streaks
+- **Profiles** — More than one person per browser, with separate watchlists, ticks, ratings, streaks and "since you were last here" (see [how personal data is stored](#how-personal-data-is-stored))
 - **Puzzle archive & a second game** — Every daily puzzle that has run is still playable, with a streak calendar and badges; plus "higher or lower", an endless run on TMDb ratings
-- **Since you were last here** — The home page opens with what aired while you were away, rather than looking identical to the last visit. Every followed title is checked in bounded batches before the visit is acknowledged. Unreadable saved titles or a failed or cancelled check keep the previous interval available for retry, including after the connection returns
-- **Offline & installable** — A service worker keeps the app usable with no connection: pages visited before load from cache and fill themselves in from browser storage, and the app's own assets and posters are served from cache
+- **Since you were last here** — The home page opens with what aired while you were away, rather than looking identical to the last visit. Each profile has its own last visit, so someone who follows nothing cannot acknowledge another person's interval. Every followed title is checked in bounded batches before the visit is acknowledged. Unreadable saved titles or a failed or cancelled check keep the previous interval available for retry, including after the connection returns
+- **Offline & installable** — A service worker keeps the app usable with no connection, or one too slow to answer: pages visited before load from cache and fill themselves in from browser storage, and the app's own assets and posters are served from cache
 - **Your own ratings** — Score anything out of ten; rating a title marks it watched. Highly rated titles pull harder on your recommendations and poorly rated ones stop feeding them altogether
-- **Backup & transfer** — Download everything this browser holds as a JSON file and restore it anywhere — every profile, not just the one you are switched into, with ratings, named lists, ranking, goal, streaks and settings included. There is no account, so this is the only copy that exists, and the app says so once your list is big enough to be worth losing
-
-Profile data stays at stable storage addresses; switching changes only the shared active-profile pointer. Profile operations, edits to personal data and settings, and backup restores share a browser lock. Each read-modify-write reads the latest data after acquiring the lock, so changes in different tabs preserve one another. Backup export holds the same lock while reading its complete snapshot. Actions wait for storage before reporting success; legacy cookie migration uses the same lock. Saving a shared list or marking and rating a title keeps its related edits together under that lock. Writes belong to the profile whose data was rendered, even if another tab switches before its storage event arrives. Deleted profiles reject late writes, and obsolete active-profile pointers resolve to the default profile. Existing live keys retain their original owner through an immutable marker, and older parked profile data remains readable until individual stores are edited. Each edit or clear replaces its readable older field in the same storage transaction, releasing space before saving the current value and preserving unrelated stores. A refused write attempts to restore the exact previous values; if the browser also refuses recovery, readers refresh from actual storage. Unreadable older copies remain available for recovery.
-Profile deletion commits one persistent deletion marker before cleaning up its roster entry or stored data. If the browser refuses that marker, the profile and its data remain included in backups. Once the marker is saved, readers treat the deletion as complete even if cleanup fails; stale tabs cannot revive the removed profile.
-
-Personal-data edits require a successful read of the current store before deriving the new value. A refused read aborts the edit and leaves the saved history intact; empty fallbacks used for rendering are never saved as though they were the current data.
-
-When Web Locks are unavailable, including on non-localhost HTTP, IndexedDB transactions provide storage coordination. Tabs with Web Locks take this shared gate too, so both paths coordinate. The coordination database stores no personal data; a refused lock or transaction prevents the edit. When IndexedDB is absent, native Web Locks alone still coordinate the operations.
-
+- **Backup & transfer** — Download everything this browser holds as a JSON file and restore it anywhere — every profile, not just the one you are switched into, with ratings, named lists, ranking, goal, streaks, last visits and settings included. Anything the browser cannot read is named after the download, and its stored text is kept in the file for recovery rather than stopping the backup; a restore never writes it back. There is no account, so this is the only copy that exists, and the app says so once your list is big enough to be worth losing
 - **Shareable lists** — Turn a list into a link that carries the titles in the URL itself. Nothing is stored anywhere; the recipient saves the whole list in one click
-- **Daily film puzzle** — Guess the film from a blurred still. One puzzle a day, the same for everybody, six guesses, a clue per wrong one, and a streak. On the honour system: with no server, the answer is readable by anyone who opens devtools
+- **Daily film puzzle** — Guess the film from a blurred still. One puzzle a day, the same for everybody, six guesses, a clue per wrong one (the fifth miss hands over the last two together, so every clue arrives before the final guess), and a streak. On the honour system: with no server, the answer is readable by anyone who opens devtools
 - **Advanced Filtering & Sorting** — Genre, release year, rating, language, vote count, streaming provider, custom date ranges, multiple sort criteria
 - **Regional streaming info** — Where to watch per country (200+ regions supported), including subscription, free and ad-supported services, with deep-links to provider apps
 - **Genre browsing** — Browse movies and TV shows by genre with pagination
-- **Search** — Instant preview in the header plus a real `/search?q=` page, paginated with linkable URLs, reachable with `/` or `Cmd/Ctrl+K` from anywhere
+- **Search** — Instant preview in the header plus a real `/search?q=` page, paginated with linkable URLs, reachable with `/` or ⌘K (Ctrl+K on Windows/Linux) from anywhere outside a text field
 - **Metadata** — Structured data (JSON-LD), sitemap, robots.txt, OpenGraph/Twitter cards
 - **PWA** — App manifest for mobile installation
 
@@ -112,7 +104,7 @@ Open [http://localhost:3000](http://localhost:3000).
 ```bash
 npm run dev        # Development server (Turbopack)
 npm run build      # Production static export to out/ (Webpack)
-npm run start      # Serve the built out/ locally, to check the export itself
+npm run start      # Serve the built out/ locally, configured to answer like GitHub Pages
 npm run lint       # ESLint
 npm run test       # Vitest
 npm run test:watch # Vitest, watching
@@ -125,18 +117,61 @@ export. The same script runs in CI.
 
 `npm run start` is a local preview of `out/`, not a production server — it runs
 `serve`, which is a dev dependency. There is no production Node process to start:
-a deploy is the contents of `out/` on a static host.
+a deploy is the contents of `out/` on GitHub Pages (see [Deployment](#deployment)).
 
-The Next ESLint plugin's root-directory lookup uses a scoped local adapter in
-`tools/next-eslint-glob` instead of `fast-glob`, whose `braces` dependency has an
-unpatched stack-exhaustion advisory (GHSA-vfj7-8cjw-p6xm). The adapter preserves
-the directory lookup through `tinyglobby`; all Next lint rules remain enabled.
-Remove this override once the upstream plugin drops the vulnerable dependency.
+The preview reads `serve.json` from the repository root. It is passed as
+`--config ../serve.json` because `serve` resolves that path from the directory it
+serves, and a config kept inside `out/` would be published with the site. It makes
+the preview answer the way Pages does where it matters: `/movie` serves
+`movie.html`, a path with no file gets `404.html` with a 404 status (which is
+where the old `/movie/<slug>` URLs are redirected — see
+[Architecture](#architecture)), and a directory is never listed. Without it,
+`serve` answered `/movie/` with `movie.html`, a URL that is a 404 in production.
+What still differs:
 
-The overrides also require patched `compression` (1.8.2+) for the local preview
-and `source-map-js` (1.2.2+) for the build and test toolchain. `sharp` (0.35.5+)
-includes the patched librsvg dependency for GHSA-wq5f-xc86-pv6w. These resolve
-the dependency security advisories without changing the framework version.
+- A trailing slash redirects to the path without it, and the redirect drops the
+  query string; Pages answers `/movie/` and `/movie/?id=550` with a 404. A
+  trailing-slash link that works in the preview is still a broken link.
+- `/movie.html` redirects to `/movie`; Pages serves it as it is.
+- Pages sends `Cache-Control: max-age=600` with every file, so a deploy can take
+  ten minutes to reach a browser that just loaded the page; the preview sends no
+  caching headers, so a rebuild shows on the next reload. The service worker's
+  own update check bypasses that cache in both.
+- The preview is plain HTTP on `localhost` rather than HTTPS. Browsers allow a
+  service worker there, so offline behaviour can be checked in the preview; it
+  is also where the Content Security Policy is enforced outside production,
+  since `next dev` runs without it.
+
+The overrides require patched `compression` (1.8.2+) for the local preview and
+`source-map-js` (1.2.2+) for the build and test toolchain. `sharp` (0.35.5+)
+includes the patched librsvg dependency for GHSA-wq5f-xc86-pv6w, and
+`minimatch` (11.0.1+) under `@typescript-eslint/typescript-estree` closes
+GHSA-g3hv-75wg-m249, which that package's own `^10` range cannot reach. With
+them `npm audit` reports nothing; drop each one once its parent's own range
+admits the fix.
+
+## Deployment
+
+`.github/workflows/ci.yml` runs lint, the typecheck, the test suite in three
+timezones and the build on every push and pull request to `main`. When it passes
+on a push to `main`, `.github/workflows/deploy.yml` builds `out/` again with the
+production settings and publishes it to GitHub Pages at
+[www.watch-list.me](https://www.watch-list.me), the custom domain set in the
+repository's Pages settings.
+
+- **Only the tip of `main` deploys.** Re-running an old CI run completes CI again
+  for that old commit. The deploy checks whether the commit is still what `main`
+  points at and skips it if not, rather than silently rolling the site back; the
+  newer commit deploys when its own CI passes. Running the workflow by hand
+  (`workflow_dispatch`) deploys whatever it is run on — after rotating the token,
+  say.
+- **No token, no deploy.** The `NEXT_PUBLIC_TMDB_API_TOKEN` repository secret is
+  compiled into the bundle, and a build without it would publish a site that
+  answers 401 to everything — so the job fails before building instead.
+  `NEXT_PUBLIC_GA_MEASUREMENT_ID` is an optional repository variable.
+- **Only the publishing job can publish.** `pages: write` and `id-token: write`
+  belong to the deploy job alone; the build job, which runs `npm ci` and with it
+  every dependency's install scripts, can only read the repository.
 
 ## Architecture
 
@@ -156,14 +191,28 @@ It is now a static export, and the shape of everything follows from that:
 - **The TMDb read token ships in the bundle** as `NEXT_PUBLIC_TMDB_API_TOKEN`.
   Requests go from the browser straight to `api.themoviedb.org`.
 - **Anything the catalogue names is addressed by query string**, because a static
-  export can only serve paths that existed at build time: `/movie?id=550-fight-club`
-  rather than `/movie/550-fight-club`. Every link is built through
-  `src/lib/routes.ts`, so that choice lives in one file.
+  export can only serve paths that existed at build time: `/movie?id=fight-club-550`
+  rather than `/movie/fight-club-550`. Every link is built through
+  `src/lib/routes.ts`, so that choice lives in one file. The path forms the
+  server-rendered site published — titles, people, collections, genres and a few
+  listing pages — are answered by Pages with `404.html`, which sends a visitor on
+  to the page that replaced them (`src/components/LegacyPathRedirect.tsx`).
+  Search engines do not follow that: it runs in the browser, on a 404. The old
+  site wrote slugs id-first and later title-first, so a slug with a number at
+  both ends (`1263256-happy-gilmore-2`, `1917-530915`) reads either way; for that
+  shape alone the redirect asks TMDb what the leading number names and keeps the
+  id-first reading only when the rest of the slug is that title.
 - **Settings live in `localStorage`**, behind a small store (`src/lib/settings.ts`)
   that `tmdbApi` can read synchronously and that components subscribe to through
   `useSettings()`. Changing region or platforms re-runs every listing.
 - **There are no API routes and no Server Actions.** What they did is now plain
   async functions in `src/lib/api.ts`, with the same names and signatures.
+- **The Content Security Policy is a `<meta>` tag** in `src/app/layout.tsx`,
+  because Pages cannot send response headers. It has to allow inline scripts —
+  the export writes them into every page and there is no server to mint nonces —
+  but it pins every other origin: TMDb's API and images, Wikipedia and Wikidata,
+  YouTube's thumbnails and player, and Google Analytics when it is configured.
+  A new origin goes into that list in the same change, or production blocks it.
 - **Metadata is built, not patched in.** `src/app/layout.tsx` holds what the whole
   site shares; each route adds its own through `pageMetadata` in
   `src/lib/page-metadata.ts`. The pages addressed by query string are the
@@ -178,8 +227,20 @@ What the migration cost, in full:
   answers on the calendar app's schedule. The `.ics` download next to it is
   unaffected — it is built in the browser.
 - **The daily puzzle is on the honour system.** The film pool ships to the
-  client and the schedule is a pure function of the date.
+  client and the schedule is a pure function of the date. The pool only grows
+  at the end, and each growth adds a `PUZZLE_POOL_GENERATIONS` entry dated a few
+  days ahead (`src/lib/daily-puzzle-pool.ts`), so no day that has already run
+  changes its answer – the tests refuse a pool that grew without one.
 - **SEO on detail pages is gone.** They are empty shells until JavaScript runs.
+
+### How personal data is stored
+
+Profile data stays at stable storage addresses; switching changes only the shared active-profile pointer. Profile operations, edits to personal data and settings, and backup restores share a browser lock. Each read-modify-write reads the latest data after acquiring the lock, so changes in different tabs preserve one another. Backup export holds the same lock while reading its complete snapshot; only an unreadable roster, active pointer or owner marker stops it. Actions wait for storage before reporting success; legacy cookie migration uses the same lock. Saving a shared list or marking and rating a title keeps its related edits together under that lock. Writes belong to the profile whose data was rendered, even if another tab switches before its storage event arrives. Deleted profiles reject late writes, and obsolete active-profile pointers resolve to the default profile. Existing live keys retain their original owner through an immutable marker, and older parked profile data remains readable until individual stores are edited. Each edit or clear replaces its readable older field in the same storage transaction, releasing space before saving the current value and preserving unrelated stores. A refused write attempts to restore the exact previous values; if the browser also refuses recovery, readers refresh from actual storage. Unreadable older copies remain available for recovery. Switching to a profile never reads its stores, so an unreadable one behaves as it would for the active profile: it renders empty, refuses edits, and can be cleared.
+Profile deletion commits one persistent deletion marker before cleaning up its roster entry or stored data. If the browser refuses that marker, the profile and its data remain included in backups. Once the marker is saved, readers treat the deletion as complete even if cleanup fails; stale tabs cannot revive the removed profile.
+
+Personal-data edits require a successful read of the current store before deriving the new value. A refused read aborts the edit and leaves the saved history intact; empty fallbacks used for rendering are never saved as though they were the current data. Clearing a store derives nothing from it, so an explicit clear succeeds even over unreadable data.
+
+When Web Locks are unavailable, including on non-localhost HTTP, IndexedDB transactions provide storage coordination. Tabs with Web Locks take this shared gate too, so both paths coordinate. The coordination database stores no personal data; a refused lock or transaction prevents the edit. When IndexedDB is absent, native Web Locks alone still coordinate the operations.
 
 ## Project Structure
 
@@ -257,13 +318,13 @@ src/
 │   ├── achievements.ts      # Achievements, derived from the stats
 │   ├── goal.ts              # A yearly target and how it is tracking
 │   ├── list-match.ts        # The overlap between two shared lists
-│   ├── last-visit.ts        # When this browser was last here
+│   ├── last-visit.ts        # When each profile was last here
 │   ├── since-last-visit-data.ts # What came out while it was away
 │   ├── watchlist-view.ts    # Watchlist sorting, filtering and availability grouping
 │   ├── watchlist-availability.ts # Where every saved title streams
 │   ├── portable-data.ts     # Backup/restore format and its validation
 │   ├── shared-list*.ts      # Encoding a list into a URL and resolving it back
-│   ├── wikipedia.ts         # Wikipedia Action API client (CORS-enabled)
+│   ├── wikipedia.ts         # Wikipedia/Wikidata Action API client (CORS-enabled)
 │   ├── region*.ts           # Region validation and data
 │   ├── provider-urls.ts     # Streaming provider deep-link URL builders
 │   └── utils.ts             # Slug generation and other utilities
@@ -277,31 +338,51 @@ file in them.
 
 There is no server cache any more, so all of it is in the tab:
 
-- **TMDb responses** — an in-memory `Map` keyed by URL (`src/lib/tmdb-cache.ts`),
-  with per-endpoint TTLs: an hour for trending, two for watch providers, six for
+- **TMDb responses** — in memory, keyed by URL (`src/lib/tmdb-cache.ts`), with
+  per-endpoint TTLs: an hour for trending, two for watch providers, six for
   details, a day for genre lists. It also de-duplicates concurrent requests, so
-  the hero and the trending row cost one call between them. Airing-today results
+  the hero and the trending row cost one call between them. Interactive reads
+  (listings, detail pages, searches) and background loaders (Tonight,
+  statistics, calendar, Continue Watching, recommendations, rated titles, shared
+  lists) have separate budgets – 300 least-recently-used entries and 1,500
+  entries – so a long Tonight or statistics walk cannot evict the listings you go
+  back to, and a walk bigger than its budget keeps the same leading part cached
+  and refetches only the rest. Watch-provider answers are kept for the requested
+  region only. Airing-today results
   expire by local midnight, and open pages refresh when the day changes.
 - **Request rate** — at most eight TMDb requests in flight at once, so a
   watchlist of two hundred titles does not arrive as two hundred parallel calls.
   Interactive requests take priority over queued recommendations, statistics,
-  calendar, Tonight, watchlist availability, Continue Watching and since-last-visit lookups. Leaving
+  calendar, Tonight, watchlist availability, Continue Watching, since-last-visit,
+  rated-title, shared-list and list-comparison lookups. Leaving
   a page cancels its work while preserving requests still needed by another caller.
 - **Service worker** (`public/sw.js`) — the build's own hashed JS and CSS and
   TMDb posters, cache-first: each is immutable at its URL, so a stale entry is
-  unreachable rather than wrong. Pages are cached too, but strictly
-  network-first. Online, the visitor always gets the network's markup, which is
-  what keeps caching the hashed assets safe — that markup always names this
-  deployment's files. The cached copy, keyed by path without the query string, is
-  only the fallback for when there is no connection, with `/offline` behind it.
-  The app also saves HTML and its assets after first registration and client-side
-  navigation, so visiting a page through the menu makes it available offline.
-  A page saved within the last day is not fetched again for that: the host
-  counts every request, and the copy a full load or a Link transition has just
-  stored is already current. Static React Server Component payloads use the same network-first policy,
-  allowing previously visited routes to load through internal links offline.
-  TMDb responses are never cached: a stale-response cache is the classic way a
-  service worker turns into a bug report.
+  unreachable rather than wrong. Pages are cached too, network-first: whenever
+  the network answers within four seconds the visitor gets its markup, which is
+  what keeps caching the hashed assets safe — that markup names this
+  deployment's files. The cached copy, keyed by path without the query string,
+  is the fallback for no connection and for a connection too slow to answer in
+  time, with `/offline` behind it for a page never saved; an answer that arrives
+  late still replaces the copy for next time. Navigation preload starts each
+  page's request while the worker is still starting up.
+  A copy may be a deployment behind, naming chunks the host no longer serves, so
+  the static cache (150 entries — a build is about 90 files) gives up first what
+  no saved page or payload names, least recently used first, and touches the
+  chunks a saved page needs only when that is not enough, oldest page first.
+  Posters go least recently used first, so the watchlist's own outlast a
+  browsing session.
+  The worker registers once the page has loaded and the browser is idle; the app
+  then saves the current page's HTML and assets, and does the same after every
+  client-side navigation, so visiting a page through the menu makes it available
+  offline. A page saved within the last day is not fetched again for that: the
+  copy a full load or a Link transition has just stored is already current, and
+  fetching it again would spend the visitor's data and the host's bandwidth on an
+  identical file. Static React Server Component payloads use the same
+  network-first policy, timeout included, allowing previously visited routes to
+  load through internal links offline. TMDb responses are never cached: a
+  stale-response cache is the classic way a service worker turns into a bug
+  report.
 - **The CDN** — every route is a static file, so it is cached at the edge and a
   crawl costs no compute at all. That was the point of the exercise.
 

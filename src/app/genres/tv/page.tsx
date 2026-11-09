@@ -12,7 +12,7 @@ export const metadata: Metadata = pageMetadata({
 });
 
 /**
- * Series in one genre – `?genre=28-action`, optionally `&provider=netflix`.
+ * Series in one genre – `?genre=drama-18`, optionally `&provider=netflix`.
  *
  * Both used to be path segments. A static export has no route per genre, and
  * the query string is where anything the catalogue names has to live.

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { X, ChevronLeft, ChevronRight, Images } from "lucide-react";
-import { getImageUrl } from "@/lib/tmdb-image";
+import { getImageUrl, type ImageSize } from "@/lib/tmdb-image";
 import type { TMDBImage } from "@/types/tmdb";
 
 interface MediaGalleryProps {
@@ -14,13 +14,30 @@ interface MediaGalleryProps {
 
 type Tab = "backdrops" | "posters";
 
+// What each kind of image is fetched at. `next.config.ts` sets `unoptimized`,
+// so there is no srcset to choose from: the size named here is what every
+// screen downloads, picked for the box the image usually fills on a 2x screen.
+//
+// Grid tiles: backdrops run ~150–330px wide (two or three to a row), posters
+// ~100–200px (three to six). They used to be fetched at w780 either way.
+// The lightbox: a backdrop is shown up to 1024px wide, and a poster is held by
+// the viewport's height to roughly 500px. It used to ask for `original` – a 4K
+// backdrop, several megabytes per arrow press, for detail no screen here shows.
+const GRID_SIZE: Record<Tab, ImageSize> = { backdrops: "w500", posters: "w300" };
+const LIGHTBOX_SIZE: Record<Tab, ImageSize> = {
+  backdrops: "w1280",
+  posters: "w780",
+};
+
 function Lightbox({
   images,
+  kind,
   startIndex,
   title,
   onClose,
 }: {
   images: TMDBImage[];
+  kind: Tab;
   startIndex: number;
   title: string;
   onClose: () => void;
@@ -146,7 +163,7 @@ function Lightbox({
         onClick={(e) => e.stopPropagation()}
       >
         <Image
-          src={getImageUrl(img.file_path, "original")}
+          src={getImageUrl(img.file_path, LIGHTBOX_SIZE[kind])}
           alt={`${title} — image ${index + 1}`}
           fill
           className="object-contain"
@@ -178,6 +195,7 @@ export function MediaGallery({ backdrops, posters, title }: MediaGalleryProps) {
   const [tab, setTab] = useState<Tab>("backdrops");
   const [lightbox, setLightbox] = useState<{
     images: TMDBImage[];
+    kind: Tab;
     index: number;
   } | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -204,12 +222,16 @@ export function MediaGallery({ backdrops, posters, title }: MediaGalleryProps) {
         Gallery
       </h2>
 
-      {/* Tabs */}
+      {/* Tabs – toggle buttons rather than a tablist: there is no arrow-key
+          roving or panel to label, just "which set is showing". aria-pressed is
+          what tells a screen reader that, since the colour alone did not. */}
       {hasBackdrops && hasPosters && (
-        <div className="flex gap-2 mb-4">
+        <div className="flex gap-2 mb-4" role="group" aria-label="Image type">
           {(["backdrops", "posters"] as Tab[]).map((t) => (
             <button
               key={t}
+              type="button"
+              aria-pressed={activeTab === t}
               onClick={() => {
                 setTab(t);
                 setShowAll(false);
@@ -241,14 +263,14 @@ export function MediaGallery({ backdrops, posters, title }: MediaGalleryProps) {
           <button
             key={img.file_path}
             type="button"
-            onClick={() => setLightbox({ images, index: i })}
+            onClick={() => setLightbox({ images, kind: activeTab, index: i })}
             className="relative overflow-hidden rounded-lg bg-gray-800 hover:opacity-90 transition-opacity group"
             style={{ aspectRatio: `${img.width}/${img.height}` }}
             aria-label={`${title} — image ${i + 1}`}
             aria-haspopup="dialog"
           >
             <Image
-              src={getImageUrl(img.file_path, "w780")}
+              src={getImageUrl(img.file_path, GRID_SIZE[activeTab])}
               alt={`${title} — image ${i + 1}`}
               fill
               className="object-cover group-hover:scale-105 transition-transform duration-200"
@@ -270,6 +292,7 @@ export function MediaGallery({ backdrops, posters, title }: MediaGalleryProps) {
       {lightbox && (
         <Lightbox
           images={lightbox.images}
+          kind={lightbox.kind}
           startIndex={lightbox.index}
           title={title}
           onClose={() => setLightbox(null)}

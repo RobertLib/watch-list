@@ -39,8 +39,35 @@ export function mediaItemKey(
 }
 
 /**
- * Creates a slug from title and ID
- * Format: "movie-title-123" or "tv-show-title-456"
+ * Latin letters Unicode does not decompose into a base letter plus a mark, so
+ * stripping marks alone would still drop them: "Ødegaard" came out "degaard".
+ */
+const UNDECOMPOSED_LATIN: Record<string, string> = {
+  ß: "ss",
+  æ: "ae",
+  œ: "oe",
+  ø: "o",
+  đ: "d",
+  ð: "d",
+  ħ: "h",
+  ı: "i",
+  ł: "l",
+  þ: "th",
+};
+
+/**
+ * The slug a title is addressed by: `createSlug("The Dark Knight", 155)` is
+ * "the-dark-knight-155". The id is the half that matters – it is all
+ * `extractIdFromSlug` reads back – and the words are for whoever reads the link.
+ *
+ * Accented Latin is transliterated rather than dropped: NFKD splits "é" into "e"
+ * plus a combining accent, and only the accent is removed, so "Amélie" is
+ * "amelie" rather than "amlie". A script with no Latin spelling to fall back on
+ * – Japanese, Cyrillic, Arabic – leaves nothing, and the slug is then the bare
+ * id. Keeping those letters instead would mean percent-encoding each one (nine
+ * characters per kanji in a shared link) and mixing right-to-left text into
+ * URLs, all to decorate a string whose only working part is the number. The
+ * page shows the real title; the link only has to find it.
  */
 export function createSlug(title: string, id: number): string {
   // Handle undefined/null title
@@ -49,41 +76,70 @@ export function createSlug(title: string, id: number): string {
   }
 
   const slug = title
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "") // Drop the accents NFKD split off their letters
     .toLowerCase()
+    .replace(/[ßæœøđðħıłþ]/g, (letter) => UNDECOMPOSED_LATIN[letter])
     .replace(/[^a-z0-9\s-]/g, "") // Remove special characters
     .replace(/\s+/g, "-") // Replace spaces with dashes
     .replace(/-+/g, "-") // Replace multiple dashes with single dash
     .trim()
     .replace(/^-+|-+$/g, ""); // Remove dashes from start and end
 
-  return `${slug}-${id}`;
+  // Nothing survived. Joining anyway is what produced "-129", which reads as a
+  // negative id rather than as a title with no Latin letters in it.
+  return slug ? `${slug}-${id}` : String(id);
+}
+
+/** A TMDB id the detail pages can use: a positive integer, exactly. */
+function toId(digits: string): number | null {
+  // Enough digits parse to Infinity, and anything past 2^53 to a neighbouring
+  // integer – neither names the title in the URL. Null is what sends a page to
+  // "not found" rather than into a request that can only fail, which it would
+  // then report as TMDB being unreachable.
+  const id = Number(digits);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
 /**
- * Extracts ID from slug
- * Supports both formats:
- * - "movie-title-123" returns 123
- * - "123-movie-title" returns 123
+ * The id out of a slug, or null when there is no usable one.
+ *
+ * Read in this order:
+ * - a bare id, "1405" – what `createSlug` makes of a title with no Latin letters;
+ * - the id on the end, "dexter-1405" – what it makes of every other title, and
+ *   so the form of every link this app has built;
+ * - the id on the front, "1405-dexter" – TMDB's own URL form, still accepted
+ *   for a link typed or pasted by hand. Nothing here generates it.
+ *
+ * The last two collide when a slug has digits at both ends. "1367-rocky-2" is
+ * TMDB's form of id 1367, and it is also exactly what `createSlug` builds for a
+ * film called "1367 Rocky" with id 2. Titles that begin with a number are common
+ * ("28-days-later-170", "2001-a-space-odyssey-62", "12-angry-men-389") and every
+ * one of them is a link this app has handed out, while an id-first slug only
+ * arrives by hand – so with nothing in the string to tell them apart, the form
+ * this app emits wins. The front number is read only when the end one cannot be
+ * an id at all.
+ *
+ * A lone leading dash, "-129", is the trailing form with an empty title. It is
+ * what `createSlug` used to build for a title with no Latin letters, and those
+ * links are still out there in shares and bookmarks, so it keeps resolving.
  */
 export function extractIdFromSlug(slug: string): number | null {
-  // Try to match pure numeric ID (e.g., "1405")
+  if (typeof slug !== "string") return null;
+
+  // A bare id, e.g. "1405"
   if (/^\d+$/.test(slug)) {
-    return parseInt(slug, 10);
+    return toId(slug);
   }
 
-  // Try to match ID at the end (e.g., "dexter-1405")
-  let match = slug.match(/-(\d+)$/);
-  if (match) {
-    return parseInt(match[1], 10);
-  }
+  // The id at the end, e.g. "dexter-1405"
+  const trailing = /-(\d+)$/.exec(slug);
+  const trailingId = trailing ? toId(trailing[1]) : null;
+  if (trailingId !== null) return trailingId;
 
-  // Try to match ID at the beginning (e.g., "1405-dexter")
-  match = slug.match(/^(\d+)-/);
-  if (match) {
-    return parseInt(match[1], 10);
-  }
-
-  return null;
+  // The id at the beginning, e.g. "1405-dexter"
+  const leading = /^(\d+)-/.exec(slug);
+  return leading ? toId(leading[1]) : null;
 }
 
 // Dates used to be handled here too. They live in `dates.ts` now: reading a

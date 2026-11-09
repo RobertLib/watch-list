@@ -440,6 +440,10 @@ export interface MovieDetails extends Omit<Movie, "genre_ids"> {
   reviews?: ReviewsResponse;
   release_dates?: ReleaseDatesResponse;
   images?: ImagesResponse;
+  external_ids?: {
+    imdb_id?: string | null;
+    wikidata_id?: string | null;
+  };
 }
 
 export interface TVShowDetails extends Omit<TVShow, "genre_ids"> {

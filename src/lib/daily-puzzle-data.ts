@@ -1,7 +1,11 @@
 import { getCachedMovieDetails } from "./tmdb-cache";
 import { createSlug } from "./utils";
 import { getImageUrlOrNull } from "./tmdb-image";
-import { PUZZLE_POOL, type PuzzleEntry } from "./daily-puzzle-pool";
+import {
+  PUZZLE_POOL,
+  PUZZLE_POOL_GENERATIONS,
+  type PuzzleEntry,
+} from "./daily-puzzle-pool";
 import {
   IMAGE_STEPS,
   MAX_GUESSES,
@@ -61,12 +65,33 @@ export interface DailyPuzzle {
 }
 
 /**
+ * How many films of the pool a day's walk strides through.
+ *
+ * The last generation that had begun by `day`; a day before the first one – only
+ * reachable from the archive's own arithmetic – reads the first. See
+ * `PUZZLE_POOL_GENERATIONS` for why this is not simply the pool's length.
+ */
+function poolLengthForDay(day: string): number {
+  let length = PUZZLE_POOL_GENERATIONS[0]?.length ?? 0;
+
+  for (const generation of PUZZLE_POOL_GENERATIONS) {
+    // Day strings sort lexicographically, so "on or after" needs no parsing.
+    if (generation.from <= day) length = generation.length;
+  }
+
+  // Never past the end of the array: a generation the pool cannot fill is a
+  // broken schedule, which the pool tests refuse, but it must not reach an
+  // `undefined` entry here.
+  return Math.min(length, PUZZLE_POOL.length);
+}
+
+/**
  * The puzzle for a given day.
  *
- * Note that the schedule is a function of the pool's length: appending to
- * `PUZZLE_POOL` reshuffles which film lands on which future day. That is fine for
- * a daily game – but it does mean a deploy that grows the pool mid-day changes
- * that day's answer, so grow it between days rather than during one.
+ * The walk is a function of how much of the pool it covers, which is fixed per
+ * generation rather than read from `PUZZLE_POOL.length`. Appending films with a
+ * new generation dated in the future leaves every day that has already begun
+ * on the film it had; see `PUZZLE_POOL_GENERATIONS` for how to grow the pool.
  */
 export function pickPuzzleForDay(day: string): DailyPuzzle | null {
   if (!isDayString(day)) return null;
@@ -74,7 +99,7 @@ export function pickPuzzleForDay(day: string): DailyPuzzle | null {
   const number = puzzleNumberForDay(day);
   if (!Number.isFinite(number)) return null;
 
-  const length = PUZZLE_POOL.length;
+  const length = poolLengthForDay(day);
   if (length === 0) return null;
 
   const index = positiveModulo(number * coprimeStride(length), length);

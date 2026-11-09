@@ -1,25 +1,67 @@
-import Image from "next/image";
-import { Movie, TVShow } from "@/types/tmdb";
-import { tmdbApi } from "@/lib/tmdb";
+"use client";
 
-interface PageHeroContentProps {
-  title: string;
-  description: string;
-  backgroundItem: Movie | TVShow;
+import Image from "next/image";
+import { useLocalDay } from "@/hooks/useLocalDay";
+import { getImageUrl } from "@/lib/tmdb-image";
+
+type BackdropKind = "movie" | "tv";
+
+/**
+ * The two backdrops a banner can show. Hard-coded rather than fetched: this is
+ * decoration, and a page's first paint should not wait on a request for
+ * decoration.
+ */
+const BACKDROPS: Record<BackdropKind, { title: string; backdropPath: string }> =
+  {
+    movie: {
+      title: "Avengers: Infinity War",
+      backdropPath: "/7RyHsO4yDXtBv1zUU3mTpHeQ0d5.jpg",
+    },
+    tv: {
+      title: "Arcane",
+      backdropPath: "/rkB4LyZHo1NHXFEDHl9vSD9r1lI.jpg",
+    },
+  };
+
+/**
+ * What a mixed banner shows before the browser has said what day it is – in
+ * the prerendered HTML, and in the hydration pass that has to match it.
+ */
+const UNDATED_BACKDROP: BackdropKind = "movie";
+
+/**
+ * The backdrop a mixed banner shows on a given local day: films one day,
+ * series the next.
+ *
+ * Counted in whole days since the epoch rather than by day of the year, which
+ * repeats itself across New Year (the 365th and the 1st are both odd).
+ */
+export function backdropForDay(day: string): BackdropKind {
+  const [year, month, date] = day.split("-").map(Number);
+  const dayNumber = Math.floor(Date.UTC(year, month - 1, date) / 86_400_000);
+  return dayNumber % 2 === 0 ? "movie" : "tv";
 }
 
 function PageHeroContent({
   title,
   description,
-  backgroundItem,
-}: PageHeroContentProps) {
-  const backdropUrl = tmdbApi.getImageUrl(
-    backgroundItem.backdrop_path,
-    "original",
-  );
+  backdrop,
+  settled,
+}: {
+  title: string;
+  description: string;
+  backdrop: BackdropKind;
+  /** False while the backdrop may still be swapped for another once hydrated. */
+  settled: boolean;
+}) {
+  const { title: itemTitle, backdropPath } = BACKDROPS[backdrop];
 
-  const itemTitle =
-    "title" in backgroundItem ? backgroundItem.title : backgroundItem.name;
+  // w1280, not `original`: TMDB's originals are often 1920–3840px wide, and
+  // this is the page's largest paint, so its weight is what the first view
+  // waits on. The browser cannot be offered a choice of sizes – `next/image`
+  // drops `srcSet` under `unoptimized` – and under two near-black gradients
+  // 1280px is the better trade even where a wide 2x screen could use more.
+  const backdropUrl = getImageUrl(backdropPath, "w1280");
 
   return (
     <div className="relative h-[40vh] sm:h-[45vh] lg:h-[50vh] w-full overflow-hidden">
@@ -30,7 +72,10 @@ function PageHeroContent({
           alt={`Background image for ${itemTitle}`}
           fill
           className="object-cover object-top"
-          priority
+          // A preload is a promise to use the file. A mixed banner may replace
+          // its prerendered backdrop the moment it hydrates, so it only asks
+          // for the image not to wait for layout, as a lazy one would.
+          {...(settled ? { preload: true } : { loading: "eager" as const })}
         />
         <div className="absolute inset-0 bg-linear-to-r from-black/90 via-black/60 to-black/30" />
         <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/40 to-transparent" />
@@ -56,121 +101,61 @@ function PageHeroContent({
   );
 }
 
-interface PageHeroProps {
-  title: string;
-  description: string;
-  mediaType?: "movie" | "tv" | "all";
-}
-
-// Helper function to get day of year (outside component to avoid impure function call during render)
-function getDayOfYear() {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), 0, 0);
-  const diff = now.getTime() - start.getTime();
-  return Math.floor(diff / 86400000);
-}
-
 /**
- * The banner at the top of a listing page.
+ * A banner that alternates between the two backdrops by the visitor's day.
  *
- * The backdrop is one of two hard-coded titles rather than something fetched:
- * it is decoration, and a page's first paint should not wait on a request for
- * decoration.
+ * It used to pick in a Server Component, which in a static export means once,
+ * at build time: "changes daily" was true for the day of the build and then
+ * frozen until the next one. The day has to be read in the browser – and
+ * because the prerendered HTML cannot know it, the hydration pass renders the
+ * same undated choice the HTML holds, and the real one replaces it after.
+ * `useLocalDay` also turns the page over at midnight while it stays open.
  */
-export function PageHero({
-  title,
-  description,
-  mediaType = "all",
-}: PageHeroProps) {
-  let backgroundItem: Movie | TVShow | null = null;
-
-  // Hard-coded rather than fetched: this is decoration, and a page's first
-  // paint should not wait on a request for decoration.
-  const staticBackgrounds = {
-    movie: {
-      id: 299536,
-      title: "Avengers: Infinity War",
-      overview:
-        "As the Avengers and their allies have continued to protect the world from threats too large for any one hero to handle, a new danger has emerged from the cosmic shadows: Thanos.",
-      backdrop_path: "/7RyHsO4yDXtBv1zUU3mTpHeQ0d5.jpg",
-      poster_path: "/7WsyChQLEftFiDOVTGkv3hFpyyt.jpg",
-      release_date: "2018-04-25",
-      vote_average: 8.2,
-      vote_count: 25000,
-      genre_ids: [12, 878, 28],
-      adult: false,
-      original_language: "en",
-      original_title: "Avengers: Infinity War",
-      popularity: 83.0,
-      video: false,
-      media_type: "movie" as const,
-    },
-    tv: {
-      id: 94605,
-      name: "Arcane",
-      overview:
-        "Amid the stark discord of twin cities Piltover and Zaun, two sisters fight on rival sides of a war between magic technologies and clashing convictions.",
-      backdrop_path: "/rkB4LyZHo1NHXFEDHl9vSD9r1lI.jpg",
-      poster_path: "/fqldf2t8ztc9aiwn3k6mlX3tvRT.jpg",
-      first_air_date: "2021-11-06",
-      vote_average: 8.7,
-      vote_count: 4500,
-      genre_ids: [16, 18, 10765],
-      adult: false,
-      original_language: "en",
-      original_name: "Arcane",
-      popularity: 120.0,
-      media_type: "tv" as const,
-    },
-  };
-
-  if (mediaType === "movie") {
-    backgroundItem = staticBackgrounds.movie;
-  } else if (mediaType === "tv") {
-    backgroundItem = staticBackgrounds.tv;
-  } else {
-    // For "all" use stable selection based on date (changes daily)
-    const dayOfYear = getDayOfYear();
-    const useMovies = dayOfYear % 2 === 0;
-    backgroundItem = useMovies ? staticBackgrounds.movie : staticBackgrounds.tv;
-  }
-
-  if (!backgroundItem || !backgroundItem.backdrop_path) {
-    return <PageHeroSkeleton title={title} description={description} />;
-  }
-
-  return (
-    <PageHeroContent
-      title={title}
-      description={description}
-      backgroundItem={backgroundItem}
-    />
-  );
-}
-
-function PageHeroSkeleton({
+function DailyPageHero({
   title,
   description,
 }: {
   title: string;
   description: string;
 }) {
+  const day = useLocalDay();
+
   return (
-    <div className="relative h-[40vh] sm:h-[45vh] lg:h-[50vh] bg-gray-800 animate-pulse">
-      <div className="absolute inset-0 bg-linear-to-t from-gray-900 via-gray-900/50 to-transparent" />
-      <div className="absolute inset-0 flex items-center py-4 sm:py-6">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 w-full">
-          <div className="space-y-3 sm:space-y-4 max-w-2xl">
-            <div className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white leading-tight">
-              {title}
-            </div>
-            <p className="text-base sm:text-lg lg:text-xl text-gray-200 leading-relaxed max-w-xl">
-              {description}
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
+    <PageHeroContent
+      title={title}
+      description={description}
+      backdrop={day ? backdropForDay(day) : UNDATED_BACKDROP}
+      settled={false}
+    />
   );
 }
 
+interface PageHeroProps {
+  title: string;
+  description: string;
+  mediaType?: "movie" | "tv" | "all";
+}
+
+/**
+ * The banner at the top of a listing page: a film's backdrop on /movies, a
+ * series' on /tv-shows, and on a page about both – /genres – one or the other,
+ * changing daily.
+ */
+export function PageHero({
+  title,
+  description,
+  mediaType = "all",
+}: PageHeroProps) {
+  if (mediaType === "all") {
+    return <DailyPageHero title={title} description={description} />;
+  }
+
+  return (
+    <PageHeroContent
+      title={title}
+      description={description}
+      backdrop={mediaType}
+      settled
+    />
+  );
+}

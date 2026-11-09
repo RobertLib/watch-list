@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createProfileLockManager } from "../test/profile-locks";
+import { restoreProfileRoster } from "../test/profile-restore";
 import { PROFILE_ROSTER_LOCK } from "./profile-roster-lock";
 import {
   ACTIVE_PROFILE_STORAGE_KEY,
@@ -10,9 +11,9 @@ import {
   deleteProfile,
   getActiveProfileId,
   getProfiles,
+  inspectProfileSlot,
   renameProfile,
   readProfileSlot,
-  restoreProfiles,
   sanitizeProfiles,
   subscribeProfiles,
   switchProfile,
@@ -23,10 +24,12 @@ import { subscribeToGameState } from "./daily-game";
 import { GOAL_STORAGE_KEY, getGoalSnapshot, subscribeToGoal } from "./goal";
 import { subscribeToRatings } from "./ratings";
 import { WATCHLIST_STORAGE_KEY, getWatchlist } from "./watchlist";
+import { LEGACY_LAST_VISIT_STORAGE_KEY, readLastVisit } from "./last-visit";
 import {
   PROFILE_STORAGE_OWNER_KEY,
   deletedProfileKey,
   getProfileStorageOwner,
+  isProfileStorageOwnerAvailable,
   profileStoreKey,
   readProfileStore,
   withProfileStorage,
@@ -182,30 +185,52 @@ describe("switchProfile", () => {
     ["an invalid slot value", JSON.stringify({ [WATCHLIST_STORAGE_KEY]: { not: "a string" } })],
     ["malformed slot JSON", "{not json"],
     ["malformed store JSON", JSON.stringify({ [WATCHLIST_STORAGE_KEY]: "[not json" })],
-  ])("keeps both profiles unchanged when the incoming slot has %s", async (_label, raw) => {
+  ])("switches to a profile whose slot has %s and treats that store as the active profile would", async (_label, raw) => {
     seedTwoProfiles();
     storage.setItem("profile-data:p2", raw);
     const before = storage.snapshot();
-    expect(await switchProfileWithResult("p2")).toEqual({ ok: false, key: null, rolledBack: true });
-    expect(storage.snapshot()).toEqual(before);
+
+    expect(await switchProfileWithResult("p2")).toEqual({ ok: true });
+
+    // Only the pointer moved; the unreadable copy is still there to recover.
+    expect(storage.snapshot()).toEqual({ ...before, [ACTIVE_PROFILE_STORAGE_KEY]: "p2" });
+    // It renders empty, and an edit derived from that empty fallback is refused…
+    expect(getWatchlist()).toEqual([]);
+    expect(() => writeProfileStore(WATCHLIST_STORAGE_KEY, '["derived"]')).toThrow();
+    expect(storage.getItem("profile-data:p2")).toBe(raw);
+    // …while an explicit clear replaces it, leaving the older copy recoverable.
+    writeProfileStore(WATCHLIST_STORAGE_KEY, null);
+    expect(getWatchlist({ strict: true })).toEqual([]);
+    expect(storage.getItem("profile-data:p2")).toBe(raw);
   });
 
-  it("preserves an unreadable incoming slot so switching can be retried", async () => {
+  it("switches without reading the incoming profile's stores", async () => {
     seedTwoProfiles();
     const before = storage.snapshot();
     const read = storage.getItem.bind(storage);
-    let refuse = true;
     vi.spyOn(storage, "getItem").mockImplementation((key) => {
-      if (key === "profile-data:p2" && refuse) {
-        refuse = false;
-        throw new DOMException("Read denied", "SecurityError");
-      }
+      if (key === "profile-data:p2") throw new DOMException("Read denied", "SecurityError");
       return read(key);
     });
-    expect(await switchProfile("p2")).toBe(false);
-    expect(storage.snapshot()).toEqual(before);
+
     expect(await switchProfile("p2")).toBe(true);
+    expect(storage.snapshot()).toEqual({ ...before, [ACTIVE_PROFILE_STORAGE_KEY]: "p2" });
+    vi.mocked(storage.getItem).mockRestore();
     expect(readProfileSlot("p2")[WATCHLIST_STORAGE_KEY]).toBe('["theirs"]');
+  });
+
+  it("succeeds for the profile another tab already switched to, and tells this tab", async () => {
+    seedTwoProfiles();
+    // The other tab's switch has been saved; this tab has not heard about it.
+    storage.setItem(ACTIVE_PROFILE_STORAGE_KEY, "p2");
+    const before = storage.snapshot();
+    const listener = vi.fn();
+    const stop = subscribeProfiles(listener);
+
+    expect(await switchProfileWithResult("p2")).toEqual({ ok: true });
+    expect(storage.snapshot()).toEqual(before);
+    expect(listener).toHaveBeenCalled();
+    stop();
   });
 
   it("refuses to switch to a profile that does not exist", async () => {
@@ -415,10 +440,109 @@ describe("readProfileSlot", () => {
   );
 });
 
-describe("restoreProfiles", () => {
+describe("inspectProfileSlot", () => {
+  it("keeps every readable store and the exact text of each unreadable one", () => {
+    seedTwoProfiles();
+    storage.setItem("profile-data:p2", JSON.stringify({
+      [WATCHLIST_STORAGE_KEY]: '["theirs"]',
+      [GOAL_STORAGE_KEY]: "{not json",
+      ratings: { not: "a string" },
+    }));
+
+    expect(inspectProfileSlot("p2")).toEqual({
+      slot: { [WATCHLIST_STORAGE_KEY]: '["theirs"]' },
+      unreadable: { [GOAL_STORAGE_KEY]: "{not json", ratings: '{"not":"a string"}' },
+    });
+  });
+
+  it("keeps a whole unparseable slot for each store that falls back to it", () => {
+    seedTwoProfiles();
+    writeProfileStore(WATCHLIST_STORAGE_KEY, '["edited"]', "p2");
+    storage.setItem("profile-data:p2", "{not json");
+
+    const { slot, unreadable } = inspectProfileSlot("p2");
+    expect(slot).toEqual({ [WATCHLIST_STORAGE_KEY]: '["edited"]' });
+    expect(Object.values(unreadable).every((raw) => raw === "{not json")).toBe(true);
+    expect(unreadable).not.toHaveProperty(WATCHLIST_STORAGE_KEY);
+  });
+
+  it("reports a refused read without text to keep", () => {
+    seedTwoProfiles();
+    const read = storage.getItem.bind(storage);
+    vi.spyOn(storage, "getItem").mockImplementation((key) => {
+      if (key === "profile-data:p2") throw new DOMException("Read denied", "SecurityError");
+      return read(key);
+    });
+
+    expect(inspectProfileSlot("p2").unreadable[WATCHLIST_STORAGE_KEY]).toBeNull();
+  });
+});
+
+describe("a roster the app has to repair", () => {
+  // Each of these used to resolve as an available owner while missing from
+  // the list, so the switcher showed nobody active and every export failed.
+  const sixth = { id: "p6", name: "Sixth" };
+  const rosters: [string, { id: string; name: string }[], string][] = [
+    ["an entry past the cap", [
+      { id: DEFAULT_PROFILE_ID, name: "Me" }, { id: "p2", name: "Two" },
+      { id: "p3", name: "Three" }, { id: "p4", name: "Four" }, { id: "p5", name: "Five" }, sixth,
+    ], "p6"],
+    ["an over-long id", [{ id: DEFAULT_PROFILE_ID, name: "Me" }, { id: "x".repeat(65), name: "Long" }], "x".repeat(65)],
+    ["a zero-width name", [{ id: DEFAULT_PROFILE_ID, name: "Me" }, { id: "zw", name: "\u200b\u200b" }], "zw"],
+  ];
+
+  it.each(rosters)("neither lists nor reads and writes a profile with %s", async (_label, roster, id) => {
+    storage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(roster));
+    storage.setItem(PROFILE_STORAGE_OWNER_KEY, DEFAULT_PROFILE_ID);
+    storage.setItem(ACTIVE_PROFILE_STORAGE_KEY, id);
+
+    expect(getProfiles().some((profile) => profile.id === id)).toBe(false);
+    expect(isProfileStorageOwnerAvailable(id)).toBe(false);
+    expect(getActiveProfileId()).toBe(DEFAULT_PROFILE_ID);
+    expect(getProfiles().map((profile) => profile.id)).toContain(getActiveProfileId());
+    expect(() => writeProfileStore(WATCHLIST_STORAGE_KEY, '["late"]', id)).toThrow("removed");
+  });
+
+  it("keeps every profile it lists available", () => {
+    storage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(rosters[0][1]));
+    for (const profile of getProfiles()) {
+      expect(isProfileStorageOwnerAvailable(profile.id)).toBe(true);
+    }
+  });
+});
+
+describe("the last-visit stamp shared before profiles had their own", () => {
+  it("is deleted with the original owner it belongs to", async () => {
+    seedTwoProfiles();
+    storage.setItem(PROFILE_STORAGE_OWNER_KEY, "p2");
+    storage.setItem(LEGACY_LAST_VISIT_STORAGE_KEY, "2026-10-01T12:00:00.000Z");
+
+    expect(await deleteProfile("p2")).toBe(true);
+    expect(storage.getItem(LEGACY_LAST_VISIT_STORAGE_KEY)).toBeNull();
+  });
+
+  it("is kept when somebody else is deleted", async () => {
+    seedTwoProfiles();
+    storage.setItem(LEGACY_LAST_VISIT_STORAGE_KEY, "2026-10-01T12:00:00.000Z");
+
+    expect(await deleteProfile("p2")).toBe(true);
+    expect(storage.getItem(LEGACY_LAST_VISIT_STORAGE_KEY)).toBe("2026-10-01T12:00:00.000Z");
+  });
+
+  it("is replaced by a restore of its owner, which cannot fall back to it afterwards", async () => {
+    seedTwoProfiles();
+    storage.setItem(LEGACY_LAST_VISIT_STORAGE_KEY, "2026-10-01T12:00:00.000Z");
+
+    expect(await restoreProfileRoster({ id: DEFAULT_PROFILE_ID, name: "Me" }, [])).toBe(true);
+    expect(storage.getItem(LEGACY_LAST_VISIT_STORAGE_KEY)).toBeNull();
+    expect(readLastVisit(DEFAULT_PROFILE_ID)).toBeNull();
+  });
+});
+
+describe("restoring the profile roster", () => {
   it("restores dormant stores at stable profile addresses and selects the incoming profile", async () => {
     seedTwoProfiles();
-    expect(await restoreProfiles({ id: "p9", name: "Restored" }, [
+    expect(await restoreProfileRoster({ id: "p9", name: "Restored" }, [
       { profile: { id: "p8", name: "Also restored" },
         slot: { [WATCHLIST_STORAGE_KEY]: '["theirs, restored"]' } },
     ])).toBe(true);
@@ -430,7 +554,7 @@ describe("restoreProfiles", () => {
   it("replaces dormant canonical data as well as old parked fallback data", async () => {
     seedTwoProfiles();
     writeProfileStore(WATCHLIST_STORAGE_KEY, '["newer than parked"]', "p2");
-    expect(await restoreProfiles({ id: DEFAULT_PROFILE_ID, name: "Me" }, [
+    expect(await restoreProfileRoster({ id: DEFAULT_PROFILE_ID, name: "Me" }, [
       { profile: { id: "p2", name: "Someone else" },
         slot: { [WATCHLIST_STORAGE_KEY]: '["restored"]' } },
     ])).toBe(true);
@@ -443,7 +567,7 @@ describe("restoreProfiles", () => {
       watchlist: '["old list"]', [GOAL_STORAGE_KEY]: '{"year":"2026","target":52}',
     }));
     writeProfileStore(GOAL_STORAGE_KEY, '{"year":"2026","target":12}', "p2");
-    expect(await restoreProfiles({ id: DEFAULT_PROFILE_ID, name: "Me" }, [
+    expect(await restoreProfileRoster({ id: DEFAULT_PROFILE_ID, name: "Me" }, [
       { profile: { id: "p2", name: "Someone else" }, slot: {} },
     ])).toBe(true);
     expect(readProfileSlot("p2")).toEqual({});
@@ -454,14 +578,14 @@ describe("restoreProfiles", () => {
   it("empties the implicit default profile when it was absent from the backup", async () => {
     seedTwoProfiles();
     storage.setItem("profile-data:default", JSON.stringify({ watchlist: '["older default"]' }));
-    expect(await restoreProfiles({ id: "incoming", name: "Incoming" }, [])).toBe(true);
+    expect(await restoreProfileRoster({ id: "incoming", name: "Incoming" }, [])).toBe(true);
     expect(readProfileSlot(DEFAULT_PROFILE_ID)).toEqual({});
   });
 
   it("removes every representation of a profile absent from the restored roster", async () => {
     seedTwoProfiles();
     writeProfileStore(WATCHLIST_STORAGE_KEY, '["canonical p2"]', "p2");
-    expect(await restoreProfiles({ id: DEFAULT_PROFILE_ID, name: "Me" }, [])).toBe(true);
+    expect(await restoreProfileRoster({ id: DEFAULT_PROFILE_ID, name: "Me" }, [])).toBe(true);
     expect(storage.getItem("profile-data:p2")).toBeNull();
     expect(storage.getItem(profileStoreKey(WATCHLIST_STORAGE_KEY, "p2"))).toBeNull();
     expect(readProfileSlot("p2")).toEqual({});
@@ -471,7 +595,7 @@ describe("restoreProfiles", () => {
   it("leaves profile metadata and stores intact for a file that names no profile", async () => {
     seedTwoProfiles();
     const before = storage.snapshot();
-    expect(await restoreProfiles(null, [])).toBe(false);
+    expect(await restoreProfileRoster(null, [])).toBe(false);
     expect(storage.snapshot()).toEqual(before);
   });
 
@@ -481,7 +605,7 @@ describe("restoreProfiles", () => {
       profile: { id: `x${index}`, name: `Person ${index}` },
       slot: { [WATCHLIST_STORAGE_KEY]: `["list ${index}"]` },
     }));
-    expect(await restoreProfiles({ id: "active-one", name: "Active" }, others)).toBe(true);
+    expect(await restoreProfileRoster({ id: "active-one", name: "Active" }, others)).toBe(true);
     const ids = getProfiles().map(({ id }) => id);
     expect(ids).toHaveLength(MAX_PROFILES);
     expect(ids).toContain("active-one");
@@ -493,7 +617,7 @@ describe("restoreProfiles", () => {
 
   it("does not let the active profile take a seat twice", async () => {
     seedTwoProfiles();
-    expect(await restoreProfiles({ id: "active-one", name: "Active" }, [
+    expect(await restoreProfileRoster({ id: "active-one", name: "Active" }, [
       { profile: { id: "active-one", name: "Active again" }, slot: {} },
       { profile: { id: "x1", name: "Person 1" }, slot: {} },
     ])).toBe(true);
@@ -507,7 +631,7 @@ describe("restoreProfiles", () => {
       writeProfileStore(WATCHLIST_STORAGE_KEY, '["canonical p2"]', "p2");
       const before = storage.snapshot();
       storage.failOn.add(refusedKey);
-      expect(await restoreProfiles({ id: "p9", name: "Restored" }, [
+      expect(await restoreProfileRoster({ id: "p9", name: "Restored" }, [
         { profile: { id: "p2", name: "Someone else" }, slot: { watchlist: '["replacement"]' } },
         { profile: { id: "p8", name: "Also restored" }, slot: { watchlist: '["replacement p8"]' } },
       ])).toBe(false);
@@ -520,7 +644,7 @@ describe("restoreProfiles", () => {
     seedTwoProfiles();
     const before = storage.snapshot();
     storage.byteLimit = storage.usedBytes;
-    expect(await restoreProfiles({ id: "incoming", name: "Incoming" }, [
+    expect(await restoreProfileRoster({ id: "incoming", name: "Incoming" }, [
       { profile: { id: "other", name: "Other" },
         slot: { [WATCHLIST_STORAGE_KEY]: JSON.stringify(["L".repeat(2000)]) } },
     ])).toBe(false);
@@ -537,7 +661,7 @@ describe("subscribeProfiles", () => {
     }));
     const unsubscribe = subscribeProfiles(listener);
 
-    await restoreProfiles({ id: "p9", name: "Restored" }, []);
+    await restoreProfileRoster({ id: "p9", name: "Restored" }, []);
 
     expect(listener).toHaveBeenCalledTimes(1);
     expect(listener.mock.results[0].value).toEqual({
@@ -718,9 +842,9 @@ describe("profile roster writes in independent tabs", () => {
     seedTwoProfiles();
     const [first, second] = await independentProfileTabs();
     const [restored, created] = await Promise.all([
-      first.restoreProfiles({ id: "default", name: "Restored default" }, [
+      restoreProfileRoster({ id: "default", name: "Restored default" }, [
         { profile: { id: "restored", name: "Restored" }, slot: { watchlist: '["restored list"]' } },
-      ]),
+      ], first),
       second.createProfile("Third"),
     ]);
     expect(restored).toBe(true);
@@ -774,7 +898,7 @@ describe("profile roster writes in independent tabs", () => {
       expect(await createProfile("Third")).toBeNull();
       expect(await renameProfile("p2", "Renamed")).toBe(false);
       expect(await deleteProfile("p2")).toBe(false);
-      expect(await restoreProfiles({ id: "incoming", name: "Incoming" }, [])).toBe(false);
+      expect(await restoreProfileRoster({ id: "incoming", name: "Incoming" }, [])).toBe(false);
       expect(await switchProfileWithResult("p2")).toEqual({
         ok: false, key: PROFILES_STORAGE_KEY, rolledBack: true,
       });
@@ -878,7 +1002,7 @@ describe("a refused roster write", () => {
     storage.failOn.add(PROFILES_STORAGE_KEY);
 
     expect(
-      await restoreProfiles({ id: "p9", name: "Restored" }, [
+      await restoreProfileRoster({ id: "p9", name: "Restored" }, [
         {
           profile: { id: "p8", name: "Also restored" },
           slot: { [WATCHLIST_STORAGE_KEY]: '["restored"]' },
@@ -1027,7 +1151,7 @@ describe("deleteProfile", () => {
     storage.failOn.add(PROFILES_STORAGE_KEY);
     expect(await deleteProfile("p2")).toBe(true);
     storage.failOn.clear();
-    expect(await restoreProfiles({ id: DEFAULT_PROFILE_ID, name: "Me" }, [
+    expect(await restoreProfileRoster({ id: DEFAULT_PROFILE_ID, name: "Me" }, [
       { profile: { id: "p2", name: "Restored" }, slot: { watchlist: '["restored"]' } },
     ])).toBe(true);
 

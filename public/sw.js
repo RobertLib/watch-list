@@ -8,8 +8,9 @@
  *      ratings, the stats and the profile are all readable with no network at
  *      all. A generic "you are offline" card in front of data that is sitting
  *      on the device is the wrong answer, so pages visited before are kept and
- *      served when the network is gone. The registrar also saves pages reached
- *      through Next Link, whose RSC requests never navigate a document.
+ *      served when the network is gone, or too slow to answer. The registrar
+ *      also saves pages reached through Next Link, whose RSC requests never
+ *      navigate a document.
  *   2. Serve the build's own JS and CSS from cache. Every file under
  *      `/_next/static/` carries a content hash in its name, so a given URL can
  *      never change meaning – which makes cache-first both safe and the only
@@ -22,14 +23,16 @@
  * TMDB responses are still never cached: those are somebody else's data, they
  * change, and a stale-response cache is the classic way a service worker turns
  * into a bug report about content that will not update. Pages are cached, but
- * strictly network-first – the network's answer is what a visitor gets whenever
- * there is one, and the copy is only a fallback for when there is not. That is
- * what keeps rule 2 safe: an online visitor's markup is always this
- * deployment's, so the hashed assets it names are always ones this deployment
- * emitted. Offline, the markup may be a previous deployment's and the chunks it
- * names may have aged out of the static cache – in which case the page fails
- * exactly the way it does today, which is the floor this can sink to rather
- * than a regression.
+ * network-first – the network's answer is what a visitor gets whenever it
+ * arrives within NETWORK_TIMEOUT, and the copy is only a fallback for when it
+ * does not. That is what keeps rule 2 safe: markup that arrived in time is this
+ * deployment's, so the hashed assets it names are ones this deployment emitted.
+ * The copy – served offline, or on a connection too slow to answer in time –
+ * may be a previous deployment's markup, naming that deployment's chunks, which
+ * the host no longer serves. So the static cache never gives up a chunk a saved
+ * page still names while it has anything else to give up (see
+ * `trimStaticCache`), and a saved page lives no longer than the static caches
+ * its chunks were read from (see `findPreviousStaticCache`).
  *
  * Nothing that could fail the visitor's request is awaited on the way to
  * `respondWith`. Writing to a cache is housekeeping: it happens after the
@@ -45,7 +48,7 @@
 // though, and cannot be: a code-only deploy leaves this file byte-identical, so
 // `install` never re-runs for it. `/offline` is refreshed on activation and
 // then opportunistically after navigations (see `refreshOfflinePage`).
-const VERSION = "v8";
+const VERSION = "v9";
 const SHELL_CACHE = `shell-${VERSION}`;
 const STATIC_CACHE = `static-${VERSION}`;
 const IMAGE_CACHE = `images-${VERSION}`;
@@ -67,6 +70,12 @@ const RSC_CACHE = `rsc-${VERSION}`;
  * lookup works when the browser restarts this worker after activation.
  * A tab kept open across multiple upgrades, or a chunk never cached in the
  * first place, can still require the old deployment to remain on the host.
+ *
+ * The same retention is what lets a saved page outlive a bump: the page cache
+ * is versioned too, so every saved page was stored under this worker, and the
+ * chunks it names are either in this worker's static cache or were read from
+ * the one retained here – which is deleted by the same later bump that deletes
+ * the page.
  */
 function findPreviousStaticCache(keys) {
   let previous = null;
@@ -102,19 +111,24 @@ const OFFLINE_URL = "/offline";
 
 // Posters accumulate quickly on a browsing session; the cache is trimmed to a
 // bound rather than allowed to grow until the browser evicts the whole origin.
+// Least recently used first (see `markUsed`), so a session of browsing does not
+// push out the posters of the visitor's own watchlist, which they see every
+// visit and want offline.
 const MAX_IMAGE_ENTRIES = 200;
 
-// A deploy renames every hashed asset, so the previous build's chunks linger
-// here until they age out. An evicted chunk costs a network fetch and nothing
-// else – the HTML naming it always came from the network – so the bound can be
-// tight enough to stay honest about disk.
+// A deploy renames most hashed assets, so the previous build's chunks linger
+// here until they are evicted – and one build is about ninety files, so a
+// couple of code-only deploys (which leave this file, and so this cache's
+// name, unchanged) fill it. What goes first is decided in `trimStaticCache`.
 const MAX_STATIC_ENTRIES = 150;
 
 /**
  * How many page shells to keep.
  *
  * The whole app is 34 routes, so this holds every page a visitor could reach –
- * the bound is here to cap a cache, not to ration it.
+ * the bound is here to cap a cache, not to ration it. Insertion order is also
+ * recency order here, with no `markUsed`: every online visit stores the page
+ * again, and so does every RSC request for the RSC copies.
  */
 const MAX_PAGE_ENTRIES = 40;
 const MAX_RSC_ENTRIES = 200;
@@ -125,11 +139,41 @@ const MAX_RSC_ENTRIES = 200;
  * The registrar posts CACHE_PAGE on every route change, and most of the time the
  * page is already here and current: a full load was just stored by
  * `handleNavigation`, a Link transition's RSC payload by `handleRsc`. Fetching
- * both again anyway was two CDN requests per page view on a hosting plan that
- * counts every one. A day keeps the offline copy no staler than the visitor's
- * own browsing, and a deploy reaches it through the next full load regardless.
+ * both again anyway would be two requests and a page's worth of bytes on every
+ * route change – out of the visitor's data plan, and out of the host's monthly
+ * bandwidth allowance – to replace a copy with an identical one. A day keeps the
+ * offline copy no staler than the visitor's own browsing, and a deploy reaches
+ * it through the next full load regardless. A copy that is a deploy behind still
+ * opens offline: the chunks it names are kept for it (see `trimStaticCache`).
  */
 const PAGE_REFRESH_INTERVAL = 24 * 60 * 60 * 1000;
+
+/**
+ * How long a page or RSC request may take before a saved copy is served instead.
+ *
+ * A connection that is up but barely moving – a train, a basement, one bar –
+ * otherwise holds the visitor on a blank screen until the browser gives up on
+ * the request, which takes minutes, while the copy that would have rendered
+ * at once sits in the cache. Four seconds is long past what a working mobile
+ * connection needs for one of these files, and short enough to beat the
+ * visitor's patience. Only when there is a copy: with nothing to fall back to
+ * but `/offline`, waiting for the network is still the better answer.
+ *
+ * The request is not abandoned. Its response, whenever it lands, still
+ * replaces the copy, so the next visit gets this deployment's markup.
+ */
+const NETWORK_TIMEOUT = 4000;
+
+/**
+ * How long a cache hit counts as recent before `markUsed` rewrites the entry.
+ *
+ * Eviction reads the order entries were written in, so recency has to be a
+ * write – and rewriting every chunk and poster on every hit would trade one
+ * waste for another. An hour keeps the order true to what the visitor has
+ * used across visits, which is the only scale on which a full cache is ever
+ * trimmed.
+ */
+const RECENCY_INTERVAL = 60 * 60 * 1000;
 
 /**
  * How often `/offline` is re-fetched behind a successful navigation.
@@ -164,6 +208,7 @@ async function cacheOfflinePage(cache) {
       if (!response.ok) continue;
 
       await cache.put(OFFLINE_URL, response.clone());
+      forgetPinnedAssets();
       await cachePageAssets(response);
       return true;
     } catch {
@@ -214,10 +259,28 @@ self.addEventListener("install", (event) => {
   );
 });
 
+/**
+ * Ask the browser to start each navigation's request while this worker boots.
+ *
+ * Without it, every navigation waits for the worker to start – tens of
+ * milliseconds on a desktop, a good deal more on a phone that stopped it – and
+ * only then sends the request `handleNavigation` was always going to send. With
+ * it, the two overlap, and `handleNavigation` picks the response up from
+ * `preloadResponse` instead of fetching again. Feature-detected: an engine
+ * without it simply keeps the old order.
+ */
+function enableNavigationPreload() {
+  const preload = self.registration && self.registration.navigationPreload;
+  if (!preload) return Promise.resolve();
+  return Promise.resolve()
+    .then(() => preload.enable())
+    .catch(() => undefined);
+}
+
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches
-      .keys()
+    enableNavigationPreload()
+      .then(() => caches.keys())
       .then((keys) => {
         const previous = findPreviousStaticCache(keys);
         previousStaticCachePromise = Promise.resolve(previous);
@@ -239,7 +302,12 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-/** Oldest-first eviction. Insertion order is what `keys()` returns. */
+/**
+ * Least-recently-written-first eviction. `keys()` returns entries in the order
+ * they were written, and `put` over an existing entry moves it to the end – so
+ * with `markUsed` rewriting hits, the front of the list is what has gone unused
+ * longest.
+ */
 async function trimCache(cacheName, maxEntries) {
   const cache = await caches.open(cacheName);
   const keys = await cache.keys();
@@ -249,6 +317,39 @@ async function trimCache(cacheName, maxEntries) {
   await Promise.all(
     keys.slice(0, keys.length - maxEntries).map((key) => cache.delete(key)),
   );
+}
+
+/**
+ * When this worker stored a copy, carried on the copy itself.
+ *
+ * Not the response's `Date`: a CDN may answer from its cache with the Date of
+ * the original fetch, hours old, which would make every copy look stale and
+ * bring back the re-fetch on every route change. Pages and RSC payloads read it
+ * to decide whether CACHE_PAGE should re-fetch them; chunks and posters, to
+ * decide whether a hit is worth rewriting (see `markUsed`); and the static
+ * cache's eviction, to rank the assets saved pages name (see `pinnedAssets`).
+ */
+const SAVED_AT_HEADER = "X-SW-Saved-At";
+
+/**
+ * Re-wrap a response, body unread, with the moment it is being stored. Replaces
+ * any stamp it already carries – a rewritten hit has one, and two values in
+ * one header would read as no number at all.
+ */
+function withSavedAt(response) {
+  const headers = new Headers(response.headers);
+  headers.set(SAVED_AT_HEADER, String(Date.now()));
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+/** Whether a copy carries a stamp younger than `interval`. */
+function savedWithin(response, interval) {
+  const savedAt = Number(response?.headers.get(SAVED_AT_HEADER));
+  return savedAt > 0 && Date.now() - savedAt < interval;
 }
 
 /**
@@ -271,9 +372,149 @@ function storeInCache(cacheName, request, response, maxEntries) {
     .open(cacheName)
     .then(async (cache) => {
       await cache.put(request, response);
-      await trimCache(cacheName, maxEntries);
+      // A new page or payload can name chunks no saved copy named before.
+      if (cacheName === PAGE_CACHE || cacheName === RSC_CACHE) forgetPinnedAssets();
+      if (cacheName === STATIC_CACHE) await trimStaticCacheInTurn();
+      else await trimCache(cacheName, maxEntries);
     })
     .catch(() => undefined);
+}
+
+/**
+ * Record a cache hit as a use, off the critical path.
+ *
+ * Without this, a hit moved nothing, and "oldest" meant "first stored" rather
+ * than "least used". The first things stored are the ones every page needs and
+ * that outlive deploys – the React runtime, the layout's chunks, the font, CSS
+ * that did not change – and the posters on the visitor's own watchlist. They
+ * were exactly what a full cache gave up first, and exactly what an offline
+ * visit cannot do without.
+ *
+ * Rewritten at most once per RECENCY_INTERVAL, judged by the stamp the copy
+ * carries, so a page of twenty chunks is not twenty disk writes per view. A
+ * copy stored before stamps existed has none, and is rewritten on its first
+ * hit. Must be called before `cached` is returned: the clone has to be taken
+ * while its body is still unread.
+ */
+function markUsed(cacheName, request, cached, event) {
+  if (!event || savedWithin(cached, RECENCY_INTERVAL)) return;
+  event.waitUntil(
+    caches
+      .open(cacheName)
+      .then((cache) => cache.put(request, withSavedAt(cached.clone())))
+      .catch(() => undefined),
+  );
+}
+
+/**
+ * Every `/_next/static/` path a saved copy names, with how recent it is.
+ *
+ * Read from the pages, the RSC payloads and the offline page in the cache,
+ * because those are what an offline visit – or a visit on a connection that
+ * timed out – will render, and each is markup from whichever deployment it was
+ * saved under. A chunk one of them names is not dead weight from a retired
+ * build: it is the only copy of something that copy cannot load without,
+ * because the host serves the current deployment and nothing older.
+ *
+ * Each path maps to the stamp of the newest copy naming it – the offline page
+ * counts as newest of all, since it is the fallback for every route never
+ * saved. Matching is textual and generous on purpose: HTML names assets in
+ * `src`/`href` attributes and RSC payloads as bare `static/chunks/…` strings,
+ * and a false match only keeps a file a little longer, while a missed one breaks
+ * a page.
+ *
+ * Kept for the life of this worker and dropped whenever a page, a payload or the
+ * offline page is stored, so a full static cache costs one pass over the saved
+ * copies per new page rather than one per evicted chunk.
+ */
+let pinnedAssetsPromise;
+
+function forgetPinnedAssets() {
+  pinnedAssetsPromise = undefined;
+}
+
+const STATIC_REFERENCE = /(?:\/_next\/)?static\/[^"'\s\\<>]+/g;
+
+async function readPinnedAssets() {
+  const pinned = new Map();
+  for (const cacheName of [SHELL_CACHE, PAGE_CACHE, RSC_CACHE]) {
+    const cache = await caches.open(cacheName);
+    const keys = await cache.keys();
+    await Promise.all(keys.map(async (key) => {
+      const copy = await cache.match(key);
+      if (!copy) return;
+      const rank = cacheName === SHELL_CACHE
+        ? Infinity
+        : Number(copy.headers.get(SAVED_AT_HEADER)) || 0;
+      for (const [reference] of (await copy.text()).matchAll(STATIC_REFERENCE)) {
+        const path = `/_next/${reference.replace(/^\/_next\//, "")}`;
+        if (!(pinned.get(path) >= rank)) pinned.set(path, rank);
+      }
+    }));
+  }
+  return pinned;
+}
+
+function pinnedAssets() {
+  if (!pinnedAssetsPromise) {
+    pinnedAssetsPromise = readPinnedAssets().catch((error) => {
+      pinnedAssetsPromise = undefined;
+      throw error;
+    });
+  }
+  return pinnedAssetsPromise;
+}
+
+/**
+ * Bring the static cache back to MAX_STATIC_ENTRIES, giving up first what no
+ * saved copy needs.
+ *
+ * Order of eviction: chunks no saved page, payload or offline page names, least
+ * recently used first – a retired build's leftovers, mostly. Then, only if that
+ * is not enough, the named ones, starting with those whose newest naming copy
+ * is oldest – so a chunk that every page shares goes last, and the chunks of a
+ * page saved weeks ago go before those of one saved today.
+ *
+ * If the saved copies cannot be read, recency alone decides, as `trimCache`
+ * does for the other caches.
+ */
+async function trimStaticCache() {
+  const cache = await caches.open(STATIC_CACHE);
+  const keys = await cache.keys();
+  const excess = keys.length - MAX_STATIC_ENTRIES;
+  if (excess <= 0) return;
+
+  let pinned = new Map();
+  try {
+    pinned = await pinnedAssets();
+  } catch {
+    // Recency alone, below.
+  }
+
+  const victims = keys
+    .map((key, written) => ({
+      key,
+      written,
+      rank: pinned.get(new URL(key.url).pathname) ?? -1,
+    }))
+    // `Infinity - Infinity` is NaN, which is falsy, so ties fall to the order.
+    .sort((a, b) => a.rank - b.rank || a.written - b.written)
+    .slice(0, excess);
+
+  await Promise.all(victims.map(({ key }) => cache.delete(key)));
+}
+
+/**
+ * One trim at a time. A page load stores a few dozen chunks at once, and
+ * overlapping trims read the list at different moments, each deleting enough
+ * to fit what it saw – together, more than the bound asks for.
+ */
+let staticTrimQueue = Promise.resolve();
+
+function trimStaticCacheInTurn() {
+  const run = staticTrimQueue.then(trimStaticCache);
+  staticTrimQueue = run.catch(() => undefined);
+  return run;
 }
 
 /** A denied or unavailable cache is a miss, never a failed network request. */
@@ -320,7 +561,10 @@ function isStaticAsset(response) {
  */
 async function handleStatic(request, event) {
   const cached = await readFromCache(STATIC_CACHE, request);
-  if (cached) return cached;
+  if (cached) {
+    markUsed(STATIC_CACHE, request, cached, event);
+    return cached;
+  }
 
   try {
     const previousCache = await getPreviousStaticCache();
@@ -335,7 +579,7 @@ async function handleStatic(request, event) {
   const response = await fetch(request);
 
   if (response.ok && isStaticAsset(response)) {
-    const stored = storeInCache(STATIC_CACHE, request, response.clone(), MAX_STATIC_ENTRIES);
+    const stored = storeInCache(STATIC_CACHE, request, withSavedAt(response.clone()), MAX_STATIC_ENTRIES);
     if (event) event.waitUntil(stored);
     else await stored;
   }
@@ -367,7 +611,10 @@ async function handleStatic(request, event) {
  */
 async function handleImage(request, event) {
   const cached = await readFromCache(IMAGE_CACHE, request);
-  if (cached) return cached;
+  if (cached) {
+    markUsed(IMAGE_CACHE, request, cached, event);
+    return cached;
+  }
 
   let response;
   try {
@@ -379,7 +626,7 @@ async function handleImage(request, event) {
   }
 
   if (response.ok) {
-    event.waitUntil(storeInCache(IMAGE_CACHE, request, response.clone(), MAX_IMAGE_ENTRIES));
+    event.waitUntil(storeInCache(IMAGE_CACHE, request, withSavedAt(response.clone()), MAX_IMAGE_ENTRIES));
   }
 
   return response;
@@ -420,43 +667,56 @@ function isRscRequest(request, url) {
   );
 }
 
-async function handleRsc(request, event) {
+/**
+ * The network's answer, or `copy` once NETWORK_TIMEOUT has passed without one.
+ *
+ * Also `copy` when the network fails outright, which is the offline case. The
+ * network promise is left running either way: the caller has already handed
+ * it to `waitUntil` along with whatever it stores when it lands.
+ */
+function networkOrCopy(network, copy) {
+  let timer;
+  const timedOut = new Promise((resolve) => {
+    timer = setTimeout(resolve, NETWORK_TIMEOUT, copy);
+  });
+  return Promise.race([network.catch(() => copy), timedOut]).finally(() =>
+    clearTimeout(timer),
+  );
+}
+
+/**
+ * Network-first for a Link transition's RSC payload, falling back to the copy.
+ *
+ * Same shape as `handleNavigation`, timeout included. A copy from an earlier
+ * deployment is safe to hand over: the payload carries its build id, and the
+ * router answers a mismatch with a full navigation rather than loading the
+ * other build's chunks into this one.
+ *
+ * Without an event – a precache from `cachePage` – nobody is waiting, so there
+ * is nothing to time out and no reason to read the copy: only the network's
+ * answer is worth storing, and the store is awaited instead.
+ */
+function handleRsc(request, event) {
   const key = pageKey(new URL(request.url));
-  try {
-    const response = await fetch(request);
+  const network = fetch(request).then((response) => {
     const type = response.headers.get("content-type") ?? "";
     if (response.ok && /^(text\/plain|text\/x-component)(?:;|$)/i.test(type)) {
       const stored = storeInCache(RSC_CACHE, key, withSavedAt(response.clone()), MAX_RSC_ENTRIES);
-      if (event) event.waitUntil(stored);
-      else await stored;
+      if (!event) return stored.then(() => response);
+      event.waitUntil(stored);
     }
     return response;
-  } catch (error) {
-    const cached = await readFromCache(RSC_CACHE, key);
-    if (cached) return cached;
-    throw error;
-  }
+  });
+  if (!event) return network;
+
+  // Keeps the worker alive for a response that lands after the copy was served.
+  event.waitUntil(network.catch(() => undefined));
+  return readFromCache(RSC_CACHE, key).then((cached) =>
+    cached ? networkOrCopy(network, cached) : network,
+  );
 }
 
 const precachingPages = new Map();
-
-/**
- * When this worker stored a page or RSC copy, carried on the copy itself.
- *
- * Not the response's `Date`: a CDN may answer from its cache with the Date of
- * the original fetch, hours old, which would make every copy look stale and
- * bring back the re-fetch on every route change.
- */
-const SAVED_AT_HEADER = "X-SW-Saved-At";
-
-/** Re-wrap a response, body unread, with the moment it is being stored. */
-function withSavedAt(response) {
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: [...response.headers, [SAVED_AT_HEADER, String(Date.now())]],
-  });
-}
 
 /**
  * Whether a cached copy was stored within `PAGE_REFRESH_INTERVAL`. A copy
@@ -464,9 +724,7 @@ function withSavedAt(response) {
  * worst case is the re-fetch that used to happen every time.
  */
 async function isFresh(cacheName, key) {
-  const cached = await readFromCache(cacheName, key);
-  const savedAt = Number(cached?.headers.get(SAVED_AT_HEADER));
-  return savedAt > 0 && Date.now() - savedAt < PAGE_REFRESH_INTERVAL;
+  return savedWithin(await readFromCache(cacheName, key), PAGE_REFRESH_INTERVAL);
 }
 
 async function cachePage(url) {
@@ -515,42 +773,54 @@ self.addEventListener("message", (event) => {
 /**
  * Network-first, falling back to the last copy of this page, then to `/offline`.
  *
- * The ordering is the whole design. While there is a network the visitor gets
- * the network's markup and the cache is only written to, never read – so a
+ * The ordering is the whole design. While the network answers in time the
+ * visitor gets the network's markup and the copy is only written to – so a
  * deployment goes out the moment it is deployed, which is the failure mode this
- * worker refused to cache HTML at all to avoid. The copy exists for the tunnel.
+ * worker refused to cache HTML at all to avoid. The copy exists for the tunnel,
+ * and for the connection that is technically up but delivers nothing: past
+ * NETWORK_TIMEOUT the copy is served, and the late answer, if it ever comes,
+ * replaces it for next time. That copy may be a deployment behind, which is the
+ * case `trimStaticCache` keeps its chunks for.
+ *
+ * The request itself is the browser's navigation preload when there is one
+ * (see `enableNavigationPreload`), already under way before this ran.
  */
 async function handleNavigation(request, event) {
   const url = new URL(request.url);
   const cacheable = url.origin === self.location.origin;
 
+  const network = Promise.resolve(event.preloadResponse)
+    // A failed preload is retried as an ordinary fetch rather than read as
+    // offline: when the network really is gone, that fails just as fast.
+    .catch(() => undefined)
+    .then((preloaded) => preloaded ?? fetch(request))
+    .then((response) => {
+      // Only a page that actually rendered. A 404 or a host's error page cached
+      // here would be served as this route for as long as the visitor is offline.
+      if (cacheable && response.ok && response.type === "basic") {
+        // Not awaited: the response is in hand and the visitor should not wait
+        // on housekeeping. Caught because nothing is watching this promise.
+        event.waitUntil(storeInCache(PAGE_CACHE, pageKey(url), withSavedAt(response.clone()), MAX_PAGE_ENTRIES));
+
+        // A page just arrived from this deployment, so the offline page of this
+        // deployment is reachable too – the one moment it can be picked up
+        // without a worker bump.
+        event.waitUntil(refreshOfflinePage());
+      }
+      return response;
+    });
+  // Keeps the worker alive for a response that lands after the copy was served.
+  event.waitUntil(network.catch(() => undefined));
+
+  // The shell is all that is needed: every page here fills itself in from
+  // browser storage, and that storage is on the device whether or not the
+  // network is.
+  const cached = cacheable ? await readFromCache(PAGE_CACHE, pageKey(url)) : undefined;
+  if (cached) return networkOrCopy(network, cached);
+
   try {
-    const response = await fetch(request);
-
-    // Only a page that actually rendered. A 404 or a host's error page cached
-    // here would be served as this route for as long as the visitor is offline.
-    if (cacheable && response.ok && response.type === "basic") {
-      // Not awaited: the response is in hand and the visitor should not wait on
-      // housekeeping. Caught because nothing is watching this promise.
-      event.waitUntil(storeInCache(PAGE_CACHE, pageKey(url), withSavedAt(response.clone()), MAX_PAGE_ENTRIES));
-
-      // A page just arrived from this deployment, so the offline page of this
-      // deployment is reachable too – the one moment it can be picked up
-      // without a worker bump.
-      event.waitUntil(refreshOfflinePage());
-    }
-
-    return response;
+    return await network;
   } catch {
-    if (cacheable) {
-      const cached = await readFromCache(PAGE_CACHE, pageKey(url));
-
-      // The shell is all that is needed: every page here fills itself in from
-      // browser storage, and that storage is on the device whether or not the
-      // network is.
-      if (cached) return cached;
-    }
-
     const offline = await readFromCache(SHELL_CACHE, OFFLINE_URL);
 
     return (

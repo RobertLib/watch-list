@@ -138,6 +138,16 @@ function PersonDetail() {
 
   const age = calculateAge(details.birthday, details.deathday);
 
+  // TMDB's list is crowd-edited and repeats itself – the same romanisation
+  // entered twice, or once with a stray space. Each alias is also its row's key,
+  // so a repeat was a duplicate key as well as a duplicate line. Deduplicated
+  // before the cut, so five slots show five different names.
+  const aliases = [
+    ...new Set((details.also_known_as ?? []).map((alias) => alias.trim())),
+  ]
+    .filter(Boolean)
+    .slice(0, 5);
+
   // Career stats
   const allMovieYears = movies
     .map((m) => releaseYear(m.release_date))
@@ -267,95 +277,100 @@ function PersonDetail() {
                 Personal Info
               </h2>
 
-              {details.known_for_department && (
+              {/* A <dl>, which every <dt>/<dd> pair below needs: outside one
+                  they are invalid markup, and a screen reader loses the
+                  term–value pairing that makes "Born" go with the date. */}
+              <dl className="space-y-3">
+                {details.known_for_department && (
+                  <div>
+                    <dt className="text-gray-400 text-sm">Known For</dt>
+                    <dd className="text-white">{details.known_for_department}</dd>
+                  </div>
+                )}
+
                 <div>
-                  <dt className="text-gray-400 text-sm">Known For</dt>
-                  <dd className="text-white">{details.known_for_department}</dd>
+                  <dt className="text-gray-400 text-sm">Gender</dt>
+                  <dd className="text-white">{formatGender(details.gender)}</dd>
                 </div>
-              )}
 
-              <div>
-                <dt className="text-gray-400 text-sm">Gender</dt>
-                <dd className="text-white">{formatGender(details.gender)}</dd>
-              </div>
-
-              {details.birthday && (
-                <div>
-                  <dt className="text-gray-400 text-sm">
-                    {details.deathday ? "Born" : "Birthday"}
-                  </dt>
-                  <dd className="text-white">
-                    {formatDate(details.birthday)}
-                    {age && !details.deathday && (
-                      <span className="text-gray-400 ml-1">
-                        ({age} years old)
-                      </span>
-                    )}
-                  </dd>
-                </div>
-              )}
-
-              {details.deathday && (
-                <div>
-                  <dt className="text-gray-400 text-sm">Day of Death</dt>
-                  <dd className="text-white">
-                    {formatDate(details.deathday)}
-                    {age && (
-                      <span className="text-gray-400 ml-1">(aged {age})</span>
-                    )}
-                  </dd>
-                </div>
-              )}
-
-              {details.place_of_birth && (
-                <div>
-                  <dt className="text-gray-400 text-sm">Place of Birth</dt>
-                  <dd className="text-white">{details.place_of_birth}</dd>
-                </div>
-              )}
-
-              {careerStart && (
-                <div>
-                  <dt className="text-gray-400 text-sm">Career</dt>
-                  <dd className="text-white">
-                    {careerStart}
-                    {careerEnd && careerEnd !== careerStart
-                      ? ` – ${careerEnd}`
-                      : ""}
-                  </dd>
-                </div>
-              )}
-
-              {(movies.length > 0 || tvShows.length > 0) && (
-                <div>
-                  <dt className="text-gray-400 text-sm">Credits</dt>
-                  <dd className="text-white">
-                    {movies.length > 0 && (
-                      <span>{movies.length} movies</span>
-                    )}
-                    {movies.length > 0 &&
-                      tvShows.length > 0 && (
-                        <span className="text-gray-500 mx-1">·</span>
+                {details.birthday && (
+                  <div>
+                    <dt className="text-gray-400 text-sm">
+                      {details.deathday ? "Born" : "Birthday"}
+                    </dt>
+                    <dd className="text-white">
+                      {formatDate(details.birthday)}
+                      {age && !details.deathday && (
+                        <span className="text-gray-400 ml-1">
+                          ({age} years old)
+                        </span>
                       )}
-                    {tvShows.length > 0 && (
-                      <span>{tvShows.length} TV shows</span>
-                    )}
-                  </dd>
-                </div>
-              )}
+                    </dd>
+                  </div>
+                )}
 
-              {details.also_known_as && details.also_known_as.length > 0 && (
-                <div>
-                  <dt className="text-gray-400 text-sm mb-1">Also Known As</dt>
-                  <dd className="space-y-1">
-                    {details.also_known_as.slice(0, 5).map((alias) => (
-                      <div key={alias} className="text-white text-sm">
-                        {alias}
-                      </div>
-                    ))}
-                  </dd>
-                </div>
-              )}
+                {details.deathday && (
+                  <div>
+                    <dt className="text-gray-400 text-sm">Day of Death</dt>
+                    <dd className="text-white">
+                      {formatDate(details.deathday)}
+                      {age && (
+                        <span className="text-gray-400 ml-1">(aged {age})</span>
+                      )}
+                    </dd>
+                  </div>
+                )}
+
+                {details.place_of_birth && (
+                  <div>
+                    <dt className="text-gray-400 text-sm">Place of Birth</dt>
+                    <dd className="text-white">{details.place_of_birth}</dd>
+                  </div>
+                )}
+
+                {careerStart && (
+                  <div>
+                    <dt className="text-gray-400 text-sm">Career</dt>
+                    <dd className="text-white">
+                      {careerStart}
+                      {careerEnd && careerEnd !== careerStart
+                        ? ` – ${careerEnd}`
+                        : ""}
+                    </dd>
+                  </div>
+                )}
+
+                {(movies.length > 0 || tvShows.length > 0) && (
+                  <div>
+                    <dt className="text-gray-400 text-sm">Credits</dt>
+                    <dd className="text-white">
+                      {movies.length > 0 && (
+                        <span>{movies.length} movies</span>
+                      )}
+                      {movies.length > 0 &&
+                        tvShows.length > 0 && (
+                          <span className="text-gray-500 mx-1">·</span>
+                        )}
+                      {tvShows.length > 0 && (
+                        <span>{tvShows.length} TV shows</span>
+                      )}
+                    </dd>
+                  </div>
+                )}
+
+                {aliases.length > 0 && (
+                  <div>
+                    <dt className="text-gray-400 text-sm mb-1">Also Known As</dt>
+                    <dd className="space-y-1">
+                      {aliases.map((alias) => (
+                        <div key={alias} className="text-white text-sm">
+                          {alias}
+                        </div>
+                      ))}
+                    </dd>
+                  </div>
+                )}
+              </dl>
             </div>
           </div>
 
@@ -402,8 +417,10 @@ function PersonDetail() {
                         className="group block"
                       >
                         <div className="relative aspect-2/3 mb-2 overflow-hidden rounded-lg bg-gray-800">
+                          {/* Six to a row on a wide screen, three on a phone:
+                              ~100–190px wide, so w300 at 2x. */}
                           <Image
-                            src={tmdbApi.getImageUrl(item.poster_path, "w500")}
+                            src={tmdbApi.getImageUrl(item.poster_path, "w300")}
                             alt={title}
                             fill
                             className="object-cover group-hover:scale-105 transition-transform duration-200"

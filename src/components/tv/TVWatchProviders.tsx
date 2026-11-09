@@ -22,8 +22,9 @@ function ProviderLinks({
         const searchUrl = getProviderSearchUrl(provider.provider_id, title);
         const content = (
           <>
+            {/* A 24px logo: w92, the narrowest size there is, is plenty at 2x. */}
             <Image
-              src={tmdbApi.getImageUrl(provider.logo_path, "w500")}
+              src={tmdbApi.getImageUrl(provider.logo_path, "w92")}
               alt={provider.provider_name}
               width={24}
               height={24}

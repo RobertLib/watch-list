@@ -18,10 +18,12 @@ interface HeroSectionContentProps {
 }
 
 function HeroSectionContent({ featuredItem }: HeroSectionContentProps) {
-  const backdropUrl = tmdbApi.getImageUrl(
-    featuredItem.backdrop_path,
-    "original",
-  );
+  // w1280, not `original`: TMDB's originals are often 1920–3840px wide, and this
+  // is the page's largest paint, so its weight is what the first view waits on.
+  // The browser cannot be offered a choice of sizes – `next/image` drops
+  // `srcSet` under `unoptimized` – and under two dark gradients 1280px is the
+  // better trade even where a wide 2x screen could use more.
+  const backdropUrl = tmdbApi.getImageUrl(featuredItem.backdrop_path, "w1280");
   const year = releaseYear(featuredItem.release_date);
 
   // Get the correct title for both movies and TV shows
@@ -40,7 +42,7 @@ function HeroSectionContent({ featuredItem }: HeroSectionContentProps) {
           alt={`Featured backdrop for ${title}`}
           fill
           className="object-cover object-top"
-          priority
+          preload
         />
         <div className="absolute inset-0 bg-linear-to-r from-black/80 via-black/40 to-transparent" />
         <div className="absolute inset-0 bg-linear-to-t from-black/60 via-transparent to-transparent" />

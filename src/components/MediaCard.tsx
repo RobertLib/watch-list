@@ -97,7 +97,13 @@ export function MediaCard({
     return () => window.removeEventListener("online", retry);
   }, [providersFailed]);
 
-  const imageUrl = getImageUrl(item.poster_path, "w500");
+  // Medium and large cards are 160px wide and up, so a 2x screen needs w500 at
+  // least. A small one stays under about 170px, which w342 covers at 2x for
+  // half the pixels.
+  const imageUrl = getImageUrl(
+    item.poster_path,
+    size === "small" ? "w342" : "w500",
+  );
   const year = releaseYear(item.release_date);
   const watched = isWatched(item.id, item.media_type);
 

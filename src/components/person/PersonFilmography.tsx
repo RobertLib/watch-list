@@ -129,10 +129,11 @@ export function PersonFilmography({
                   prefetch={false}
                   className="group flex items-center gap-3 p-2 rounded-lg hover:bg-gray-800 transition-colors"
                 >
-                  {/* Poster thumbnail */}
+                  {/* Poster thumbnail – 40px wide, so w92 covers it at 2x.
+                      A long filmography is a hundred of these. */}
                   <div className="relative w-10 h-15 shrink-0 overflow-hidden rounded">
                     <Image
-                      src={getImageUrl(movie.poster_path, "w500")}
+                      src={getImageUrl(movie.poster_path, "w92")}
                       alt={movie.title}
                       fill
                       className="object-cover"
@@ -214,7 +215,7 @@ export function PersonFilmography({
                   {/* Poster thumbnail */}
                   <div className="relative w-10 h-15 shrink-0 overflow-hidden rounded">
                     <Image
-                      src={getImageUrl(show.poster_path, "w500")}
+                      src={getImageUrl(show.poster_path, "w92")}
                       alt={show.name}
                       fill
                       className="object-cover"

@@ -6,7 +6,9 @@ import { MediaGallery } from "./MediaGallery";
 import type { TMDBImage } from "@/types/tmdb";
 
 vi.mock("next/image", () => ({
-  default: ({ alt }: { alt: string }) => <span role="img" aria-label={alt} />,
+  default: ({ alt, src }: { alt: string; src: string }) => (
+    <span role="img" aria-label={alt} data-src={src} />
+  ),
 }));
 
 const backdrops: TMDBImage[] = [1, 2, 3].map((id) => ({
@@ -142,5 +144,68 @@ describe("MediaGallery keyboard navigation", () => {
     unmount();
 
     expect(document.body.style.overflow).toBe("hidden");
+  });
+});
+
+const posters: TMDBImage[] = [1, 2].map((id) => ({
+  file_path: `/poster-${id}.jpg`,
+  width: 1000,
+  height: 1500,
+  vote_average: 0,
+  vote_count: 0,
+  iso_639_1: null,
+}));
+
+function sizeOf(image: HTMLElement): string | undefined {
+  return image.getAttribute("data-src")?.match(/\/t\/p\/([^/]+)\//)?.[1];
+}
+
+/**
+ * The two sets are toggles, and the only sign of which one was showing used to
+ * be its colour – a screen reader announced two plain buttons.
+ */
+describe("MediaGallery backdrop and poster toggles", () => {
+  it("says which set is showing", () => {
+    render(<MediaGallery backdrops={backdrops} posters={posters} title="Arrival" />);
+    const group = screen.getByRole("group", { name: "Image type" });
+    const backdropToggle = within(group).getByRole("button", { name: /Backdrops/ });
+    const posterToggle = within(group).getByRole("button", { name: /Posters/ });
+
+    expect(backdropToggle.getAttribute("aria-pressed")).toBe("true");
+    expect(posterToggle.getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(posterToggle);
+
+    expect(backdropToggle.getAttribute("aria-pressed")).toBe("false");
+    expect(posterToggle.getAttribute("aria-pressed")).toBe("true");
+  });
+});
+
+/**
+ * `next.config.ts` sets `unoptimized`, so the size named is the size
+ * downloaded. The grid asked for `w780` for tiles a few hundred pixels wide,
+ * and the lightbox for `original` – a 4K file per arrow press.
+ */
+describe("MediaGallery image sizes", () => {
+  it("fetches grid tiles at a size near their own", () => {
+    render(<MediaGallery backdrops={backdrops} posters={posters} title="Arrival" />);
+    expect(sizeOf(screen.getByRole("img", { name: "Arrival — image 1" }))).toBe("w500");
+
+    fireEvent.click(screen.getByRole("button", { name: /Posters/ }));
+    expect(sizeOf(screen.getByRole("img", { name: "Arrival — image 1" }))).toBe("w300");
+  });
+
+  it("opens backdrops at w1280 and posters at w780 rather than the original", () => {
+    const { dialog } = openGallery();
+    expect(sizeOf(within(dialog).getByRole("img", { name: "Arrival — image 1" }))).toBe("w1280");
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
+    expect(sizeOf(within(dialog).getByRole("img", { name: "Arrival — image 2" }))).toBe("w1280");
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    cleanup();
+
+    render(<MediaGallery backdrops={[]} posters={posters} title="Arrival" />);
+    fireEvent.click(screen.getByRole("button", { name: "Arrival — image 2" }));
+    const posterDialog = screen.getByRole("dialog", { name: "Arrival image gallery" });
+    expect(sizeOf(within(posterDialog).getByRole("img", { name: "Arrival — image 2" }))).toBe("w780");
   });
 });

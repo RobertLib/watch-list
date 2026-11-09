@@ -162,7 +162,8 @@ function TodaysPuzzle() {
           </li>
           <li>
             Every wrong guess sharpens the image and reveals a clue – decade
-            first, then genre, runtime, tagline, director and finally the cast.
+            first, then genre, runtime and tagline. The fifth reveals the
+            director and the cast together, so your last guess gets every clue.
           </li>
           <li>
             Win within six guesses to keep your streak. Play tomorrow to extend

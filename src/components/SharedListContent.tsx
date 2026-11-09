@@ -47,7 +47,8 @@ function SharedList() {
     error,
     reload,
   } = useAsyncData(
-    async () => getSharedListResolution(refs),
+    // Background reads, released when the list is left or its link changes.
+    async (signal) => getSharedListResolution(refs, signal),
     [searchParams.get("items"), settingsKey],
   );
 

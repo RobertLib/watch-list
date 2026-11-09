@@ -5,6 +5,7 @@ import { createProfileLockManager } from "@/test/profile-locks";
 import { PROFILE_ROSTER_LOCK } from "@/lib/profile-roster-lock";
 import { refuseNextLocalStorageRead } from "@/test/storage-faults";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import {
   COLLECTIONS_STORAGE_KEY,
   MAX_COLLECTIONS,
@@ -102,7 +103,7 @@ describe("CollectionsManager", () => {
     await release();
 
     expect(stored()).toEqual(initial);
-    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("false");
     expect(toast.showToast).toHaveBeenCalledExactlyOnceWith(STORAGE_REFUSED_MESSAGE, "error");
     if (action === "create" || action === "rename") {
       expect((screen.getByRole("textbox", { name: action === "create" ? "New list" : "List name" }) as HTMLInputElement).value).toBe("Friday night");
@@ -139,7 +140,14 @@ describe("CollectionsManager", () => {
     await click(button);
     expect(request).toHaveBeenCalledTimes(1);
     expect(request.mock.calls[0][0]).toBe(PROFILE_ROSTER_LOCK);
-    expect(button.getAttribute("disabled")).not.toBeNull();
+    // Busy, but never natively disabled: browsers blur a disabled control.
+    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    if (action === "create" || action === "rename") {
+      const input = screen.getByRole("textbox", { name: action === "create" ? "New list" : "List name" }) as HTMLInputElement;
+      expect(input.disabled).toBe(false);
+      expect(input.readOnly).toBe(true);
+    }
     expect(stored()).toEqual([collection([item])]);
 
     const otherTitle = { ...item, id: 949, title: "Heat" };
@@ -620,5 +628,97 @@ describe("CollectionsManager", () => {
     expect(stored()).toEqual([existing]);
     expect(screen.getByRole("link", { name: "Fight Club" })).not.toBeNull();
     expect(toast.showToast).toHaveBeenCalledExactlyOnceWith(STORAGE_REFUSED_MESSAGE, "error");
+  });
+});
+
+describe("before the browser has read storage", () => {
+  /**
+   * The prerendered /lists page has no storage, so its snapshot is empty. It
+   * used to render "No lists yet" into the static HTML, which everyone saw –
+   * lists or not – until the JavaScript arrived.
+   */
+  it("prerenders a loading state rather than claiming there are no lists", () => {
+    window.localStorage.setItem(COLLECTIONS_STORAGE_KEY, JSON.stringify([collection([item])]));
+
+    const html = renderToString(<CollectionsManager />);
+
+    expect(html).not.toContain("No lists yet");
+    expect(html).not.toContain("Existing list");
+    expect(html).toContain("Loading...");
+  });
+
+  it("shows the empty state once hydrated with nothing stored", () => {
+    render(<CollectionsManager />);
+
+    expect(screen.getByRole("heading", { name: "No lists yet" })).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+});
+
+describe("the remove button on a poster", () => {
+  it("is hidden until hover only where the device can hover", () => {
+    window.localStorage.setItem(COLLECTIONS_STORAGE_KEY, JSON.stringify([collection([item])]));
+    render(<CollectionsManager />);
+
+    const remove = screen.getByRole("button", { name: "Remove Fight Club from Existing list" });
+    const classes = remove.className.split(/\s+/);
+    // Visible by default – a touch screen has no hover to reveal it with.
+    expect(classes).toContain("opacity-100");
+    expect(classes).not.toContain("opacity-0");
+    expect(classes).toContain("[@media(hover:hover)]:opacity-0");
+    expect(classes).toContain("group-hover:opacity-100");
+    expect(classes).toContain("focus:opacity-100");
+  });
+});
+
+describe("keyboard focus on a list card", () => {
+  it("moves to Cancel when a delete is asked for, and back to the trash button on cancel", async () => {
+    window.localStorage.setItem(COLLECTIONS_STORAGE_KEY, JSON.stringify([collection()]));
+    render(<CollectionsManager />);
+    const trash = screen.getByRole("button", { name: "Delete Existing list" });
+    act(() => trash.focus());
+
+    await click(trash);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
+
+    await click(screen.getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Delete Existing list" }));
+  });
+
+  it("returns focus to the rename button after saving or cancelling a rename", async () => {
+    window.localStorage.setItem(COLLECTIONS_STORAGE_KEY, JSON.stringify([collection()]));
+    render(<CollectionsManager />);
+    await click(screen.getByRole("button", { name: "Rename Existing list" }));
+    const input = screen.getByRole("textbox", { name: "List name" });
+    expect(document.activeElement).toBe(input);
+    fireEvent.change(input, { target: { value: "Friday night" } });
+
+    await act(async () => { fireEvent.submit(input.closest("form")!); });
+    expect(stored()[0].name).toBe("Friday night");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Rename Friday night" }));
+
+    await click(screen.getByRole("button", { name: "Rename Friday night" }));
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    act(() => cancel.focus());
+    await click(cancel);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Rename Friday night" }));
+  });
+
+  it("keeps focus in the new-list box while its creation waits for the lock", async () => {
+    render(<CollectionsManager />);
+    const input = screen.getByRole("textbox", { name: "New list" }) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Friday night" } });
+    act(() => input.focus());
+    const release = await holdProfileLock();
+
+    await act(async () => { fireEvent.submit(input.form!); });
+    expect(input.disabled).toBe(false);
+    expect(input.readOnly).toBe(true);
+    expect(document.activeElement).toBe(input);
+
+    await release();
+    expect(stored()[0].name).toBe("Friday night");
+    expect(input.readOnly).toBe(false);
+    expect(document.activeElement).toBe(input);
   });
 });

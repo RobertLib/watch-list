@@ -102,21 +102,28 @@ export function WatchedButton({
   return (
     <button
       onClick={handleClick}
-      disabled={isSaving}
+      // Not native `disabled`: browsers blur a disabled button, so marking a
+      // title from the keyboard dropped focus. `handleClick` refuses a repeat.
+      aria-disabled={isSaving}
       aria-busy={isSaving}
       className={cn(
         "group relative bg-black/70 backdrop-blur-sm rounded-full transition-all duration-300 hover:bg-black/80 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-transparent",
         getVariantStyles(),
         isAnimating && "scale-125",
         watched && "bg-green-600/80 hover:bg-green-600/90",
+        "aria-disabled:cursor-wait",
         className,
       )}
+      // The name says what pressing it does, and so carries the state with
+      // it – which is why there is no `aria-pressed` alongside. The two
+      // together announced "Mark Fight Club as not watched, pressed", a
+      // toggle whose label flips as well as its state. The heart next to it
+      // is built the same way.
       aria-label={
         watched
           ? `Mark ${item.title} as not watched`
           : `Mark ${item.title} as watched`
       }
-      aria-pressed={watched}
       title={watched ? "Watched – click to undo" : "Mark as watched"}
     >
       <Eye

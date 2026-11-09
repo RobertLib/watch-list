@@ -13,18 +13,28 @@ import { AlertTriangle, RefreshCw } from "lucide-react";
  * goes through `useAsyncData`, which catches its own rejections, so a failed
  * fetch never reaches an error boundary; without something like this the page
  * that failed simply sat on its skeleton forever.
+ *
+ * The full-size notice usually *is* the page – a detail page that failed has
+ * nothing else on it – so its title is the page's `h1` by default; without one
+ * a screen reader landing there found no heading to orient by. The compact one
+ * sits inside a page that has its own, and is an `h2`. A full-size notice
+ * shown under a page heading of its own passes `headingLevel={2}`.
  */
 export function LoadFailureNotice({
   title = "Could not load this section",
   description = "TMDB did not answer. It may be a connection problem, or the service may be busy.",
   onRetry,
   compact = false,
+  headingLevel = compact ? 2 : 1,
 }: {
   title?: string;
   description?: string;
   onRetry?: () => void;
   compact?: boolean;
+  headingLevel?: 1 | 2;
 }) {
+  const Heading = headingLevel === 1 ? "h1" : "h2";
+
   return (
     <div
       role="alert"
@@ -45,9 +55,11 @@ export function LoadFailureNotice({
         />
       </div>
 
-      <h2 className={compact ? "text-xl font-bold mb-2" : "text-3xl font-bold mb-3"}>
+      <Heading
+        className={compact ? "text-xl font-bold mb-2" : "text-3xl font-bold mb-3"}
+      >
         {title}
-      </h2>
+      </Heading>
       <p className="text-gray-400 max-w-md mx-auto leading-relaxed">
         {description}
       </p>

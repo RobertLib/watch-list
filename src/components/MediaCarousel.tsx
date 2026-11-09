@@ -15,20 +15,76 @@ interface MediaCarouselProps {
   className?: string;
   onCardClick?: () => void;
   id?: string; // Unique identifier for scroll position persistence
+  /**
+   * A row is a section of its page by default. Where the page groups rows under
+   * headings of its own – "Movies" and "TV Shows" on the home page – the rows
+   * are subsections, and an `h2` there would put them level with the group.
+   */
+  headingLevel?: 2 | 3;
 }
 
 function CarouselHeader({
   title,
   subtitle,
+  headingLevel,
 }: {
   title: string;
   subtitle?: string;
+  headingLevel: 2 | 3;
 }) {
+  const Heading = headingLevel === 3 ? "h3" : "h2";
+
   return (
     <div className="mb-6">
-      <h2 className="text-2xl font-bold text-white">{title}</h2>
+      <Heading className="text-2xl font-bold text-white">{title}</Heading>
       {subtitle && <p className="text-sm text-gray-400 mt-1">{subtitle}</p>}
     </div>
+  );
+}
+
+const SCROLL_BUTTON_CLASS =
+  "absolute top-1/2 -translate-y-1/2 z-10 bg-black/70 backdrop-blur-sm rounded-full p-3 transition-all duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400";
+
+/**
+ * One of the two arrows. Always mounted, never `disabled`.
+ *
+ * Both used to be rendered only while there was somewhere to scroll, so pressing
+ * "Scroll right" until the end removed the very button that had focus, and
+ * focus fell to <body> – a screen reader lost its place, and nothing on screen
+ * showed where the keyboard was. A `disabled` button would do the same:
+ * browsers blur it. So an arrow with nowhere to go is
+ * `aria-disabled`, ignores its clicks, leaves the tab order, and lets the
+ * pointer through to the card beneath – but keeps focus if it has it, and stays
+ * visible while it does.
+ */
+function ScrollButton({
+  direction,
+  enabled,
+  onClick,
+}: {
+  direction: "left" | "right";
+  enabled: boolean;
+  onClick: () => void;
+}) {
+  const Icon = direction === "left" ? ChevronLeft : ChevronRight;
+
+  return (
+    <button
+      type="button"
+      onClick={enabled ? onClick : undefined}
+      className={cn(
+        SCROLL_BUTTON_CLASS,
+        direction === "left" ? "left-0" : "right-0",
+        enabled
+          ? "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-black/90"
+          : "opacity-0 pointer-events-none focus-visible:opacity-50 cursor-default",
+      )}
+      aria-label={direction === "left" ? "Scroll left" : "Scroll right"}
+      aria-disabled={!enabled}
+      tabIndex={enabled ? undefined : -1}
+    >
+      <Icon className="w-6 h-6 text-white" aria-hidden="true" />
+    </button>
   );
 }
 
@@ -45,9 +101,10 @@ export function MediaCarousel({
   className,
   onCardClick,
   id,
+  headingLevel = 2,
 }: MediaCarouselProps) {
-  const [showLeftButton, setShowLeftButton] = useState(false);
-  const [showRightButton, setShowRightButton] = useState(false);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const throttledUpdateRef = useRef<((event: Event) => void) | null>(null);
   const carouselId = id || title.toLowerCase().replace(/\s+/g, "-");
@@ -58,8 +115,8 @@ export function MediaCarousel({
     if (!container) return;
 
     const { scrollLeft, scrollWidth, clientWidth } = container;
-    setShowLeftButton(scrollLeft > 0);
-    setShowRightButton(scrollLeft < scrollWidth - clientWidth - 1);
+    setCanScrollLeft(scrollLeft > 0);
+    setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 1);
   }, []);
 
   // Save scroll position to sessionStorage
@@ -177,7 +234,11 @@ export function MediaCarousel({
   if (loading) {
     return (
       <div className={cn("mb-12", className)}>
-        <CarouselHeader title={title} subtitle={subtitle} />
+        <CarouselHeader
+          title={title}
+          subtitle={subtitle}
+          headingLevel={headingLevel}
+        />
         <div className="flex gap-4 overflow-hidden">
           {Array.from({ length: 6 }).map((_, i) => (
             <div
@@ -196,30 +257,23 @@ export function MediaCarousel({
 
   return (
     <div className={cn("mb-12 relative", className)}>
-      <CarouselHeader title={title} subtitle={subtitle} />
+      <CarouselHeader
+        title={title}
+        subtitle={subtitle}
+        headingLevel={headingLevel}
+      />
 
       <div className="relative group">
-        {/* Left scroll button */}
-        {showLeftButton && (
-          <button
-            onClick={scrollLeft}
-            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-black/70 hover:bg-black/90 backdrop-blur-sm rounded-full p-3 transition-all duration-200 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
-            aria-label="Scroll left"
-          >
-            <ChevronLeft className="w-6 h-6 text-white" />
-          </button>
-        )}
-
-        {/* Right scroll button */}
-        {showRightButton && (
-          <button
-            onClick={scrollRight}
-            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-black/70 hover:bg-black/90 backdrop-blur-sm rounded-full p-3 transition-all duration-200 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
-            aria-label="Scroll right"
-          >
-            <ChevronRight className="w-6 h-6 text-white" />
-          </button>
-        )}
+        <ScrollButton
+          direction="left"
+          enabled={canScrollLeft}
+          onClick={scrollLeft}
+        />
+        <ScrollButton
+          direction="right"
+          enabled={canScrollRight}
+          onClick={scrollRight}
+        />
 
         {/* Carousel container */}
         <div

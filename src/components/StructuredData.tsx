@@ -2,7 +2,7 @@ import { createSlug } from "@/lib/utils";
 import { SITE_URL, absoluteMediaUrl, absoluteUrl } from "@/lib/routes";
 
 /**
- * JSON-LD, and a word about which half of it a crawler without JavaScript sees.
+ * JSON-LD, and a word about which half of it any search engine reads.
  *
  * The static export prerenders this component wherever its caller is a Server
  * Component, so the home page, `/moods`, `/genres`, `/about` and the puzzle
@@ -14,10 +14,19 @@ import { SITE_URL, absoluteMediaUrl, absoluteUrl } from "@/lib/routes";
  * one shell served for every film, and which film it names is read from the URL
  * bar by a script. There is no build step that could know the answer, and no
  * route to prerender per title – so a `Movie` payload here is assembled after
- * TMDB answers and is only ever in the DOM. Google renders JavaScript and sees
- * it; a crawler that does not, does not. Moving those pages into the index
- * properly means giving titles real paths, which means giving up the static
- * export – a trade `next.config.ts` makes deliberately.
+ * TMDB answers and is only ever in the DOM.
+ *
+ * And no search engine uses it. Those shells – `/movie`, `/tv`, `/person`,
+ * `/collection` – are served with `noindex`, deliberately, so that one generic
+ * shell never ranks in place of every title. Google honours a `noindex` in the
+ * served HTML before rendering anything; a page it will not index is a page
+ * whose script-built JSON-LD it never reads, and the canonical those pages set
+ * from `useCanonicalUrl` goes unread for the same reason. The `Movie`,
+ * `TVSeries`, `Person`, `MovieCollection` and breadcrumb payloads built on those
+ * pages are kept because they are correct and harmless, not because they do
+ * anything for search today. Moving titles into the index means giving them
+ * real paths, which means giving up the static export – a trade
+ * `next.config.ts` makes deliberately.
  */
 /**
  * Serialise a JSON-LD payload for inlining into a <script> tag.
@@ -119,17 +128,9 @@ export function StructuredData({ type, data }: StructuredDataProps) {
           "Create your free movie and TV show watchlist. Discover trending films and track everything across all streaming platforms.",
         url: SITE_URL,
         publisher: { "@id": `${SITE_URL}/#organization` },
-        // Declares the site's own search so results can offer a search box for it.
-        // `/search?q=` is the real endpoint; the parameter name has to match.
-        potentialAction: {
-          "@type": "SearchAction",
-          target: {
-            "@type": "EntryPoint",
-            urlTemplate:
-              `${SITE_URL}/search?q={search_term_string}`,
-          },
-          "query-input": "required name=search_term_string",
-        },
+        // No `SearchAction`. It existed to ask Google for a sitelinks search
+        // box, and Google retired that feature in November 2024 – nothing else
+        // read it. The site name above is what `WebSite` is still used for.
         ...data,
       };
       break;
@@ -427,6 +428,13 @@ export function StructuredData({ type, data }: StructuredDataProps) {
       };
       break;
 
+    /**
+     * Valid markup that no longer earns anything in Google: since August 2023
+     * FAQ rich results are shown only for well-known government and health
+     * sites. Kept – it is the home page's FAQ restated, other consumers may
+     * still read it, and dropping it means editing `page.tsx` too – but do not
+     * expect an FAQ panel under the search result.
+     */
     case "FAQPage":
       structuredData = {
         "@context": "https://schema.org",

@@ -84,7 +84,9 @@ export function ProfileSwitcher() {
       }
 
       // A full reload rather than router navigation: the contexts hold the old
-      // profile's data in memory and only read storage when they mount.
+      // profile's data in memory and only read storage when they mount. That
+      // includes a profile another tab had already switched to before this
+      // tab heard about it – the switch succeeds, and this page catches up.
       window.location.reload();
     } finally {
       saving.current = false;
@@ -241,7 +243,18 @@ export function ProfileSwitcher() {
         </div>
       )}
 
-      <fieldset disabled={requiresReload || isSaving} aria-busy={isSaving} className="space-y-4 disabled:opacity-60">
+      {/* A pending save marks the controls aria-disabled rather than disabling
+          the fieldset: native `disabled` blurred the button or field just used,
+          and keyboard focus fell to the top of the page. The `saving` guard in
+          every handler refuses a second action meanwhile, and the text fields
+          go read-only so nothing typed is lost when a save resets them. Only
+          a failed switch that needs a reload disables them outright. */}
+      <fieldset
+        disabled={requiresReload}
+        aria-disabled={isSaving || undefined}
+        aria-busy={isSaving}
+        className="space-y-4 disabled:opacity-60 aria-disabled:opacity-60"
+      >
         <legend className="sr-only">Profile controls</legend>
         <ul className="space-y-2">
           {profiles.map((profile) => {
@@ -266,6 +279,7 @@ export function ProfileSwitcher() {
                       <input
                         autoFocus
                         value={draft}
+                        readOnly={isSaving}
                         maxLength={MAX_PROFILE_NAME_LENGTH}
                         onChange={(event) => setDraft(event.target.value)}
                         aria-label={`Rename ${profile.name}`}
@@ -366,6 +380,7 @@ export function ProfileSwitcher() {
             <input
               id="new-profile"
               value={newName}
+              readOnly={isSaving}
               maxLength={MAX_PROFILE_NAME_LENGTH}
               onChange={(event) => setNewName(event.target.value)}
               placeholder="Add someone…"

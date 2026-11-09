@@ -141,6 +141,11 @@ export function searchPerson(query: string, page: number = 1) {
   return tmdbDiscoverApi.searchPerson(sanitizeQuery(query), sanitizePage(page));
 }
 
+/** Films only – the daily puzzle's guess box, whose answer is always a film. */
+export function searchMovies(query: string, page: number = 1) {
+  return tmdbDiscoverApi.searchMovies(sanitizeQuery(query), sanitizePage(page));
+}
+
 // Filtered discovery. The filter payload is rebuilt from scratch rather than
 // trusted: it comes out of the query string. The parameter stays typed so a typo
 // at a legitimate call site is still a compile error – the sanitiser would
@@ -336,17 +341,22 @@ export async function getReleasesSinceLastVisit(
  *
  * The ratings store holds a score and a date keyed by id – no title, no poster,
  * because a score outlives being on any list. So the page that lists them has to
- * look them up, exactly as a shared list does with the ids in its URL.
+ * look them up, exactly as a shared list does with the ids in its URL – as
+ * background reads the caller cancels by aborting `signal` when it leaves.
  */
-export async function getTitlesByRefs(refs: unknown): Promise<MediaItem[]> {
-  return getSharedListItems(sanitizeFactRefs(refs));
+export async function getTitlesByRefs(
+  refs: unknown,
+  signal?: AbortSignal,
+): Promise<MediaItem[]> {
+  return getSharedListItems(sanitizeFactRefs(refs), signal);
 }
 
 /** Keep partial lookup failures available to pages that offer a retry. */
 export async function getTitlesResolutionByRefs(
   refs: unknown,
+  signal?: AbortSignal,
 ): Promise<SharedListResolution> {
-  return getSharedListResolution(sanitizeFactRefs(refs));
+  return getSharedListResolution(sanitizeFactRefs(refs), signal);
 }
 
 // Runtime, genre and year for everything on the watched list – none of which the

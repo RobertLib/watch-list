@@ -6,7 +6,7 @@ import { useEffect } from "react";
  * Maintain `<link rel="canonical">` for a page addressed by query string.
  *
  * The counterpart to `useDocumentTitle`, and it exists for the same reason: a
- * title's real canonical is `/movie?id=550-fight-club`, which the build cannot
+ * title's real canonical is `/movie?id=fight-club-550`, which the build cannot
  * know – there is no build-time list of every film on TMDB, which is the whole
  * reason these pages are query-addressed in the first place.
  *

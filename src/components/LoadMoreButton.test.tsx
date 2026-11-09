@@ -108,7 +108,7 @@ describe("LoadMoreButton", () => {
     expect(screen.getByRole("alert")).toBeDefined();
     expect(onLoadComplete).not.toHaveBeenCalled();
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Retry loading more content" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Try again" })); });
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("button").getAttribute("aria-busy")).toBe("true");
 
@@ -176,5 +176,35 @@ describe("LoadMoreButton", () => {
     render(<LoadMoreButton onLoadMore={async () => {}}>More films</LoadMoreButton>);
 
     expect(screen.getByText("More films")).toBeDefined();
+  });
+
+  // A blanket "Load more content" label replaced whatever the button said, so
+  // "Load More Movies" and "Try again" were not names a voice-control user could
+  // speak (WCAG 2.5.3). The accessible name has to be the visible text.
+  it("is named by the text it shows, in every state", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const retry = deferred();
+    const onLoadMore = vi.fn()
+      .mockRejectedValueOnce(new Error("Offline"))
+      .mockReturnValueOnce(retry.promise);
+    render(<LoadMoreButton onLoadMore={onLoadMore}>Load More Movies</LoadMoreButton>);
+
+    const button = screen.getByRole("button", { name: "Load More Movies" });
+    expect(button.hasAttribute("aria-label")).toBe(false);
+
+    await act(async () => { fireEvent.click(button); });
+    expect(screen.getByRole("button", { name: "Try again" })).toBe(button);
+
+    await act(async () => { fireEvent.click(button); });
+    expect(screen.getByRole("button", { name: "Loading..." })).toBe(button);
+
+    await act(async () => { retry.resolve(); await retry.promise; });
+    expect(screen.getByRole("button", { name: "Load More Movies" })).toBe(button);
+  });
+
+  it("is named by the default label when given none", () => {
+    render(<LoadMoreButton onLoadMore={async () => {}} />);
+
+    expect(screen.getByRole("button", { name: "Load More" })).toBeDefined();
   });
 });

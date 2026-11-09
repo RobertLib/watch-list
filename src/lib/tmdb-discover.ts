@@ -9,6 +9,8 @@
 
 import { tmdbApi } from "./tmdb";
 import { getCachedDiscoveryRequest, TMDB_CONFIG, type TMDBRequestOptions } from "./tmdb-cache";
+import { TTL, tmdbFetchJson } from "./tmdb-cache";
+import { convertMovieToMediaItem } from "./media-converters";
 import { shiftDate, shiftYears, todayLocal } from "./dates";
 import {
   getRegion,
@@ -610,5 +612,29 @@ export const tmdbDiscoverApi = {
     page: number = 1,
   ): Promise<TMDBResponse<Person>> => {
     return tmdbApi.searchPerson(query, page);
+  },
+
+  // Search for films only, for the daily puzzle's guess box. Filtering a mixed
+  // page down to films is not the same thing: for "Friends" or "Ray" the first
+  // page of /search/multi is mostly series and people, and the film being
+  // guessed can fall off it entirely. No region either – a guess has to be
+  // findable whichever country the visitor picked.
+  searchMovies: async (
+    query: string,
+    page: number = 1,
+  ): Promise<TMDBResponse<MediaItem>> => {
+    const params = new URLSearchParams({ query, page: String(page) });
+    const url = `${TMDB_CONFIG.BASE_URL}/search/movie?${params}`;
+    const data = await tmdbFetchJson<TMDBResponse<Movie>>(url, TTL.SHORT);
+
+    return {
+      ...data,
+      results: data.results.map((movie) => ({
+        ...convertMovieToMediaItem(movie),
+        // An unreleased film can come back without one; empty is what the rest
+        // of the app reads as "no date".
+        release_date: movie.release_date ?? "",
+      })),
+    };
   },
 };

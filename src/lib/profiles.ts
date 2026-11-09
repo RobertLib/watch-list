@@ -5,16 +5,18 @@ import { DAILY_GAME_STORAGE_KEY, notifyGameStateChanged } from "./daily-game";
 import { EPISODE_PROGRESS_STORAGE_KEY } from "./episode-progress";
 import { GOAL_STORAGE_KEY, notifyGoalChanged } from "./goal";
 import { HIGHER_LOWER_STORAGE_KEY } from "./higher-lower";
+import { LAST_VISIT_STORAGE_KEY, LEGACY_LAST_VISIT_STORAGE_KEY } from "./last-visit";
 import { RANKING_STORAGE_KEY } from "./ranking";
 import { RATINGS_STORAGE_KEY, notifyRatingsChanged } from "./ratings";
 import { WATCHED_STORAGE_KEY } from "./watched";
 import { WATCHLIST_STORAGE_KEY, prepareWatchlistForProfileSwitch } from "./watchlist";
-import { DELETED_PROFILE_PREFIX, deletedProfileKey, getLegacyProfileStorageOwner, getProfileStorageOwner, initializeProfileStorage, isProfileDeleted, isProfileStorageOwnerAvailable, PROFILE_STORAGE_OWNER_KEY, profileStoreChanges, profileStoreKey, publishProfileStorageChange, readProfileStore, resolveProfileStorageOwner, withProfileStorage } from "./profile-storage";
+import { DEFAULT_PROFILE, DELETED_PROFILE_PREFIX, deletedProfileKey, getLegacyProfileStorageOwner, getProfileStorageOwner, initializeProfileStorage, inspectProfileStore, isProfileDeleted, isProfileStorageOwnerAvailable, MAX_PROFILES, PROFILE_STORAGE_OWNER_KEY, profileStoreChanges, profileStoreKey, publishProfileStorageChange, resolveProfileStorageOwner, sanitizeProfileName, sanitizeProfiles, withProfileStorage, type Profile } from "./profile-storage";
 import { withProfileRosterLock } from "./profile-roster-lock";
-import {
-  applyStorageTransaction,
-  type StorageTransactionResult,
-} from "./storage-transaction";
+import type { StorageTransactionResult } from "./storage-transaction";
+
+// The roster's shape and its one normalizer live with the storage ownership
+// that has to agree with them; this is still where callers find them.
+export { DEFAULT_PROFILE, MAX_PROFILE_NAME_LENGTH, MAX_PROFILES, sanitizeProfiles, type Profile } from "./profile-storage";
 
 /**
  * More than one person per browser.
@@ -35,20 +37,7 @@ export const PROFILES_STORAGE_KEY = "profiles";
 export const ACTIVE_PROFILE_STORAGE_KEY = "active-profile";
 
 /** The initial profile for visitors who have never created another. */
-export const DEFAULT_PROFILE_ID = "default";
-
-export const MAX_PROFILES = 5;
-export const MAX_PROFILE_NAME_LENGTH = 24;
-
-export interface Profile {
-  id: string;
-  name: string;
-}
-
-export const DEFAULT_PROFILE: Profile = {
-  id: DEFAULT_PROFILE_ID,
-  name: "Me",
-};
+export const DEFAULT_PROFILE_ID = DEFAULT_PROFILE.id;
 
 const listeners = new Set<() => void>();
 
@@ -98,6 +87,9 @@ const OWNED_KEYS = [
   // behind, it made the stats page compare one person's goal to another
   // person's year – a number that is wrong without ever looking wrong.
   GOAL_STORAGE_KEY,
+  // "Since you were last here" is checked against this person's followed
+  // titles, so the interval it acknowledges has to be this person's too.
+  LAST_VISIT_STORAGE_KEY,
 ] as const;
 
 /** Where a dormant profile's data is parked. */
@@ -106,82 +98,89 @@ function slotKey(profileId: string): string {
 }
 
 /**
- * A profile's stores, as the raw strings each store wrote.
+ * Storage a profile owns outside its stable store addresses: the shared
+ * last-visit stamp written before profiles had their own belongs to the
+ * original owner, like the other legacy live keys. Restores and deletions
+ * replace it with the rest of that owner's data.
+ */
+function legacyOwnedKeys(profileId: string): string[] {
+  return profileId === getLegacyProfileStorageOwner() ? [LEGACY_LAST_VISIT_STORAGE_KEY] : [];
+}
+
+/**
+ * A profile's stores as a backup reads them, without switching to it.
  *
- * Exported for backup and restore, which is the one thing outside this module
- * that has any business reading a profile other than the active one. It hands
- * back raw values rather than anything structured: what a store's JSON
- * means is the store's business, not this module's.
- *
- * Strict reads distinguish a new profile's absent slot from unreadable data.
- * Backups and switches must stop on corruption rather than treating it as an
- * empty profile and discarding the only saved copy.
+ * `slot` holds the raw string of every store that could be read; what a store's
+ * JSON means is the store's business, not this module's. `unreadable` holds the
+ * rest, keyed by store, with the stored text kept exactly as found – or null
+ * when the browser refused the read – so a backup can still carry everything
+ * else and say precisely what it could not.
+ */
+export function inspectProfileSlot(profileId: string): {
+  slot: Record<string, string>;
+  unreadable: Record<string, string | null>;
+} {
+  const slot: Record<string, string> = {};
+  const unreadable: Record<string, string | null> = {};
+  if (typeof window === "undefined") return { slot, unreadable };
+
+  for (const key of OWNED_KEYS) {
+    const store = inspectProfileStore(key, profileId);
+    if (!store.readable) unreadable[key] = store.raw;
+    else if (store.value !== null) slot[key] = store.value;
+  }
+
+  return { slot, unreadable };
+}
+
+/**
+ * A profile's readable stores, as the raw strings each store wrote. A strict
+ * read throws instead when any store cannot be read, rather than presenting
+ * corruption as an empty store.
  */
 export function readProfileSlot(
   profileId: string,
   options: { strict?: boolean } = {},
 ): Record<string, string> {
-  if (typeof window === "undefined") return {};
+  const { slot, unreadable } = inspectProfileSlot(profileId);
+  const failed = Object.keys(unreadable);
+  if (options.strict && failed.length > 0) {
+    throw new Error(`Unreadable stored profile data: ${failed.join(", ")}`);
+  }
 
+  return slot;
+}
+
+/**
+ * The stored roster text as the app uses it. `canonical` is false when the
+ * normalizer had to repair it – entries past the cap, blank or zero-width
+ * names, over-long ids, duplicates, or text that is not a roster at all.
+ */
+export function parseStoredProfiles(stored: string | null): {
+  profiles: Profile[];
+  canonical: boolean;
+} {
+  if (stored === null) return { profiles: [DEFAULT_PROFILE], canonical: true };
+
+  let parsed: unknown;
   try {
-    const slot: Record<string, string> = {};
-    for (const key of OWNED_KEYS) {
-      const value = readProfileStore(key, profileId, options.strict);
-      if (value === null) continue;
-      if (options.strict) JSON.parse(value);
-      slot[key] = value;
-    }
-
-    return slot;
-  } catch (error) {
-    if (options.strict) throw error;
-    console.error("Error reading the profile's data:", error);
-    return {};
+    parsed = JSON.parse(stored);
+  } catch {
+    return { profiles: [DEFAULT_PROFILE], canonical: false };
   }
-}
+  const profiles = sanitizeProfiles(parsed);
+  const canonical = Array.isArray(parsed) &&
+    parsed.length === profiles.length &&
+    parsed.every((entry, index) =>
+      !!entry && typeof entry === "object" &&
+      entry.id === profiles[index].id &&
+      entry.name === profiles[index].name,
+    );
 
-function sanitizeName(value: unknown): string {
-  if (typeof value !== "string") return "";
-
-  return value
-    .replace(/[\p{C}]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, MAX_PROFILE_NAME_LENGTH);
-}
-
-export function sanitizeProfiles(input: unknown): Profile[] {
-  if (!Array.isArray(input)) return [DEFAULT_PROFILE];
-
-  const profiles: Profile[] = [];
-  const seen = new Set<string>();
-
-  for (const entry of input) {
-    if (!entry || typeof entry !== "object") continue;
-
-    const record = entry as Record<string, unknown>;
-    const id = typeof record.id === "string" ? record.id.slice(0, 64) : "";
-    const name = sanitizeName(record.name);
-
-    if (!id || !name || seen.has(id)) continue;
-    seen.add(id);
-
-    profiles.push({ id, name });
-    if (profiles.length >= MAX_PROFILES) break;
-  }
-
-  // There is always somebody. A stored list that repaired down to nothing means
-  // the data in the live keys belongs to the default profile.
-  if (!profiles.some((profile) => profile.id === DEFAULT_PROFILE_ID)) {
-    profiles.unshift(DEFAULT_PROFILE);
-    // Room is made rather than taken: the loop above stops at the cap, so
-    // putting the default profile back on the front of a full list would return
-    // one more than `MAX_PROFILES` and let the UI create past its own limit.
-    // The default is the entry that cannot be dropped – it owns the live keys.
-    if (profiles.length > MAX_PROFILES) profiles.length = MAX_PROFILES;
-  }
-
-  return profiles;
+  return {
+    profiles: profiles.filter((profile) => !isProfileDeleted(profile.id)),
+    canonical,
+  };
 }
 
 export function getProfiles(options: { strict?: boolean } = {}): Profile[] {
@@ -189,22 +188,11 @@ export function getProfiles(options: { strict?: boolean } = {}): Profile[] {
 
   try {
     const stored = window.localStorage.getItem(PROFILES_STORAGE_KEY);
-    if (stored === null || (!options.strict && !stored)) return [DEFAULT_PROFILE];
-
-    const parsed: unknown = JSON.parse(stored);
-    const profiles = sanitizeProfiles(parsed);
-    if (options.strict && (
-      !Array.isArray(parsed) ||
-      parsed.length !== profiles.length ||
-      parsed.some((entry, index) =>
-        !entry || typeof entry !== "object" ||
-        entry.id !== profiles[index].id ||
-        entry.name !== profiles[index].name,
-      )
-    )) {
-      throw new Error("Invalid stored profile roster");
-    }
-    return profiles.filter((profile) => !isProfileDeleted(profile.id));
+    const { profiles, canonical } = parseStoredProfiles(stored);
+    // Edits to the roster rewrite all of it, so they must not start from a
+    // repaired copy: the entries the repair dropped would be gone for good.
+    if (options.strict && !canonical) throw new Error("Invalid stored profile roster");
+    return profiles;
   } catch (error) {
     if (options.strict) throw error;
     console.error("Error parsing profiles from storage:", error);
@@ -248,17 +236,16 @@ export function getActiveProfileId(options: { strict?: boolean } = {}): string {
   }
 }
 
-export function getActiveProfile(): Profile {
-  const id = getActiveProfileId();
-  return getProfiles().find((profile) => profile.id === id) ?? DEFAULT_PROFILE;
-}
-
+/** Every owned store replaced by `snapshot`, for backup restore. */
 export function liveProfileChanges(
   snapshot: Record<string, string>,
   profileId = getProfileStorageOwner(),
   options: { restoringProfile?: boolean } = {},
 ): Map<string, string | null> {
-  return profileStoreChanges(OWNED_KEYS, snapshot, profileId, options);
+  const changes = profileStoreChanges(OWNED_KEYS, snapshot, profileId, options);
+  // An absent incoming stamp would otherwise fall back to the pre-profile one.
+  for (const key of legacyOwnedKeys(profileId)) changes.set(key, null);
+  return changes;
 }
 
 /**
@@ -266,7 +253,17 @@ export function liveProfileChanges(
  *
  * Only the active pointer changes. Failed writes leave every profile's stores
  * intact. The roster lock keeps a queued deletion or restore from invalidating
- * the target between checking its stores and saving the pointer.
+ * the target between checking it and saving the pointer.
+ *
+ * The target's stores are not read: nothing moves, so nothing can be lost to
+ * one that is unreadable. Such a store behaves exactly as it does for a profile
+ * that is already active – it renders empty, its edits are refused, a clear
+ * replaces it, and a backup keeps its text. Refusing the switch over it used to
+ * leave that person's other stores unreachable, with no way to recover them.
+ *
+ * Asking for the profile that is already active succeeds: another tab got
+ * there first, and this one has not seen the storage event yet. Subscribers are
+ * told, so the page catches up with the profile actually in use.
  */
 export function switchProfileWithResult(
   profileId: string,
@@ -285,7 +282,10 @@ function switchProfileLocked(
   }
 
   const current = getActiveProfileId();
-  if (current === profileId) return { ok: false, key: null, rolledBack: true };
+  if (current === profileId) {
+    notifyProfileStoresChanged();
+    return { ok: true };
+  }
 
   const exists = getProfiles().some((profile) => profile.id === profileId);
   if (!exists) return { ok: false, key: null, rolledBack: true };
@@ -298,8 +298,6 @@ function switchProfileLocked(
     if (!withProfileStorage(getLegacyProfileStorageOwner(), prepareWatchlistForProfileSwitch)) {
       return { ok: false, key: WATCHLIST_STORAGE_KEY, rolledBack: true };
     }
-    writingKey = null;
-    readProfileSlot(profileId, { strict: true });
     writingKey = ACTIVE_PROFILE_STORAGE_KEY;
     if (!getProfiles().some((profile) => profile.id === profileId)) {
       return { ok: false, key: PROFILES_STORAGE_KEY, rolledBack: true };
@@ -380,7 +378,7 @@ export function createProfile(name: string): Promise<Profile | null> {
 function createProfileLocked(name: string): Profile | null {
   if (typeof window === "undefined") return null;
 
-  const clean = sanitizeName(name);
+  const clean = sanitizeProfileName(name);
   if (!clean) return null;
 
   const profiles = getProfiles({ strict: true });
@@ -414,7 +412,7 @@ export function renameProfile(profileId: string, name: string): Promise<boolean>
 function renameProfileLocked(profileId: string, name: string): boolean {
   if (typeof window === "undefined") return false;
 
-  const clean = sanitizeName(name);
+  const clean = sanitizeProfileName(name);
   if (!clean) return false;
 
   // `exceptId` is what lets a rename that only changes capitalisation through –
@@ -481,6 +479,7 @@ function deleteProfileLocked(profileId: string): boolean {
     for (const key of OWNED_KEYS) {
       window.localStorage.removeItem(profileStoreKey(key, profileId));
     }
+    for (const key of legacyOwnedKeys(profileId)) window.localStorage.removeItem(key);
   } catch (error) {
     // The committed marker keeps retained data inaccessible to late writes;
     // failed cleanup costs storage without reversing the requested deletion.
@@ -557,31 +556,8 @@ export function profileRestoreChanges(
     for (const key of OWNED_KEYS) {
       changes.set(profileStoreKey(key, existing.id), null);
     }
+    for (const key of legacyOwnedKeys(existing.id)) changes.set(key, null);
   }
 
   return changes;
-}
-
-/** Replace just the profile roster and slots, for callers with no live stores. */
-export function restoreProfiles(
-  active: Profile | null,
-  others: { profile: Profile; slot: Record<string, string> }[],
-): Promise<boolean> {
-  return withProfileRosterLock(() => restoreProfilesLocked(active, others), false);
-}
-
-function restoreProfilesLocked(
-  active: Profile | null,
-  others: { profile: Profile; slot: Record<string, string> }[],
-): boolean {
-  try {
-    const changes = profileRestoreChanges(active, others);
-    if (!changes || !applyStorageTransaction(changes).ok) return false;
-  } catch (error) {
-    console.error("Error preparing profile restore:", error);
-    return false;
-  }
-
-  notifyProfilesChanged();
-  return true;
 }

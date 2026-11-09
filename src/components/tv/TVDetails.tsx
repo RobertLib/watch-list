@@ -100,8 +100,9 @@ function TVDetailsContent({
                 <div key={network.id} className="flex items-center gap-2">
                   {network.logo_path ? (
                     <div className="relative w-14 h-6 shrink-0">
+                      {/* A 56px box: w154 covers it at 2x. */}
                       <Image
-                        src={tmdbApi.getImageUrl(network.logo_path, "w500")}
+                        src={tmdbApi.getImageUrl(network.logo_path, "w154")}
                         alt={network.name}
                         fill
                         className="object-contain"
@@ -127,8 +128,9 @@ function TVDetailsContent({
                   <div key={company.id} className="flex items-center gap-2">
                     {company.logo_path && (
                       <div className="relative w-10 h-5 shrink-0">
+                        {/* A 40px box: w92 covers it at 2x. */}
                         <Image
-                          src={tmdbApi.getImageUrl(company.logo_path, "w500")}
+                          src={tmdbApi.getImageUrl(company.logo_path, "w92")}
                           alt={company.name}
                           fill
                           className="object-contain"

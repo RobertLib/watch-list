@@ -102,21 +102,22 @@ export default function Home() {
 
         <TrendingCarousel />
 
-        {/* Movies section */}
+        {/* Movies section. The rows under a group heading are its
+            subsections, so their own titles are h3s. */}
         <div className="border-t border-gray-800/60 pt-10 space-y-12">
           <h2 className="text-3xl font-bold text-white">Movies</h2>
-          <NowPlayingCarousel />
-          <PopularMoviesCarousel />
-          <UpcomingMoviesCarousel />
-          <TopRatedMoviesCarousel />
+          <NowPlayingCarousel headingLevel={3} />
+          <PopularMoviesCarousel headingLevel={3} />
+          <UpcomingMoviesCarousel headingLevel={3} />
+          <TopRatedMoviesCarousel headingLevel={3} />
         </div>
 
         {/* TV Shows section */}
         <div className="border-t border-gray-800/60 pt-10 space-y-12">
           <h2 className="text-3xl font-bold text-white">TV Shows</h2>
-          <AiringTodayCarousel />
-          <PopularTVShowsCarousel />
-          <TopRatedTVShowsCarousel />
+          <AiringTodayCarousel headingLevel={3} />
+          <PopularTVShowsCarousel headingLevel={3} />
+          <TopRatedTVShowsCarousel headingLevel={3} />
         </div>
 
         {/* Genre quick browse */}

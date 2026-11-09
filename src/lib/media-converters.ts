@@ -1,4 +1,5 @@
 import {
+  CastMember,
   Movie,
   TVShow,
   MediaItem,
@@ -6,6 +7,39 @@ import {
   WatchProvidersResponse,
 } from "@/types/tmdb";
 import { streamingProvidersFor } from "./watch-provider-availability";
+
+/**
+ * A title's cast with one entry per person, in billing order.
+ *
+ * TMDB bills an actor once per role, so Peter Sellers is three cast entries in
+ * Dr. Strangelove. Rendered as-is that is the same face three times – and three
+ * siblings keyed by the same person id, which React cannot tell apart. Each
+ * person keeps the place of their first billing, with every distinct character
+ * joined in billing order.
+ */
+export function mergeCastByPerson(cast: CastMember[]): CastMember[] {
+  const people = new Map<number, { member: CastMember; characters: string[] }>();
+
+  for (const member of cast) {
+    const character = member.character?.trim() ?? "";
+    const seen = people.get(member.id);
+    if (!seen) {
+      people.set(member.id, {
+        member,
+        characters: character ? [character] : [],
+      });
+      continue;
+    }
+    if (character && !seen.characters.includes(character)) {
+      seen.characters.push(character);
+    }
+  }
+
+  return [...people.values()].map(({ member, characters }) => ({
+    ...member,
+    character: characters.join(" / "),
+  }));
+}
 
 /**
  * Pick one region out of an appended `watch/providers` response.

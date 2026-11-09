@@ -133,12 +133,12 @@ describe.each(sections)("Filtered section: $name", ({ name, popular, discover, c
     await act(async () => { render(component()); });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Load more content" }));
+      fireEvent.click(screen.getByRole("button", { name: /^Load More/ }));
     });
 
     if (filtered) expect(discover).toHaveBeenLastCalledWith(500, { year: "2020" });
     expect(screen.getByText("Last accessible page")).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Load more content" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Load More/ })).toBeNull();
   });
 
   it("continues the bounded popular query when no URL filters are active", async () => {
@@ -146,7 +146,7 @@ describe.each(sections)("Filtered section: $name", ({ name, popular, discover, c
     render(component());
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Load more content" }));
+      fireEvent.click(screen.getByRole("button", { name: /^Load More/ }));
     });
 
     expect(popular).toHaveBeenCalledExactlyOnceWith(2);
@@ -163,7 +163,7 @@ describe.each(sections)("Filtered section: $name", ({ name, popular, discover, c
     await act(async () => { render(component()); });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Load more content" }));
+      fireEvent.click(screen.getByRole("button", { name: /^Load More/ }));
     });
 
     expect(discover).toHaveBeenNthCalledWith(1, 1, { year: "2020" });
@@ -185,13 +185,13 @@ describe.each(sections)("Filtered section: $name", ({ name, popular, discover, c
     await act(async () => { render(component()); });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Load more content" }));
+      fireEvent.click(screen.getByRole("button", { name: /^Load More/ }));
     });
 
     expect(screen.getByText("Initial title")).toBeDefined();
     expect(screen.getByRole("alert").textContent).toContain("Could not load more titles");
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Retry loading more content" }));
+      fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     });
 
     expect(loader).toHaveBeenLastCalledWith(...(filtered ? [2, { year: "2020" }] : [2]));
@@ -208,7 +208,7 @@ describe.each(sections)("Filtered section: $name", ({ name, popular, discover, c
       .mockRejectedValueOnce(new Error("Offline"));
     const view = await act(async () => render(component()));
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Load more content" }));
+      fireEvent.click(screen.getByRole("button", { name: /^Load More/ }));
     });
     expect(screen.getByRole("alert")).toBeDefined();
 
@@ -217,7 +217,7 @@ describe.each(sections)("Filtered section: $name", ({ name, popular, discover, c
 
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByText("Initial title")).toBeDefined();
-    expect(screen.getByRole("button", { name: "Load more content" })).toBeDefined();
+    expect(screen.getByRole("button", { name: /^Load More/ })).toBeDefined();
   });
 
   it("discards an old pagination response after the new filter results arrive", async () => {
@@ -228,7 +228,7 @@ describe.each(sections)("Filtered section: $name", ({ name, popular, discover, c
       .mockResolvedValueOnce(page(2, "New filter page two", 80));
     const view = render(component());
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Load more content" }));
+      fireEvent.click(screen.getByRole("button", { name: /^Load More/ }));
     });
 
     navigation.query = "year=2020";
@@ -242,7 +242,7 @@ describe.each(sections)("Filtered section: $name", ({ name, popular, discover, c
     expect(screen.queryByText("Obsolete title")).toBeNull();
     expect(screen.getByText(`80 ${name}`)).toBeDefined();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Load more content" }));
+      fireEvent.click(screen.getByRole("button", { name: /^Load More/ }));
     });
     expect(discover).toHaveBeenLastCalledWith(2, { year: "2020" });
   });
@@ -255,7 +255,7 @@ describe.each(sections)("Filtered section: $name", ({ name, popular, discover, c
     discover.mockReturnValue(newPage.promise);
     const view = render(component());
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Load more content" }));
+      fireEvent.click(screen.getByRole("button", { name: /^Load More/ }));
     });
 
     navigation.query = "year=2020";

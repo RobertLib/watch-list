@@ -22,7 +22,7 @@ import {
   Trophy,
   X,
 } from "lucide-react";
-import { checkDailyGuess, getDailyPuzzle, searchMulti } from "@/lib/api";
+import { checkDailyGuess, getDailyPuzzle, searchMovies } from "@/lib/api";
 import { toast } from "@/components/Toast";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { LoadFailureNotice } from "@/components/LoadFailureNotice";
@@ -34,11 +34,13 @@ import {
   effectiveStreak,
   getGameStateSnapshot,
   getServerGameStateSnapshot,
+  playedOnTheDay,
   recordArchiveGuess,
   recordGuess,
   saveGameState,
   stateForDay,
   subscribeToGameState,
+  type DailyBoard,
   type DailyGameState,
   type DailyGuess,
 } from "@/lib/daily-game";
@@ -65,6 +67,51 @@ const MAX_SUGGESTIONS = 6;
 const MIN_QUERY_LENGTH = 2;
 const NO_SUGGESTIONS: MediaItem[] = [];
 const getServerProfileId = () => DEFAULT_PROFILE_ID;
+// Long enough to read a sentence about where a guess went; the default three
+// seconds is for "saved".
+const LATE_GUESS_TOAST_MS = 10_000;
+
+type SaveOutcome =
+  | "saved"
+  | "refused"
+  | "skipped"
+  | "unavailable"
+  /** Landed after its day ended, on that day's archive board. */
+  | "late"
+  /** Landed after its day ended, and the archive board could not take it. */
+  | "late-skipped";
+
+/** What a screen reader hears once a guess is on the board. */
+function describeGuess(title: string, board: DailyBoard): string {
+  const used = board.guesses.length;
+  const left = MAX_GUESSES - used;
+
+  if (board.status === "won") {
+    return `${title} is right. Solved in ${used} ${used === 1 ? "guess" : "guesses"}.`;
+  }
+  if (board.status === "lost") return `${title} is not it. Out of guesses.`;
+  return `${title} is not it. ${left} ${left === 1 ? "guess" : "guesses"} remaining.`;
+}
+
+/** The toast for a guess that arrived after midnight UTC closed its puzzle. */
+function describeLateGuess(
+  day: string,
+  title: string,
+  board: DailyBoard | null,
+): string {
+  const closed = `Puzzle #${puzzleNumberForDay(day)} closed at midnight UTC before your guess was saved.`;
+
+  if (!board) {
+    return `${closed} The puzzle was already finished or had that guess, so ${title} was not counted.`;
+  }
+  if (board.status === "won") {
+    return `${closed} ${title} was right – it is saved to that puzzle in the archive as a catch-up, not towards your streak.`;
+  }
+  if (board.status === "lost") {
+    return `${closed} ${title} was not it, and was the last guess on that puzzle in the archive.`;
+  }
+  return `${closed} ${title} is saved to that puzzle in the archive – finish it there, though it no longer counts towards your streak.`;
+}
 
 /**
  * The daily film puzzle.
@@ -77,7 +124,8 @@ const getServerProfileId = () => DEFAULT_PROFILE_ID;
  * The same board plays an archived day when one is passed in. Only the bookkeeping
  * differs: an archive result is kept apart from the streak, because a streak has
  * to keep meaning "turned up on the day" rather than "worked through the back
- * catalogue".
+ * catalogue". A past day that was played on the day is not replayed at all – the
+ * board shows how it finished.
  */
 export function DailyGame({ day: requestedDay }: { day?: string } = {}) {
   const profileId = useSyncExternalStore(
@@ -154,9 +202,19 @@ function PuzzleBoard({
     [stored, day, isArchive],
   );
 
+  // A past day already played on the day is shown as it finished and never
+  // reopened; `archiveBoardFor` hands it back finished, which is what keeps the
+  // picker away. It is only a catch-up when it was missed.
   const board = isArchive ? archiveBoardFor(state, day) : state.today;
+  const playedLive = isArchive && playedOnTheDay(state, day);
   const guessCount = board?.guesses.length ?? 0;
   const isOver = board ? board.status !== "playing" : false;
+  // What a screen reader hears after a guess. Rendered into a region that is
+  // always there, because a live region mounted with its text is not announced.
+  const [announcement, setAnnouncement] = useState("");
+  // Set when a guess here finishes the board: the picker that had focus goes
+  // away with it, so the result takes focus once it is on screen.
+  const [finishedHere, setFinishedHere] = useState(false);
 
   // A restore or reset in another tab can also rewind this profile's board.
   // Retain an older view only while its clues and artwork are still earned.
@@ -234,7 +292,15 @@ function PuzzleBoard({
         const correct = await checkDailyGuess(day, item.id);
         // A check can finish after midnight or after opening another archived
         // day or switching profiles in another tab.
-        if (!isMounted.current || !checkProfile(false)) return;
+        //
+        // Midnight is the one that keeps the guess. The live board remounts onto
+        // the new puzzle then, and a guess still in flight used to vanish with
+        // it – no save, no word. It belongs to a day that has ended, so it goes
+        // where that day's unfinished board goes: the archive, which continues
+        // it without counting towards the streak. Leaving the page or opening
+        // another day while the day is still running discards it, as before.
+        const dayEnded = () => !isArchive && todayUtc() > day;
+        if ((!isMounted.current && !dayEnded()) || !checkProfile(false)) return;
         const guess: DailyGuess = {
           id: item.id,
           title: item.title,
@@ -243,21 +309,44 @@ function PuzzleBoard({
 
         // Hold the same lock as other tabs' guesses and restores, then read the
         // latest board. A request queued for the lock can outlive this board.
-        const saved = await withProfileRosterLock<"saved" | "refused" | "skipped" | "unavailable">(() => {
-          if (!isMounted.current || !checkProfile(false) || (!isArchive && todayUtc() !== day)) return "skipped";
+        // Widened rather than narrowed to null: it is assigned in the callback.
+        let landed = null as DailyBoard | null;
+        const saved = await withProfileRosterLock<SaveOutcome>(() => {
+          const late = dayEnded();
+          if ((!isMounted.current && !late) || !checkProfile(false)) return "skipped";
+          // A clock that went backwards past midnight: no day to record against.
+          if (!isArchive && todayUtc() < day) return "skipped";
           return withProfileStorage(profileId, () => {
             const latestState = getGameStateSnapshot({ strict: true });
-            if (!isArchive && latestState.today && latestState.today.day > day) return "skipped";
-            const nextState = isArchive
+            if (!isArchive && !late && latestState.today && latestState.today.day > day) return "skipped";
+            // A late guess never reaches the live board, so it can neither
+            // record a result for the day nor touch the streak.
+            const onArchive = isArchive || late;
+            const nextState = onArchive
               ? recordArchiveGuess(latestState, day, guess)
               : recordGuess(latestState, day, guess);
-            if (nextState === latestState) return "skipped";
+            if (nextState === latestState) return late ? "late-skipped" : "skipped";
 
             // The store notifies and the board re-reads only after saving.
-            return saveGameState(nextState) ? "saved" : "refused";
+            if (!saveGameState(nextState)) return "refused";
+            landed = onArchive ? nextState.archive[day] ?? null : nextState.today;
+            return late ? "late" : "saved";
           });
         }, "unavailable");
-        if ((saved === "refused" || saved === "unavailable") && isMounted.current && checkProfile(false)) {
+        if ((saved === "late" || saved === "late-skipped") && checkProfile(false)) {
+          toast.showToast(
+            describeLateGuess(day, item.title, landed),
+            "info",
+            LATE_GUESS_TOAST_MS,
+          );
+        }
+        if (saved === "saved" && landed && isMounted.current) {
+          setAnnouncement(describeGuess(item.title, landed));
+          if (landed.status !== "playing") setFinishedHere(true);
+        }
+        // Said even after a midnight remount: that guess was kept on purpose,
+        // so losing it to storage is not something to keep quiet about either.
+        if ((saved === "refused" || saved === "unavailable") && (isMounted.current || dayEnded()) && checkProfile(false)) {
           toast.showToast(
             saved === "refused"
               ? "Could not save that guess. Check your browser's storage settings and try again."
@@ -340,11 +429,25 @@ function PuzzleBoard({
 
       {isArchive && (
         <p className="text-sm text-gray-500 rounded-lg border border-gray-800 bg-gray-900/40 px-4 py-3">
-          Puzzle #{puzzleNumberForDay(day)} originally ran on {day}. It counts
-          towards your archive badge, but not towards the streak – that one is
-          for turning up on the day.
+          {playedLive ? (
+            <>
+              You played puzzle #{puzzleNumberForDay(day)} on {day}, the day it
+              ran, so it stays as it finished. The archive is for catching up on
+              the days you missed.
+            </>
+          ) : (
+            <>
+              Puzzle #{puzzleNumberForDay(day)} originally ran on {day}. It
+              counts towards your archive badge, but not towards the streak –
+              that one is for turning up on the day.
+            </>
+          )}
         </p>
       )}
+
+      <p role="status" className="sr-only">
+        {announcement}
+      </p>
 
       {loadFailed && (
         <LoadFailureNotice
@@ -365,7 +468,11 @@ function PuzzleBoard({
         isOver={isOver}
       />
 
-      <GuessPips guesses={board?.guesses ?? []} />
+      {/* A result kept without its board has no guesses to draw, and six empty
+          pips would read as a day never played. */}
+      {!(isOver && guessCount === 0) && (
+        <GuessPips guesses={board?.guesses ?? []} />
+      )}
 
       {!isOver && (
         <>
@@ -403,6 +510,10 @@ function PuzzleBoard({
               ) : (
                 <X className="w-4 h-4 shrink-0 text-red-400" aria-hidden="true" />
               )}
+              {/* The icons are the only other place this is said. */}
+              <span className="sr-only">
+                {guess.correct ? "Right:" : "Wrong:"}
+              </span>
               <span className="truncate">{guess.title}</span>
             </li>
           ))}
@@ -417,6 +528,8 @@ function PuzzleBoard({
           status={board.status}
           state={state}
           isArchive={isArchive}
+          playedLive={playedLive}
+          takeFocus={finishedHere}
         />
       )}
     </div>
@@ -496,6 +609,8 @@ function GuessPicker({
   // Each keystroke starts its own request and they can return out of order, so
   // only the most recent one is allowed to write to state.
   const runId = useRef(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
 
   function updateQuery(value: string) {
     if (value === query) return;
@@ -524,16 +639,13 @@ function GuessPicker({
     const timer = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const response = await searchMulti(trimmed, 1);
+        // Films only, asked of the film search. The answer is always a film, and
+        // filtering a mixed page instead lost the film outright whenever series
+        // and people filled that page ("Friends", "Ray").
+        const response = await searchMovies(trimmed, 1);
         if (id !== runId.current) return;
 
-        setFound(
-          response.results
-            // The answer is always a film, so shows and people would only ever be
-            // wasted guesses.
-            .filter((item) => item.media_type === "movie")
-            .slice(0, MAX_SUGGESTIONS),
-        );
+        setFound(response.results.slice(0, MAX_SUGGESTIONS));
       } catch (error) {
         console.error("Error searching for a guess:", error);
         if (id === runId.current) setFound([]);
@@ -549,8 +661,17 @@ function GuessPicker({
   }, [query]);
 
   function pick(item: MediaItem) {
+    if (disabled) return;
+
+    // Clearing the query empties the list, and a suggestion that had focus goes
+    // with it – focus fell to the page. It goes back to the box, where the next
+    // guess is typed. Only when focus was in the list: a tap that never focused
+    // the button (iOS) should not pop the keyboard back up.
+    const focusWasInList = listRef.current?.contains(document.activeElement) ?? false;
+
     onPick(item);
     updateQuery("");
+    if (focusWasInList) inputRef.current?.focus();
   }
 
   return (
@@ -564,14 +685,21 @@ function GuessPicker({
           aria-hidden="true"
         />
         <input
+          ref={inputRef}
           id="daily-guess"
           type="text"
           autoComplete="off"
           value={query}
-          disabled={disabled}
-          onChange={(event) => updateQuery(event.target.value)}
+          // Native disabled blurs the focused box in browsers, which is exactly
+          // where focus has just been put back after a pick. Read-only keeps it
+          // focusable while a guess is being saved; the handlers refuse input.
+          readOnly={disabled}
+          aria-disabled={disabled}
+          onChange={(event) => {
+            if (!disabled) updateQuery(event.target.value);
+          }}
           placeholder="Type a film title…"
-          className="w-full pl-12 pr-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40 disabled:opacity-60"
+          className="w-full pl-12 pr-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40 aria-disabled:opacity-60 aria-disabled:cursor-wait"
         />
       </div>
 
@@ -580,7 +708,10 @@ function GuessPicker({
       )}
 
       {results.length > 0 && (
-        <ul className="rounded-lg border border-gray-800 bg-gray-900 divide-y divide-gray-800 overflow-hidden">
+        <ul
+          ref={listRef}
+          className="rounded-lg border border-gray-800 bg-gray-900 divide-y divide-gray-800 overflow-hidden"
+        >
           {results.map((item) => {
             const guessed = alreadyGuessed.has(item.id);
             return (
@@ -663,6 +794,8 @@ function Result({
   status,
   state,
   isArchive,
+  playedLive,
+  takeFocus,
 }: {
   answer: NonNullable<DailyPuzzleView["answer"]>;
   puzzleNumber: number;
@@ -670,8 +803,20 @@ function Result({
   status: "won" | "lost";
   state: DailyGameState;
   isArchive: boolean;
+  /** An archived day that was played on the day, shown as it finished. */
+  playedLive: boolean;
+  /** The guess that finished the board was made here, and its picker is gone. */
+  takeFocus: boolean;
 }) {
   const [copied, markCopied] = useTransientFlag(2500);
+  const heading = useRef<HTMLParagraphElement>(null);
+  // A result from the day kept without its board: the outcome is known, the
+  // guesses that led there are not.
+  const resultOnly = guesses.length === 0;
+
+  useEffect(() => {
+    if (takeFocus) heading.current?.focus();
+  }, [takeFocus]);
 
   async function share() {
     // Always the front door, never the archived day – a link to the exact puzzle
@@ -680,14 +825,28 @@ function Result({
       typeof window === "undefined"
         ? absoluteUrl("/daily")
         : `${window.location.origin}/daily`;
-    const text = buildShareText(puzzleNumber, guesses, status, url, isArchive);
+    // A day played on the day is no catch-up, wherever it is shared from.
+    const text = buildShareText(
+      puzzleNumber,
+      guesses,
+      status,
+      url,
+      isArchive && !playedLive,
+    );
 
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
         await navigator.share({ text });
         return;
-      } catch {
-        // Dismissed – fall through to the clipboard.
+      } catch (error) {
+        // A dismissed sheet is intentional; a refused or unsupported share
+        // still falls through to the clipboard. Treating a dismissal the same
+        // way sent a cancelled share on to a clipboard write that iOS refuses
+        // outside the gesture – and an error toast for having changed your mind.
+        if (
+          error !== null && typeof error === "object" &&
+          "name" in error && error.name === "AbortError"
+        ) return;
       }
     }
 
@@ -724,14 +883,20 @@ function Result({
         </div>
         <div className="min-w-0">
           <p
+            ref={heading}
+            tabIndex={-1}
             className={cn(
-              "text-sm font-semibold",
+              "text-sm font-semibold focus:outline-none",
               status === "won" ? "text-green-300" : "text-red-300",
             )}
           >
             {status === "won"
-              ? `Got it in ${guesses.length}!`
-              : "Out of guesses"}
+              ? resultOnly
+                ? "Solved on the day"
+                : `Got it in ${guesses.length}!`
+              : resultOnly
+                ? "Not solved on the day"
+                : "Out of guesses"}
           </p>
           <Link
             href={movieHref(answer.slug)}
@@ -760,17 +925,21 @@ function Result({
       )}
 
       <div className="flex flex-wrap gap-3">
-        <button
-          onClick={share}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-sm font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-        >
-          {copied ? (
-            <Check className="w-4 h-4" aria-hidden="true" />
-          ) : (
-            <Share2 className="w-4 h-4" aria-hidden="true" />
-          )}
-          {copied ? "Copied" : "Share result"}
-        </button>
+        {/* The grid is the whole of a shared result; without the guesses there
+            is nothing to post. */}
+        {!resultOnly && (
+          <button
+            onClick={share}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-sm font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+          >
+            {copied ? (
+              <Check className="w-4 h-4" aria-hidden="true" />
+            ) : (
+              <Share2 className="w-4 h-4" aria-hidden="true" />
+            )}
+            {copied ? "Copied" : "Share result"}
+          </button>
+        )}
         <Link
           href={movieHref(answer.slug)}
           prefetch={false}

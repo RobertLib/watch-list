@@ -136,7 +136,8 @@ describe("AddToListButton", () => {
 
     expect(stored()).toEqual(initial);
     expect(input.value).toBe("Friday night");
-    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("false");
+    expect(input.readOnly).toBe(false);
     expect(toast.showToast).toHaveBeenCalledExactlyOnceWith(STORAGE_REFUSED_MESSAGE, "error");
     await click(button);
     if (action === "create") {
@@ -156,6 +157,37 @@ describe("AddToListButton", () => {
 
     expect(screen.queryByRole("textbox", { name: "New list name" })).toBeNull();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Add to list" }));
+  });
+
+  it("ignores the Escape that cancels an IME composition in the list name", async () => {
+    const input = await openPanel();
+    input.focus();
+
+    fireEvent.keyDown(input, { key: "Escape", isComposing: true });
+
+    expect(screen.getByRole("textbox", { name: "New list name" })).toBe(input);
+    expect(document.activeElement).toBe(input);
+  });
+
+  it.each(["membership", "creation"])("keeps keyboard focus on the %s control while its save waits", async (action) => {
+    window.localStorage.setItem(COLLECTIONS_STORAGE_KEY, JSON.stringify([collection()]));
+    const input = await openPanel();
+    fireEvent.change(input, { target: { value: "Friday night" } });
+    const release = await holdProfileLock();
+    const control = action === "membership"
+      ? screen.getByRole("button", { name: /Existing list/ })
+      : input;
+    control.focus();
+
+    if (action === "membership") await click(control);
+    else await act(async () => { fireEvent.submit(input.form!); });
+
+    expect(document.activeElement).toBe(control);
+    await release();
+    expect(document.activeElement).toBe(action === "membership"
+      ? screen.getByRole("button", { name: /Existing list/ })
+      : screen.getByRole("textbox", { name: "New list name" }));
+    expect(stored().some((entry) => entry.items.some((title) => title.id === item.id))).toBe(true);
   });
 
   it("leaves focus on another control when Escape dismisses an unfocused picker", async () => {
@@ -212,7 +244,11 @@ describe("AddToListButton", () => {
     });
     await click(button);
     await click(button);
-    expect(button.getAttribute("disabled")).not.toBeNull();
+    // Busy, but never natively disabled: that would blur the pressed control.
+    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(input.disabled).toBe(false);
+    expect(input.readOnly).toBe(true);
     expect(request).toHaveBeenCalledTimes(1);
     expect(request.mock.calls[0][0]).toBe(PROFILE_ROSTER_LOCK);
     expect(stored()).toEqual([collection()]);

@@ -4,6 +4,7 @@ import {
   deletedProfileKey,
   getProfileStorageOwner,
   initializeProfileStorage,
+  inspectProfileStore,
   isProfileStoreEvent,
   profileStoreChanges,
   profileStoreKey,
@@ -13,6 +14,11 @@ import {
   writeProfileStore,
 } from "./profile-storage";
 import { applyStorageTransaction } from "./storage-transaction";
+import { createProfileLockManager } from "../test/profile-locks";
+import { clearEpisodeProgress, EPISODE_PROGRESS_STORAGE_KEY } from "./episode-progress";
+import { GOAL_STORAGE_KEY, saveGoal } from "./goal";
+import { clearWatched, getWatched, WATCHED_STORAGE_KEY } from "./watched";
+import { clearWatchlist, getWatchlist, WATCHLIST_STORAGE_KEY } from "./watchlist";
 
 class MemoryStorage {
   private values = new Map<string, string>();
@@ -354,6 +360,102 @@ describe("parked fallback and mutations", () => {
     writeProfileStore("watchlist", '["new"]', "p2");
     storage.setItem("profile-data:p2", "{not json");
     expect(readProfileStore("watchlist", "p2", true)).toBe('["new"]');
+  });
+});
+
+describe("clearing a store that cannot be read", () => {
+  // A corrupt store renders as empty; "Clear all" used to fail on it with
+  // nothing but "storage refused", leaving no way to start over.
+  it.each(["{not json", ""])("clears an unreadable current store (%j)", (raw) => {
+    initializeProfileStorage();
+    storage.setItem("watched", raw);
+
+    writeProfileStore("watched", null, "default");
+
+    expect(storage.getItem("watched")).toBeNull();
+    expect(readProfileStore("watched", "default", true)).toBeNull();
+  });
+
+  it.each(["{not json", "null", "[]", '{"watched":42}', '{"watched":"[not json"}'])(
+    "clears over an unreadable parked copy and keeps that copy for recovery (%s)",
+    (raw) => {
+      storage.setItem("profile-data:p2", raw);
+
+      writeProfileStore("watched", null, "p2");
+
+      expect(readProfileStore("watched", "p2", true)).toBeNull();
+      expect(storage.getItem("profile-data:p2")).toBe(raw);
+    },
+  );
+
+  it("treats an explicit empty value as a clear only when the caller says so", () => {
+    storage.setItem("profile-data:p2", '{"watchlist":"[not json"}');
+
+    expect(() => writeProfileStore("watchlist", "[]", "p2")).toThrow();
+    writeProfileStore("watchlist", "[]", "p2", { clear: true });
+
+    expect(readProfileStore("watchlist", "p2", true)).toBe("[]");
+  });
+
+  it("still refuses an edit derived from the unreadable store", () => {
+    initializeProfileStorage();
+    storage.setItem("watched", "{not json");
+
+    expect(() => writeProfileStore("watched", '[{"id":1}]', "default")).toThrow();
+    expect(storage.getItem("watched")).toBe("{not json");
+  });
+
+  it("lets every store's own clear through over unreadable data", async () => {
+    vi.stubGlobal("navigator", { locks: createProfileLockManager() });
+    initializeProfileStorage();
+    for (const key of [WATCHED_STORAGE_KEY, EPISODE_PROGRESS_STORAGE_KEY, GOAL_STORAGE_KEY, WATCHLIST_STORAGE_KEY]) {
+      storage.setItem(key, "{not json");
+    }
+
+    expect(clearWatched()).toBe(true);
+    expect(clearEpisodeProgress()).toBe(true);
+    expect(saveGoal(null)).toBe(true);
+    expect(await clearWatchlist()).toBe(true);
+
+    expect(getWatched({ strict: true })).toEqual([]);
+    expect(getWatchlist({ strict: true })).toEqual([]);
+    expect(storage.getItem(EPISODE_PROGRESS_STORAGE_KEY)).toBeNull();
+    expect(storage.getItem(GOAL_STORAGE_KEY)).toBeNull();
+  });
+
+  it("still refuses to clear a removed profile's store", () => {
+    initializeProfileStorage();
+    storage.setItem("profiles", JSON.stringify([{ id: "default", name: "Me" }, { id: "p2", name: "Two" }]));
+    storage.setItem(deletedProfileKey("p2"), "true");
+    storage.setItem("profile-data:p2", '{"watched":"{not json"}');
+
+    expect(() => writeProfileStore("watched", null, "p2")).toThrow("removed");
+  });
+});
+
+describe("inspectProfileStore", () => {
+  it("returns a readable value, or null for an absent store", () => {
+    storage.setItem("profile-data:p2", '{"watchlist":"[1]"}');
+
+    expect(inspectProfileStore("watchlist", "p2")).toEqual({ readable: true, value: "[1]" });
+    expect(inspectProfileStore("ratings", "p2")).toEqual({ readable: true, value: null });
+  });
+
+  it.each([
+    ["a malformed current value", () => storage.setItem(profileStoreKey("watchlist", "p2"), "[broken"), "[broken"],
+    ["a malformed parked field", () => storage.setItem("profile-data:p2", '{"watchlist":"[broken"}'), "[broken"],
+    ["a parked field that is not text", () => storage.setItem("profile-data:p2", '{"watchlist":[1]}'), "[1]"],
+    ["an unparseable parked slot", () => storage.setItem("profile-data:p2", "{broken"), "{broken"],
+  ])("keeps the exact stored text of %s", (_label, seed, raw) => {
+    seed();
+    expect(inspectProfileStore("watchlist", "p2")).toEqual({ readable: false, raw });
+  });
+
+  it("has no text to keep when the browser refuses the read", () => {
+    vi.spyOn(storage, "getItem").mockImplementation(() => {
+      throw new DOMException("Read denied", "SecurityError");
+    });
+    expect(inspectProfileStore("watchlist", "p2")).toEqual({ readable: false, raw: null });
   });
 });
 

@@ -171,6 +171,8 @@ export function CalendarContent() {
         title="Could not load your calendar"
         description="TMDB did not answer, so there are no dates to show yet. Nothing you follow is affected – it is all still saved in this browser."
         onRetry={retryCalendar}
+        // The page around this already has its "Release Calendar" h1.
+        headingLevel={2}
       />
     );
   }

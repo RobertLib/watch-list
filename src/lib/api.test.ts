@@ -27,6 +27,7 @@ vi.mock("./tmdb-discover", async (importOriginal) => ({
     discoverTVShowsByGenre: vi.fn().mockResolvedValue({ results: [] }),
     searchMulti: vi.fn().mockResolvedValue({ results: [] }),
     searchPerson: vi.fn().mockResolvedValue({ results: [] }),
+    searchMovies: vi.fn().mockResolvedValue({ results: [] }),
     discoverMovies: vi.fn().mockResolvedValue({ results: [] }),
   },
 }));
@@ -203,6 +204,16 @@ describe("search queries", () => {
     await api.searchPerson(undefined as unknown as string, 1);
 
     expect(tmdbDiscoverApi.searchPerson).toHaveBeenCalledWith("", 1);
+  });
+
+  it("sanitizes the film-only search the same way", async () => {
+    await api.searchMovies("x".repeat(500), 0);
+    await api.searchMovies(undefined as unknown as string);
+
+    const calls = vi.mocked(tmdbDiscoverApi.searchMovies).mock.calls;
+    expect(calls[0][0]).toHaveLength(200);
+    expect(calls[0][1]).toBe(1);
+    expect(calls[1]).toEqual(["", 1]);
   });
 });
 
@@ -501,6 +512,7 @@ describe("getTitlesByRefs", () => {
 
   it("sanitizes stored references before looking up titles", async () => {
     vi.mocked(getSharedListItems).mockResolvedValue([]);
+    const controller = new AbortController();
 
     await expect(api.getTitlesByRefs([
       { id: 550, mediaType: "movie" },
@@ -508,12 +520,12 @@ describe("getTitlesByRefs", () => {
       { id: -1, mediaType: "movie" },
       { id: 550, mediaType: "movie" },
       { id: 1, mediaType: "person" },
-    ])).resolves.toEqual([]);
+    ], controller.signal)).resolves.toEqual([]);
 
     expect(getSharedListItems).toHaveBeenCalledWith([
       { id: 550, mediaType: "movie" },
       { id: 1396, mediaType: "tv" },
-    ]);
+    ], controller.signal);
   });
 
   it.each([
@@ -550,6 +562,7 @@ describe("getTitlesResolutionByRefs", () => {
       failedRefs: [{ id: 1396, mediaType: "tv" as const }],
     };
     vi.mocked(getSharedListResolution).mockResolvedValue(resolution);
+    const controller = new AbortController();
 
     await expect(api.getTitlesResolutionByRefs([
       { id: 550, mediaType: "movie" },
@@ -557,12 +570,12 @@ describe("getTitlesResolutionByRefs", () => {
       { id: -1, mediaType: "movie" },
       { id: 550, mediaType: "movie" },
       { id: 1, mediaType: "person" },
-    ])).resolves.toBe(resolution);
+    ], controller.signal)).resolves.toBe(resolution);
 
     expect(getSharedListResolution).toHaveBeenCalledWith([
       { id: 550, mediaType: "movie" },
       { id: 1396, mediaType: "tv" },
-    ]);
+    ], controller.signal);
   });
 
   it.each([

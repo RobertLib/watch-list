@@ -6,22 +6,36 @@
  * TMDB client, its cache and its token to get one.
  */
 
-// The sizes TMDB's CDN serves, which it accepts for posters, backdrops and
-// stills alike. It matters which one is named because `next.config.ts` sets
-// `unoptimized`, so whatever is asked for here is what the browser downloads –
-// a 40px-wide thumbnail pointing at `w500` fetches the full poster.
+// Every size TMDB's CDN serves – the union of what its `/configuration` lists
+// per image type:
+//
+//   poster    w92 w154 w185 w342 w500 w780 original
+//   backdrop  w300 w780 w1280 original
+//   still     w92 w185 w300 original
+//   profile   w45 w185 h632 original
+//   logo      w45 w92 w154 w185 w300 w500 original
+//
+// It matters which one is named because `next.config.ts` sets `unoptimized`, so
+// whatever is asked for here is what the browser downloads – a 40px-wide
+// thumbnail pointing at `w500` fetches the full poster. Nor can a call site hand
+// the choice to the browser: `next/image` drops `srcSet` and `sizes` in that
+// mode, so the one URL named is the only one there is. Pick the narrowest size
+// at least twice the rendered CSS width, for a 2x screen.
 //
 // The narrow ones are not decoration: the daily puzzle steps up through them to
 // sharpen its image, and a downscaled image has genuinely lost the detail rather
 // than merely having CSS blur laid over it.
 export type ImageSize =
+  | "w45"
   | "w92"
   | "w154"
   | "w185"
   | "w300"
+  | "w342"
   | "w500"
   | "w780"
   | "w1280"
+  | "h632"
   | "original";
 
 const PLACEHOLDER =

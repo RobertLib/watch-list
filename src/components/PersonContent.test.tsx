@@ -131,4 +131,57 @@ describe("PersonContent credits", () => {
     expect(screen.getAllByText("Shared Movie")).toHaveLength(2);
     expect(screen.getByText("as The Visitor · as The Narrator · Director · Writer")).toBeTruthy();
   });
+
+  // `unoptimized`: the size named is the size downloaded, and the known-for
+  // tiles are a sixth of the main column.
+  it("fetches known-for posters at a tile's size rather than w500", async () => {
+    api.getPersonMovieCredits.mockResolvedValue({ cast: [], crew: [
+      { ...movieCrew(10, "Crew Movie", "Director", "1998-01-01"), poster_path: "/crew.jpg" },
+    ] });
+
+    await act(async () => { render(<PersonContent />); });
+
+    expect(api.getImageUrl).toHaveBeenCalledWith("/crew.jpg", "w300");
+    expect(api.getImageUrl).not.toHaveBeenCalledWith("/crew.jpg", "w500");
+  });
+});
+
+describe("PersonContent personal info", () => {
+  // <dt> and <dd> are only valid inside a <dl>; loose, they were invalid
+  // markup and a screen reader lost which value belonged to which term.
+  it("pairs every term with its value inside a description list", async () => {
+    api.getPersonDetails.mockResolvedValue({
+      ...details,
+      birthday: "1960-05-01",
+      place_of_birth: "Somewhere",
+      also_known_as: ["Another Name"],
+    });
+
+    await act(async () => { render(<PersonContent />); });
+
+    const terms = [...document.querySelectorAll("dt")];
+    expect(terms.map((term) => term.textContent)).toEqual([
+      "Known For", "Gender", "Birthday", "Place of Birth", "Also Known As",
+    ]);
+    for (const element of document.querySelectorAll("dt, dd")) {
+      expect(element.parentElement?.closest("dl")).not.toBeNull();
+    }
+  });
+
+  // TMDB's alias list is crowd-edited and repeats itself. Each alias is also
+  // its row's key, so a repeat was a duplicate key as well as a duplicate line.
+  it("lists each alias once, and five different ones at most", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    api.getPersonDetails.mockResolvedValue({
+      ...details,
+      also_known_as: ["Alias A", "Alias A", " Alias B", "Alias B ", "", "Alias C", "Alias D", "Alias E", "Alias F"],
+    });
+
+    await act(async () => { render(<PersonContent />); });
+
+    const aliases = [...document.querySelectorAll("dd div")].map((row) => row.textContent);
+    expect(aliases).toEqual(["Alias A", "Alias B", "Alias C", "Alias D", "Alias E"]);
+    expect(consoleError.mock.calls.flat().join(" ")).not.toMatch(/same key/);
+    consoleError.mockRestore();
+  });
 });

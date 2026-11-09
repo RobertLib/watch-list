@@ -37,7 +37,9 @@ vi.mock("@/lib/api", () => ({ fetchSeasonDetails }));
 vi.mock("@/components/Toast", () => ({ toast: { showToast: vi.fn() } }));
 
 vi.mock("next/image", () => ({
-  default: ({ alt }: { alt: string }) => <span>{alt}</span>,
+  default: ({ alt, src }: { alt: string; src: string }) => (
+    <span data-testid="image" data-src={src}>{alt}</span>
+  ),
 }));
 
 function season(over: Partial<Season> = {}): Season {
@@ -173,6 +175,57 @@ describe("TVSeasons", () => {
       expect(toast.showToast).not.toHaveBeenCalled();
     },
   );
+
+  /**
+   * The whole header used to be the button, with the season's <h3> inside it –
+   * invalid markup, and a heading a screen reader's heading list never saw. The
+   * heading now holds the button, and the button names the panel it opens.
+   */
+  it("keeps the season heading outside its toggle, and the toggle tied to its panel", async () => {
+    fetchSeasonDetails.mockResolvedValue(details());
+    renderSeasons();
+
+    const heading = screen.getByRole("heading", { level: 3, name: "Season 1" });
+    const toggle = screen.getByRole("button", { name: "Season 1" });
+    expect(heading.contains(toggle)).toBe(true);
+    expect(document.querySelector("button h1, button h2, button h3, button h4, button p")).toBeNull();
+
+    const panel = document.getElementById(toggle.getAttribute("aria-controls") ?? "");
+    expect(panel).not.toBeNull();
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(panel!.hidden).toBe(true);
+
+    await clickHeader();
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(panel!.hidden).toBe(false);
+    expect(panel!.textContent).toContain("Pilot");
+  });
+
+  // `unoptimized` means the size named is the size downloaded: a 56px poster
+  // and a 144px still were both fetched at w500.
+  it("fetches the season poster and episode stills at their own size", async () => {
+    const withStill = details();
+    withStill.episodes[0].still_path = "/still.jpg";
+    fetchSeasonDetails.mockResolvedValue(withStill);
+    render(
+      <EpisodeProgressProvider>
+        <TVSeasons
+          seasons={[season({ poster_path: "/season.jpg" })]}
+          tvId={1396}
+          showName="Breaking Bad"
+          posterPath={null}
+        />
+      </EpisodeProgressProvider>,
+    );
+    await clickHeader();
+
+    const sources = screen.getAllByTestId("image").map((image) => image.getAttribute("data-src"));
+    expect(sources).toEqual([
+      "https://image.tmdb.org/t/p/w154/season.jpg",
+      "https://image.tmdb.org/t/p/w300/still.jpg",
+    ]);
+  });
 
   it("loads the episodes when a season is opened", async () => {
     fetchSeasonDetails.mockResolvedValue(details());

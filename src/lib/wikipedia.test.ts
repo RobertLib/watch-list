@@ -15,6 +15,7 @@ vi.mock("./fetch-with-retry", () => ({ fetchJsonWithRetry: vi.fn() }));
 
 const { fetchJsonWithRetry } = await import("./fetch-with-retry");
 const {
+  getGenreWikipediaContent,
   getMovieWikipediaContent,
   getPersonWikipediaContent,
   getTVWikipediaContent,
@@ -40,6 +41,9 @@ function sitelink(title: string, id = "Q131285") {
   } });
 }
 
+/** The Matrix's Wikidata item. */
+const MATRIX = "Q83495";
+
 /** One article, in the shape `prop=extracts&explaintext=1` returns it. */
 const ARTICLE = [
   "The Matrix is a 1999 science fiction action film. It was written and directed by the Wachowskis. The film stars Keanu Reeves. A fourth sentence nobody asked for.",
@@ -59,45 +63,137 @@ beforeEach(() => {
   fetchMock.mockReset();
 });
 
-describe("finding the article", () => {
+// Genres have no identity to look up, so they are the one panel still found by
+// searching – a genre's article is what its name is about.
+describe("finding a genre's article", () => {
   it("asks the Action API with the CORS escape hatch", async () => {
-    fetchMock.mockResolvedValueOnce(searchHit("The Matrix"));
+    fetchMock.mockResolvedValueOnce(searchHit("Film noir"));
     fetchMock.mockResolvedValueOnce(page(ARTICLE));
 
-    await getMovieWikipediaContent("The Matrix", 1999);
+    await getGenreWikipediaContent("Film noir", "movie");
 
     const url = new URL(fetchMock.mock.calls[0][0]);
     expect(url.origin).toBe("https://en.wikipedia.org");
     // Without `origin=*` the request is made and then thrown away unread.
     expect(url.searchParams.get("origin")).toBe("*");
-    expect(url.searchParams.get("srsearch")).toBe("The Matrix film 1999");
-  });
-
-  it("leaves the year out when there isn't one", async () => {
-    fetchMock.mockResolvedValue(searchHit("Metropolis"));
-    await getMovieWikipediaContent("Metropolis");
-
-    expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get("srsearch")).toBe(
-      "Metropolis film",
-    );
+    expect(url.searchParams.get("srsearch")).toBe("Film noir film");
   });
 
   it("gives up quietly when nothing matches", async () => {
     fetchMock.mockResolvedValue(ok({ query: { search: [] } }));
 
-    await expect(getMovieWikipediaContent("Nothing At All")).resolves.toBeNull();
+    await expect(getGenreWikipediaContent("Nothing At All", "tv")).resolves.toBeNull();
   });
 
   // Every failure here is "no article", which every caller already renders as an
   // absent panel rather than as an error.
   it("answers null when the search itself fails", async () => {
     fetchMock.mockResolvedValue({ response: { ok: false } as Response, data: undefined });
-    await expect(getMovieWikipediaContent("The Matrix")).resolves.toBeNull();
+    await expect(getGenreWikipediaContent("Western", "movie")).resolves.toBeNull();
   });
 
   it("answers null when the request throws", async () => {
     fetchMock.mockRejectedValue(new TypeError("offline"));
-    await expect(getMovieWikipediaContent("The Matrix")).resolves.toBeNull();
+    await expect(getGenreWikipediaContent("Western", "movie")).resolves.toBeNull();
+  });
+});
+
+/**
+ * Films used to be found by searching "<title> film <year>" and trusting the
+ * first hit. Two films sharing a title, or a film with no English article at
+ * all, got some other film's article presented as theirs.
+ */
+describe("identifying a film's article", () => {
+  it("follows the film's Wikidata id and never searches its title", async () => {
+    fetchMock
+      .mockResolvedValueOnce(sitelink("Solaris (2002 film)", "Q2002"))
+      .mockResolvedValueOnce(page("Solaris is a 2002 American science fiction drama film."));
+
+    const content = await getMovieWikipediaContent("Q2002");
+
+    expect(content?.pageTitle).toBe("Solaris (2002 film)");
+    const identityUrl = new URL(fetchMock.mock.calls[0][0]);
+    expect(identityUrl.origin).toBe("https://www.wikidata.org");
+    expect(identityUrl.searchParams.get("ids")).toBe("Q2002");
+    expect(new URL(fetchMock.mock.calls[1][0]).searchParams.get("titles"))
+      .toBe("Solaris (2002 film)");
+    expect(fetchMock.mock.calls.every((call) => !new URL(call[0]).searchParams.has("srsearch")))
+      .toBe(true);
+  });
+
+  it.each([undefined, null, "", "Solaris", "Q0", "Q1|Q2"])(
+    "shows nothing for a film without a usable Wikidata id (%s) rather than guessing",
+    async (id) => {
+      await expect(getMovieWikipediaContent(id)).resolves.toBeNull();
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  // A film with no English article: the old search returned whatever ranked
+  // first instead. Now its absence is the answer.
+  it("shows nothing for a film with no English article", async () => {
+    fetchMock.mockResolvedValueOnce(ok({ entities: {
+      Q999: { id: "Q999", sitelinks: {} },
+    } }));
+
+    await expect(getMovieWikipediaContent("Q999")).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * `wbgetentities` follows redirects. An item TMDB still names that has since
+ * been merged answers as the surviving item – a different `id`, with the hop
+ * recorded in `redirects` – and the panel used to vanish for it.
+ */
+describe("a Wikidata item that has been merged into another", () => {
+  function redirected(from: string, to: string, title: string, keyedBy: string) {
+    return ok({ entities: {
+      [keyedBy]: {
+        id: to,
+        redirects: { from, to },
+        sitelinks: { enwiki: { site: "enwiki", title } },
+      },
+    } });
+  }
+
+  it.each(["requested", "target"] as const)(
+    "is followed to the surviving item's article (response keyed by the %s id)",
+    async (keyedBy) => {
+      fetchMock
+        .mockResolvedValueOnce(redirected("Q111", "Q222", "Merged Film", keyedBy === "requested" ? "Q111" : "Q222"))
+        .mockResolvedValueOnce(page("Merged Film is a film whose two Wikidata items were merged into one."));
+
+      await expect(getMovieWikipediaContent("Q111")).resolves.toMatchObject({
+        pageTitle: "Merged Film",
+      });
+      expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get("redirects")).toBe("yes");
+    },
+  );
+
+  it("works the same for series and people", async () => {
+    fetchMock
+      .mockResolvedValueOnce(redirected("Q111", "Q222", "Merged Series", "Q111"))
+      .mockResolvedValueOnce(page("Merged Series is a television series with a merged item."))
+      .mockResolvedValueOnce(redirected("Q333", "Q444", "Merged Person", "Q333"))
+      .mockResolvedValueOnce(page("Merged Person is an actor whose Wikidata item was merged."));
+
+    await expect(getTVWikipediaContent("Q111")).resolves.toMatchObject({ pageTitle: "Merged Series" });
+    await expect(getPersonWikipediaContent("Q333")).resolves.toMatchObject({ pageTitle: "Merged Person" });
+  });
+
+  it.each([
+    // A different id with no redirect on record is a different entity.
+    { Q111: { id: "Q222", sitelinks: { enwiki: { site: "enwiki", title: "Someone Else" } } } },
+    // A redirect record that is not from the requested id.
+    { Q111: { id: "Q222", redirects: { from: "Q999", to: "Q222" }, sitelinks: { enwiki: { site: "enwiki", title: "Someone Else" } } } },
+    // A redirect record that does not lead to the entity it sits on.
+    { Q111: { id: "Q222", redirects: { from: "Q111", to: "Q333" }, sitelinks: { enwiki: { site: "enwiki", title: "Someone Else" } } } },
+  ])("still rejects an entity that is not the one asked for", async (entities) => {
+    fetchMock.mockResolvedValueOnce(ok({ entities }));
+
+    await expect(getMovieWikipediaContent("Q111")).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -211,12 +307,12 @@ describe("identifying a person's article", () => {
 
 describe("parsing the article", () => {
   beforeEach(() => {
-    fetchMock.mockResolvedValueOnce(searchHit("The Matrix"));
+    fetchMock.mockResolvedValueOnce(sitelink("The Matrix", MATRIX));
   });
 
   it("takes the intro from everything before the first heading", async () => {
     fetchMock.mockResolvedValueOnce(page(ARTICLE));
-    const content = await getMovieWikipediaContent("The Matrix", 1999);
+    const content = await getMovieWikipediaContent(MATRIX);
 
     expect(content?.intro).toContain("The Matrix is a 1999 science fiction");
     // Three sentences, so the panel is a summary rather than the lead section.
@@ -225,7 +321,7 @@ describe("parsing the article", () => {
 
   it("keeps the sections worth reading and drops the rest", async () => {
     fetchMock.mockResolvedValueOnce(page(ARTICLE));
-    const content = await getMovieWikipediaContent("The Matrix", 1999);
+    const content = await getMovieWikipediaContent(MATRIX);
 
     expect(content?.sections.map((section) => section.title)).toEqual([
       "Production",
@@ -235,7 +331,7 @@ describe("parsing the article", () => {
 
   it("keeps navigation lists out even when they are long", async () => {
     fetchMock.mockResolvedValueOnce(page(ARTICLE));
-    const content = await getMovieWikipediaContent("The Matrix", 1999);
+    const content = await getMovieWikipediaContent(MATRIX);
 
     const text = JSON.stringify(content);
     expect(text).not.toContain("Navigational noise");
@@ -249,7 +345,7 @@ describe("parsing the article", () => {
       page(["An intro sentence for the article.", "Legacy", "Short."].join("\n")),
     );
 
-    const content = await getMovieWikipediaContent("X");
+    const content = await getMovieWikipediaContent(MATRIX);
     expect(content?.sections).toEqual([]);
   });
 
@@ -269,14 +365,14 @@ describe("parsing the article", () => {
     ].join("\n");
 
     fetchMock.mockResolvedValueOnce(page(extract));
-    const content = await getMovieWikipediaContent("X");
+    const content = await getMovieWikipediaContent(MATRIX);
 
     expect(content?.sections).toHaveLength(5);
   });
 
   it("builds a link to the article it actually read", async () => {
     fetchMock.mockResolvedValueOnce(page(ARTICLE));
-    const content = await getMovieWikipediaContent("The Matrix", 1999);
+    const content = await getMovieWikipediaContent(MATRIX);
 
     expect(content?.pageTitle).toBe("The Matrix");
     expect(content?.pageUrl).toBe("https://en.wikipedia.org/wiki/The_Matrix");
@@ -284,7 +380,7 @@ describe("parsing the article", () => {
 
   it("answers null for an article with nothing in it", async () => {
     fetchMock.mockResolvedValueOnce(page(""));
-    await expect(getMovieWikipediaContent("X")).resolves.toBeNull();
+    await expect(getMovieWikipediaContent(MATRIX)).resolves.toBeNull();
   });
 
   it("answers null when there is neither an intro nor a section", async () => {
@@ -292,6 +388,6 @@ describe("parsing the article", () => {
       page(["References", "Only noise lives here."].join("\n")),
     );
 
-    await expect(getMovieWikipediaContent("X")).resolves.toBeNull();
+    await expect(getMovieWikipediaContent(MATRIX)).resolves.toBeNull();
   });
 });

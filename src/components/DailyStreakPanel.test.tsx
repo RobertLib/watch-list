@@ -53,6 +53,32 @@ describe("daily record dates", () => {
     expect(window.localStorage.getItem(DAILY_GAME_STORAGE_KEY)).toBe(rawState);
   });
 
+  /**
+   * The label named "the last 56 days" and then reported lifetime totals, so a
+   * player with a year of history heard numbers no grid on screen could hold.
+   */
+  it("describes the days drawn, not lifetime totals", () => {
+    vi.setSystemTime(new Date("2026-10-05T10:00:00.000Z"));
+    saveGameState({
+      ...EMPTY_STATE,
+      played: 300,
+      won: 250,
+      history: { "2026-10-04": "won", "2026-10-03": "lost", "2025-01-01": "won" },
+      archive: {
+        "2026-10-01": { day: "2026-10-01", guesses: [], status: "won" },
+        "2026-10-02": { day: "2026-10-02", guesses: [], status: "lost" },
+      },
+    });
+
+    render(<DailyStreakPanel />);
+
+    expect(screen.getByRole("img").getAttribute("aria-label")).toBe(
+      "Daily puzzle results for the last 56 days: 1 solved, 1 not solved, " +
+        "1 caught up later, 1 caught up but not solved, 52 not played.",
+    );
+    expect(screen.getByTitle("2026-10-02 – caught up later, not solved")).toBeTruthy();
+  });
+
   it("updates when a suspended tab returns on a later day", () => {
     vi.setSystemTime(new Date("2026-10-05T10:00:00.000Z"));
     render(<DailyStreakPanel />);

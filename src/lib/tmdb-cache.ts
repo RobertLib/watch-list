@@ -137,37 +137,124 @@ interface CacheEntry {
   request: SharedRequest;
 }
 
-// Bounded so a long session that browses hundreds of titles cannot grow this
-// without limit. Insertion order is iteration order for a Map, so the oldest
-// entry is the first one – which is close enough to least-recently-used for a
-// cache whose whole purpose is to absorb bursts.
-const MAX_ENTRIES = 300;
+/**
+ * The cache keeps two budgets, because it serves two kinds of reader.
+ *
+ * Interactive reads – listings, detail pages, searches, one card's providers –
+ * are what makes going back free. Background loaders read in bulk instead:
+ * Tonight two entries per saved title, the statistics page one per watched
+ * title, and each walks its list in the same order on every visit. With one
+ * shared FIFO of 300 entries, a single such walk flushed every listing and
+ * detail page, and a walk longer than the budget evicted, with each write, the
+ * very entry its own next visit needed first: a 160-title Tonight paid for all
+ * 320 reads on every visit and a 400-title history for all 400.
+ *
+ * Interactive entries are least-recently-used, and only another interactive
+ * entry can push one out. Three hundred covers a long browsing session; the
+ * largest of them are detail responses with their appended credits, videos and
+ * providers, so this is also what bounds the bulk of the memory.
+ */
+const MAX_INTERACTIVE_ENTRIES = 300;
 
-const cache = new Map<string, CacheEntry>();
+/**
+ * Background answers get a budget of their own, sized for the walks above.
+ *
+ * Nothing caps the lists those walks cover – the watchlist and the watched list
+ * are read in full, and only a hand-picked backup is held to
+ * `MAX_ITEMS_PER_LIST` (2,000 each). Covering that ceiling would mean six
+ * thousand responses and more; this covers Tonight over a 500-title watchlist
+ * (1,000 reads) alongside a 400-title history and the home rows, which is well
+ * past the two hundred titles `MAX_IN_FLIGHT` is pitched at. Each entry is a
+ * detail response without appends or one region's providers (see `onlyRegion`
+ * below) – kilobytes apiece – so a full budget holds megabytes, not the tens
+ * that every country's providers for every saved title would come to.
+ *
+ * Past the budget a background answer is shared with whoever is waiting on it
+ * and then dropped, instead of evicting anything. A walk that does not fit
+ * therefore keeps the part of itself that did – the same prefix on every visit,
+ * paying only for its tail – where evicting by age or recency would have it
+ * evict its own next read and pay for all of it. Bulk entries leave when they
+ * expire, or when an interactive read promotes one into the budget above.
+ */
+const MAX_BULK_ENTRIES = 1500;
 
-function readCache(url: string): SharedRequest | null {
-  const entry = cache.get(url);
+// Expired bulk entries are only found by sweeping the map, which is not worth
+// repeating for every overflowing write of a walk that has filled the budget.
+const BULK_SWEEP_INTERVAL_MS = 60_000;
+
+/** Insertion order is recency: a hit is moved to the end. */
+const interactive = new Map<string, CacheEntry>();
+const bulk = new Map<string, CacheEntry>();
+/** Background answers past the bulk budget: joinable while in flight, then dropped. */
+const overflow = new Map<string, CacheEntry>();
+let nextBulkSweep = 0;
+
+function putInteractive(url: string, entry: CacheEntry): void {
+  bulk.delete(url);
+  overflow.delete(url);
+  interactive.delete(url);
+  interactive.set(url, entry);
+
+  while (interactive.size > MAX_INTERACTIVE_ENTRIES) {
+    const oldest = interactive.keys().next();
+    if (oldest.done) break;
+    interactive.delete(oldest.value);
+  }
+}
+
+function readCache(
+  url: string,
+  priority: "foreground" | "background",
+): SharedRequest | null {
+  const tier = interactive.has(url)
+    ? interactive
+    : bulk.has(url)
+      ? bulk
+      : overflow;
+  const entry = tier.get(url);
   if (!entry) return null;
 
   if (entry.expires <= Date.now()) {
-    cache.delete(url);
+    tier.delete(url);
     return null;
   }
+
+  // Only an interactive read counts as use: a background walk passing over a
+  // listing must not be what keeps it, and a title the visitor opens should not
+  // stay at the mercy of the next walk's overflow.
+  if (priority === "foreground") putInteractive(url, entry);
 
   return entry.request;
 }
 
-function writeCache(url: string, request: SharedRequest, ttl: number): void {
-  // No delete-before-set to refresh the key's position, because there is never
-  // a position to refresh: this is only reached after `readCache` missed, and a
-  // miss means the key was either absent or expired – and `readCache` deletes an
-  // expired one on its way out. So insertion order here is already write order.
-  cache.set(url, { expires: Date.now() + ttl * 1000, request });
+function writeCache(
+  url: string,
+  request: SharedRequest,
+  ttl: number,
+  priority: "foreground" | "background",
+): void {
+  // Only reached after `readCache` missed, so the key is in none of the maps.
+  const now = Date.now();
+  const entry = { expires: now + ttl * 1000, request };
+  if (priority === "foreground") {
+    putInteractive(url, entry);
+    return;
+  }
 
-  while (cache.size > MAX_ENTRIES) {
-    const oldest = cache.keys().next();
-    if (oldest.done) break;
-    cache.delete(oldest.value);
+  if (bulk.size >= MAX_BULK_ENTRIES && now >= nextBulkSweep) {
+    nextBulkSweep = now + BULK_SWEEP_INTERVAL_MS;
+    for (const [key, cached] of bulk) {
+      if (cached.expires <= now) bulk.delete(key);
+    }
+  }
+
+  (bulk.size < MAX_BULK_ENTRIES ? bulk : overflow).set(url, entry);
+}
+
+/** A late failure or cancellation must not evict a newer request for the URL. */
+function forget(url: string, request: SharedRequest): void {
+  for (const tier of [interactive, bulk, overflow]) {
+    if (tier.get(url)?.request === request) tier.delete(url);
   }
 }
 
@@ -189,9 +276,24 @@ export function tmdbFetchJson<T>(
   ttlSeconds = 0,
   options: TMDBRequestOptions = {},
 ): Promise<T> {
+  return cachedFetchJson<T>(url, ttlSeconds, options);
+}
+
+/**
+ * `select` reduces the parsed body before it is shared or cached. It belongs to
+ * the URL rather than to a caller – every reader of that URL gets the reduced
+ * body – so only a getter that owns the URL's format may pass one.
+ */
+function cachedFetchJson<T>(
+  url: string,
+  ttlSeconds: number,
+  options: TMDBRequestOptions,
+  select?: (data: unknown) => T,
+): Promise<T> {
   if (options.signal?.aborted) return Promise.reject(options.signal.reason);
+  const priority = options.priority ?? "foreground";
   if (ttlSeconds > 0) {
-    const cached = readCache(url);
+    const cached = readCache(url, priority);
     if (cached) return consumeRequest<T>(url, cached, options);
   }
 
@@ -201,7 +303,7 @@ export function tmdbFetchJson<T>(
     consumers: new Set(),
     persistentConsumer: false,
     settled: false,
-    priority: options.priority ?? "foreground",
+    priority,
   };
   request.value = (async () => {
     await acquireSlot(request);
@@ -219,22 +321,26 @@ export function tmdbFetchJson<T>(
         );
       }
 
-      return data as T;
+      return select ? select(data) : (data as T);
     } finally {
       releaseSlot();
     }
   })();
 
   // Only this request's entry may be dropped: a late failure or cancellation
-  // must not evict a newer successful request for the same URL.
+  // must not evict a newer successful request for the same URL. An answer past
+  // the bulk budget has served everyone who joined it while in flight.
   request.value.then(
-    () => { request.settled = true; },
     () => {
       request.settled = true;
-      if (cache.get(url)?.request === request) cache.delete(url);
+      if (overflow.get(url)?.request === request) overflow.delete(url);
+    },
+    () => {
+      request.settled = true;
+      forget(url, request);
     },
   );
-  if (ttlSeconds > 0) writeCache(url, request, ttlSeconds);
+  if (ttlSeconds > 0) writeCache(url, request, ttlSeconds, priority);
 
   return consumeRequest<T>(url, request, options);
 }
@@ -268,7 +374,7 @@ function consumeRequest<T>(
       if (!request.settled && !request.persistentConsumer && request.consumers.size === 0) {
         // Remove immediately, so navigating back can start a fresh request
         // rather than joining an aborted one that has not settled yet.
-        if (cache.get(url)?.request === request) cache.delete(url);
+        forget(url, request);
         request.controller.abort(signal.reason);
       }
     };
@@ -319,29 +425,79 @@ function regionParam(region: string): string {
   return region;
 }
 
+/**
+ * Keep only the region a providers URL names.
+ *
+ * TMDB documents no filter for `/watch/providers`: it answers with every
+ * country it lists – often dozens, each with its rent, buy and streaming offers
+ * – and the region in these URLs is there for the cache key. Every reader wants
+ * the one region its URL names (as `media-converters.ts` picks one out of the
+ * appended form), so holding the rest only spent memory: a Tonight walk keeps
+ * one of these per saved title, and the budgets above are counted in entries.
+ */
+function onlyRegion(region: string) {
+  return (data: unknown): WatchProvidersResponse => {
+    const response = data as WatchProvidersResponse;
+    const inRegion = response?.results?.[region];
+    return { ...response, results: inRegion ? { [region]: inRegion } : {} };
+  };
+}
+
 export const getCachedMovieWatchProviders = (
   movieId: number,
   region: string,
-  options?: TMDBRequestOptions,
+  options: TMDBRequestOptions = {},
 ): Promise<WatchProvidersResponse> => {
   const url = `${TMDB_CONFIG.BASE_URL}/movie/${pathId(
     movieId,
     "movieId",
   )}/watch/providers?region=${regionParam(region)}`;
-  return tmdbFetchJson<WatchProvidersResponse>(url, TTL.MEDIUM, options);
+  return cachedFetchJson(url, TTL.MEDIUM, options, onlyRegion(region));
 };
 
 export const getCachedTVWatchProviders = (
   tvId: number,
   region: string,
-  options?: TMDBRequestOptions,
+  options: TMDBRequestOptions = {},
 ): Promise<WatchProvidersResponse> => {
   const url = `${TMDB_CONFIG.BASE_URL}/tv/${pathId(
     tvId,
     "tvId",
   )}/watch/providers?region=${regionParam(region)}`;
-  return tmdbFetchJson<WatchProvidersResponse>(url, TTL.MEDIUM, options);
+  return cachedFetchJson(url, TTL.MEDIUM, options, onlyRegion(region));
 };
+
+// One `append_to_response` name: letters and underscores, with a slash only
+// between two such segments – TMDB's own `watch/providers` is the one that has
+// one. Stripping the slash used to turn that into "watchproviders", which TMDB
+// ignores without an error.
+const APPEND_NAME = /^[a-z_]+(?:\/[a-z_]+)*$/i;
+// TMDB accepts at most twenty appended responses on one request.
+const MAX_APPENDED = 20;
+const MAX_APPEND_LENGTH = 100;
+
+/**
+ * The names to append, checked one by one. A malformed name is dropped rather
+ * than repaired – a repaired name is a different request – and the length bound
+ * stops at a whole name instead of cutting one in half.
+ */
+function appendParam(value: string): string {
+  const names: string[] = [];
+  let length = 0;
+
+  for (const raw of value.split(",")) {
+    const name = raw.trim();
+    if (!APPEND_NAME.test(name) || names.includes(name)) continue;
+
+    const nextLength = length + (names.length > 0 ? 1 : 0) + name.length;
+    if (names.length >= MAX_APPENDED || nextLength > MAX_APPEND_LENGTH) break;
+
+    names.push(name);
+    length = nextLength;
+  }
+
+  return names.join(",");
+}
 
 /**
  * TV details, cached. These back the "Continue Watching" row and the release
@@ -364,10 +520,9 @@ export const getCachedMovieDetails = (
   appendToResponse?: string,
   options?: TMDBRequestOptions,
 ): Promise<MovieDetails> => {
-  const query = appendToResponse
-    ? `?append_to_response=${encodeURIComponent(
-        appendToResponse.replace(/[^a-z_,]/gi, "").slice(0, 100),
-      )}`
+  const append = appendToResponse ? appendParam(appendToResponse) : "";
+  const query = append
+    ? `?append_to_response=${encodeURIComponent(append)}`
     : "";
 
   const url = `${TMDB_CONFIG.BASE_URL}/movie/${pathId(movieId, "movieId")}${query}`;

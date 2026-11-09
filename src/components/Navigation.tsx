@@ -21,6 +21,17 @@ import { PersonGrid } from "./PersonGrid";
 import { MediaItem, Person } from "@/types/tmdb";
 import { searchMulti, searchPerson } from "@/lib/api";
 
+/**
+ * Whether the search shortcut is Cmd+K (Apple) rather than Ctrl+K.
+ *
+ * On macOS Ctrl+K is a text-editing command – "delete to the end of the line"
+ * in every field – so there only Cmd+K may be claimed.
+ */
+function isApplePlatform(): boolean {
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  return /mac|iphone|ipad|ipod/i.test(nav.userAgentData?.platform || nav.platform || "");
+}
+
 export function Navigation() {
   const pathname = usePathname();
   const router = useRouter();
@@ -37,6 +48,8 @@ export function Navigation() {
   // in is collapsed and taken out of the tab order, and focus left on a hidden
   // field is focus lost.
   const searchToggleRef = useRef<HTMLButtonElement>(null);
+  // Where Escape returns focus when it closes the mobile menu from inside it.
+  const mobileMenuToggleRef = useRef<HTMLButtonElement>(null);
   const restorePanelFocus = useCallback(() => {
     const active = document.activeElement;
     // Only reclaim focus from a panel we are closing. A new page may already
@@ -301,6 +314,8 @@ export function Navigation() {
   // search reachable without going for the mouse, which is how it gets used at
   // all on a site whose whole job is looking things up.
   useEffect(() => {
+    const isApple = isApplePlatform();
+
     const isTypingTarget = (target: EventTarget | null) => {
       if (!(target instanceof HTMLElement)) return false;
 
@@ -325,6 +340,12 @@ export function Navigation() {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Keys typed while an input method is composing belong to it. Escape
+      // there cancels the composition, and must not also close the results or
+      // throw away the query. Safari reports the keydown that ends a
+      // composition with `isComposing` already false, but as key code 229.
+      if (e.isComposing || e.keyCode === 229) return;
+
       // A trailer or gallery owns the keyboard while it is open. Checking the
       // modal itself also works when this listener runs before its handler.
       if (
@@ -343,11 +364,40 @@ export function Navigation() {
         } else if (isSearchOpen) {
           clearSearch();
           searchToggleRef.current?.focus();
+        } else if (isMobileMenuOpen) {
+          // The menu is a disclosure, and Escape is how one is put away. Focus
+          // goes back to its toggle only if it was in the menu: the collapsed
+          // menu is inert, so focus left inside it would be lost – but focus
+          // somewhere else on the page is the visitor's and stays put.
+          const active = document.activeElement;
+          const toggle = mobileMenuToggleRef.current;
+          setIsMobileMenuOpen(false);
+          if (
+            active === toggle ||
+            document.getElementById("mobile-menu")?.contains(active)
+          ) {
+            toggle?.focus();
+          }
         }
         return;
       }
 
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+      // Cmd+K on Apple platforms, Ctrl+K elsewhere – never both: Ctrl+K edits
+      // text on a Mac. And never inside another text field, where the chord
+      // has a meaning of its own; the search box is the exception, since it
+      // can only mean "search".
+      const hasShortcutModifier = isApple
+        ? e.metaKey && !e.ctrlKey
+        : e.ctrlKey && !e.metaKey;
+      if (
+        e.key.toLowerCase() === "k" &&
+        hasShortcutModifier &&
+        !e.altKey &&
+        !e.shiftKey
+      ) {
+        if (isTypingTarget(e.target) && e.target !== searchInputRef.current) {
+          return;
+        }
         e.preventDefault();
         openSearch();
         return;
@@ -365,7 +415,7 @@ export function Navigation() {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isSearching, isSearchOpen, cancelScheduledFocus, clearSearch]);
+  }, [isSearching, isSearchOpen, isMobileMenuOpen, cancelScheduledFocus, clearSearch]);
 
   // The results panel is open. Read by the combobox attributes on the input and
   // by the panel itself, so the two cannot disagree about it.
@@ -561,7 +611,9 @@ export function Navigation() {
                     : "text-gray-300 hover:text-white",
                 )}
                 aria-current={isActiveLink("/watchlist") ? "page" : undefined}
-                aria-label="My watchlist"
+                // Named by its content, not an `aria-label`: a label replaced
+                // the counter too, so a screen reader never heard how many
+                // titles were saved. The counter adds its own spoken form.
               >
                 <Heart className="w-4 h-4" aria-hidden="true" />
                 Watchlist
@@ -596,6 +648,7 @@ export function Navigation() {
 
               {/* Mobile Menu Button */}
               <button
+                ref={mobileMenuToggleRef}
                 onClick={handleMobileMenuToggle}
                 className="xl:hidden p-2 text-gray-300 hover:text-white transition-colors"
                 aria-label={isMobileMenuOpen ? "Close menu" : "Open menu"}
@@ -826,7 +879,6 @@ export function Navigation() {
                     : "text-gray-300 hover:text-white",
                 )}
                 aria-current={isActiveLink("/watchlist") ? "page" : undefined}
-                aria-label="My watchlist"
               >
                 <Heart className="w-4 h-4" aria-hidden="true" />
                 Watchlist

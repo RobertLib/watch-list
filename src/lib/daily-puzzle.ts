@@ -104,7 +104,8 @@ export function msUntilNextPuzzle(now: Date = new Date()): number {
  *
  * Ordered weakest first, so a run of bad guesses narrows the field gradually
  * rather than handing over the answer at the first stumble. The cast comes last
- * because naming three actors usually settles it outright.
+ * because naming three actors usually settles it outright – and it still has to
+ * arrive before the final guess, which `unlockedHints` sees to.
  */
 export type HintKind =
   | "decade"
@@ -127,12 +128,20 @@ export const HINT_LADDER: HintKind[] = [
  * Which hints a player on their `guessCount`-th guess has earned.
  *
  * The first guess comes with nothing but the image; each wrong one adds the next
- * rung. Bounded by the ladder so a client claiming 900 guesses gains nothing it
- * would not already have at six.
+ * rung – except the last wrong one before the final guess, which hands over
+ * every rung still to come. There are six rungs and only five misses that can
+ * still be followed by a guess, so one rung at a time left the cast, the
+ * strongest clue, unlocking only on a board that was already lost.
+ *
+ * Doubling up at the end is the smallest change that fixes that: the opening
+ * stays as it was (no free clue before the first guess, every early miss paying
+ * out exactly as before), and the extra help lands on the one guess where it can
+ * still decide the day. Bounded by the ladder so a client claiming 900 guesses
+ * gains nothing it would not already have on its last.
  */
 export function unlockedHints(guessCount: number): HintKind[] {
-  const rungs = Math.max(0, Math.min(guessCount, HINT_LADDER.length));
-  return HINT_LADDER.slice(0, rungs);
+  const rungs = guessCount >= MAX_GUESSES - 1 ? HINT_LADDER.length : guessCount;
+  return HINT_LADDER.slice(0, Math.max(0, Math.min(rungs, HINT_LADDER.length)));
 }
 
 /**

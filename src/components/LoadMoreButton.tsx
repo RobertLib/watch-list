@@ -39,6 +39,11 @@ export function LoadMoreButton({
     }
   };
 
+  // No `aria-label` on the button: its name is the text on it. An override like
+  // "Load more content" on a button that reads "Load More Movies" or "Try again"
+  // left a voice-control user saying the words on screen to no effect (WCAG
+  // 2.5.3, label in name). The failure is attached by `aria-describedby`, and
+  // the spinner is decoration beside "Loading...", not a second name.
   return (
     <div className="flex flex-col items-center gap-3 mt-8 mb-12">
       {failed && (
@@ -58,11 +63,6 @@ export function LoadMoreButton({
           loading && "cursor-wait",
           className,
         )}
-        aria-label={loading
-          ? "Loading more content..."
-          : failed
-            ? "Retry loading more content"
-            : "Load more content"}
         aria-describedby={failed ? errorId : undefined}
         aria-busy={loading}
       >
@@ -70,8 +70,7 @@ export function LoadMoreButton({
           <div className="flex items-center space-x-2">
             <div
               className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"
-              role="status"
-              aria-label="Loading"
+              aria-hidden="true"
             />
             <span>Loading...</span>
           </div>

@@ -2,7 +2,8 @@ import { getCachedSeasonDetails, getCachedTVShowDetails, type TMDBRequestOptions
 import { createSlug } from "./utils";
 import { todayLocal } from "./dates";
 import { throwIfAllRequestsFailed } from "./tmdb-results";
-import type { SeasonDetails, TVShowDetails } from "@/types/tmdb";
+import { isDateOnly } from "./release-calendar";
+import type { Season, SeasonDetails, TVShowDetails } from "@/types/tmdb";
 import {
   resolveUpNext,
   type ContinueWatchingSeed,
@@ -18,6 +19,39 @@ interface ResolvedShow {
   details: TVShowDetails;
   resolution: UpNextResolution;
   datedSeasons?: SeasonDetails[];
+}
+
+/**
+ * The regular seasons whose dated episode lists are needed once a special has
+ * become the last-aired marker – which used to be every one of them, thirty
+ * reads and more for a long-running show.
+ *
+ * The season list still dates each season by its first episode. A season that
+ * has premiered after another one means the earlier one has finished, so only
+ * the latest premiered season can be part-way through. Beyond it, a season
+ * dated after today has not started; one with no usable date might still hide
+ * aired episodes, so it is read rather than guessed at.
+ */
+function seasonsToDate(
+  seasons: Season[],
+  today: string,
+): { latestPremiered: number; toRead: number[] } {
+  const regular = seasons.filter((season) =>
+    Number.isInteger(season.season_number) && season.season_number > 0,
+  );
+  const latestPremiered = Math.max(0, ...regular
+    .filter((season) => isDateOnly(season.air_date) && season.air_date <= today)
+    .map((season) => season.season_number));
+
+  return {
+    latestPremiered,
+    toRead: [...new Set(regular
+      .filter((season) =>
+        season.season_number === latestPremiered ||
+        (season.season_number > latestPremiered && !isDateOnly(season.air_date)),
+      )
+      .map((season) => season.season_number))],
+  };
 }
 
 async function resolveShows(
@@ -36,19 +70,20 @@ async function resolveShows(
 
     const details = result.value;
     let datedSeasons: SeasonDetails[] | undefined;
+    let upNextFrom: Parameters<typeof resolveUpNext>[1] = details;
 
     // A special can replace the regular run's last-airing marker. Season counts
-    // include announced episodes, so only dated episode lists can establish
-    // both the next available episode and an accurate progress denominator.
+    // include announced episodes, so the season that may be part-way through
+    // needs its dated episode list for both the next available episode and an
+    // accurate progress denominator.
     if (details.last_episode_to_air?.season_number === 0) {
+      const { latestPremiered, toRead } = seasonsToDate(details.seasons ?? [], today);
       const seasonResults = await Promise.allSettled(
-        (details.seasons ?? [])
-          .filter((season) => season.season_number > 0)
-          .map((season) => getCachedSeasonDetails(seed.tvId, season.season_number, options)),
+        toRead.map((seasonNumber) => getCachedSeasonDetails(seed.tvId, seasonNumber, options)),
       );
       options.signal?.throwIfAborted();
-      // A missing earlier season could change which episode comes next. Do not
-      // turn that unknown run into an apparently complete progress bar.
+      // A missing season could change which episode comes next. Do not turn
+      // that unknown run into an apparently complete progress bar.
       const failedSeason = seasonResults.find((season) => season.status === "rejected");
       if (failedSeason?.status === "rejected") {
         // Even a season's 404 leaves this existing show's aired run unknown;
@@ -60,12 +95,25 @@ async function resolveShows(
       datedSeasons = seasonResults.flatMap((season) =>
         season.status === "fulfilled" ? [season.value] : [],
       );
+      const loaded = datedSeasons;
+      upNextFrom = {
+        seasons: (details.seasons ?? []).map((season) =>
+          loaded.find((dated) => dated.season_number === season.season_number) ?? season,
+        ),
+        // The latest season to have premiered stands in for the special as the
+        // marker, which makes every season before it count as fully aired –
+        // what the regular path assumes of the seasons before its own marker.
+        // Without one, the special stays: only dated lists can count anything.
+        last_episode_to_air: latestPremiered > 0
+          ? { season_number: latestPremiered, episode_number: 0 }
+          : details.last_episode_to_air,
+        // Advancing that stand-in by a scheduled episode would count whole
+        // announced seasons as aired; the dated lists already know what has.
+        next_episode_to_air: null,
+      };
     }
 
-    const resolution = resolveUpNext(seed, {
-      ...details,
-      seasons: datedSeasons ?? details.seasons,
-    }, today);
+    const resolution = resolveUpNext(seed, upNextFrom, today);
     if (!resolution) return null;
 
     return { seed, details, resolution, datedSeasons };
@@ -115,8 +163,9 @@ export async function getContinueWatchingEpisodes(
     (entry) => entry.status !== "fulfilled" || entry.value !== null,
   ));
 
-  // Regular markers need only the offered season. The special-marker path has
-  // already fetched its episode metadata while determining what has aired.
+  // Regular markers need only the offered season. The special-marker path may
+  // already hold it from determining what has aired; an earlier season it
+  // counted from the season list alone is read here like any other.
   const seasonResults = await Promise.allSettled(
     resolved.map((entry) => {
       const seasonNumber = entry.resolution.next.seasonNumber;

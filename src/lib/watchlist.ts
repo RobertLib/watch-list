@@ -272,7 +272,8 @@ function clearProfileWatchlist(): boolean {
     const owner = getProfileStorageOwner();
     // An absent value can fall back to a legacy cookie. Keep an authoritative
     // empty list even when the cookie's domain prevents its deletion here.
-    writeProfileStore(WATCHLIST_STORAGE_KEY, "[]", owner);
+    // A clear, so an unreadable list does not stop it (see writeProfileStore).
+    writeProfileStore(WATCHLIST_STORAGE_KEY, "[]", owner, { clear: true });
     if (owner === getLegacyProfileStorageOwner()) {
       try {
         deleteCookie(WATCHLIST_COOKIE_NAME);

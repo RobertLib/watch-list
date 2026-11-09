@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { TVContent } from "./TVContent";
 import { getTVWikipediaContent } from "@/lib/wikipedia";
 import type { WikipediaContent } from "@/lib/wikipedia";
@@ -21,8 +21,11 @@ vi.mock("next/navigation", () => ({
 vi.mock("next/image", () => ({
   default: ({ alt }: { alt: string }) => <span role="img" aria-label={alt} />,
 }));
+// Marked, so a test can tell a client-side Link from a plain <a>.
 vi.mock("next/link", () => ({
-  default: ({ href, children }: React.ComponentProps<"a">) => <a href={href}>{children}</a>,
+  default: ({ href, children, prefetch }: React.ComponentProps<"a"> & { prefetch?: boolean }) => (
+    <a href={href} data-next-link="" data-prefetch={String(prefetch)}>{children}</a>
+  ),
 }));
 vi.mock("@/components/DetailPageWatchlistButton", () => ({ DetailPageWatchlistButton: () => null }));
 vi.mock("@/components/DetailPageWatchedButton", () => ({ DetailPageWatchedButton: () => null }));
@@ -137,5 +140,69 @@ describe("TVContent Wikipedia identity", () => {
     await act(async () => { finishOld(article("British")); });
     expect(screen.queryByText("British series editorial overview.")).toBeNull();
     expect(screen.getByText("American series editorial overview.")).toBeTruthy();
+  });
+});
+
+describe("TVContent creators, cast and trailer", () => {
+  function withPeople(): TVShowDetails {
+    return {
+      ...series(1, "Q123"),
+      created_by: [
+        { id: 17, name: "Ricky Gervais", profile_path: null },
+        { id: 18, name: "Stephen Merchant", profile_path: null },
+      ],
+      credits: {
+        cast: [
+          { id: 17, name: "Ricky Gervais", character: "David Brent", order: 0, profile_path: null },
+          { id: 17, name: "Ricky Gervais", character: "Himself", order: 1, profile_path: null },
+          { id: 19, name: "Martin Freeman", character: "Tim", order: 2, profile_path: null },
+        ],
+        crew: [],
+      },
+      videos: {
+        id: 1,
+        results: [{
+          id: "v", key: "k-office", name: "The Office Trailer", site: "YouTube",
+          type: "Trailer", official: true, published_at: "2001-07-01T00:00:00.000Z",
+        }],
+      },
+    };
+  }
+
+  /**
+   * These were plain <a href>s. In a static export that is a full document
+   * load per click: the app boots again and the in-memory TMDB cache is gone.
+   */
+  it("links the creators client-side, without prefetching", async () => {
+    api.getTVShowDetails.mockResolvedValue(withPeople());
+    await act(async () => { render(<TVContent />); });
+
+    const creator = screen.getAllByRole("link", { name: "Stephen Merchant" })[0];
+    expect(creator.getAttribute("href")).toBe("/person?id=stephen-merchant-18");
+    expect(creator.hasAttribute("data-next-link")).toBe(true);
+    expect(creator.getAttribute("data-prefetch")).toBe("false");
+  });
+
+  it("shows a cast member with several roles once", async () => {
+    api.getTVShowDetails.mockResolvedValue(withPeople());
+    await act(async () => { render(<TVContent />); });
+
+    const castSection = screen.getByRole("heading", { name: "Main Cast" }).parentElement!;
+    expect([...castSection.querySelectorAll("h3")].map((h) => h.textContent))
+      .toEqual(["Ricky Gervais", "Martin Freeman"]);
+    expect(castSection.textContent).toContain("David Brent / Himself");
+  });
+
+  // The mocked client has no `getTVShowVideos`: the button plays the trailer
+  // the page already holds, or this would land on "Video is not available".
+  it("plays the trailer from the page's own videos", async () => {
+    api.getTVShowDetails.mockResolvedValue(withPeople());
+    await act(async () => { render(<TVContent />); });
+
+    fireEvent.click(screen.getByRole("button", { name: "Play TV show trailer" }));
+
+    expect(screen.getByTitle("The Office Trailer").getAttribute("src")).toContain("/embed/k-office?");
+    expect(screen.queryByRole("alert")).toBeNull();
+    document.body.style.overflow = "";
   });
 });

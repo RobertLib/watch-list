@@ -158,9 +158,31 @@ describe("unlockedHints", () => {
     expect(unlockedHints(3)).toEqual(["decade", "genres", "runtime"]);
   });
 
-  it("keeps the cast until last, since it usually settles the answer", () => {
+  /**
+   * This used to assert the cast was *missing* on the last guess, which is the
+   * bug rather than the rule: six rungs, five misses that can still be followed
+   * by a guess, so one rung per miss only ever showed the cast on a lost board.
+   */
+  it("keeps the cast for last, but hands it over before the final guess", () => {
     expect(HINT_LADDER.at(-1)).toBe("cast");
-    expect(unlockedHints(MAX_GUESSES - 1)).not.toContain("cast");
+    expect(unlockedHints(MAX_GUESSES - 2)).not.toContain("cast");
+    expect(unlockedHints(MAX_GUESSES - 1)).toContain("cast");
+  });
+
+  it("makes every clue on the ladder available while there is a guess left to use it", () => {
+    // A guess count of MAX_GUESSES is a finished board; anything below it still
+    // has a guess to spend.
+    const reachable = new Set(
+      Array.from({ length: MAX_GUESSES }, (_, guessCount) => unlockedHints(guessCount)).flat(),
+    );
+
+    expect([...reachable].sort()).toEqual([...HINT_LADDER].sort());
+  });
+
+  it("leaves the opening misses paying out one clue each", () => {
+    for (let guessCount = 0; guessCount < MAX_GUESSES - 1; guessCount++) {
+      expect(unlockedHints(guessCount)).toEqual(HINT_LADDER.slice(0, guessCount));
+    }
   });
 
   it("cannot be pushed past the ladder by an inflated guess count", () => {

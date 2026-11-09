@@ -40,8 +40,11 @@ export function WatchProviders({
                 className="w-6 h-6 rounded overflow-hidden"
                 title={provider.provider_name}
               >
+                {/* 24px on every card: w92 covers it at 2x and 3x, where w45
+                    would blur. The w500 this used to name is thirty times the
+                    pixels, fetched for up to three logos on every card. */}
                 <Image
-                  src={getImageUrl(provider.logo_path, "w500")}
+                  src={getImageUrl(provider.logo_path, "w92")}
                   alt={provider.provider_name}
                   width={24}
                   height={24}

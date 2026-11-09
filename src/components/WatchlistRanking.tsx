@@ -194,24 +194,31 @@ function ProfileWatchlistRanking({ profileId, checkProfile }: {
             Which would you rather watch?
           </h2>
           <button
-            disabled={isSaving}
-            onClick={() => setRound((current) => current + 1)}
-            className="text-sm text-gray-400 hover:text-white transition-colors"
+            // Native `disabled` would blur this button in browsers mid-save;
+            // the guard below refuses the skip instead.
+            aria-disabled={isSaving}
+            onClick={() => {
+              if (!saving.current) setRound((current) => current + 1);
+            }}
+            className="text-sm text-gray-400 hover:text-white aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
           >
             Skip this pair
           </button>
         </div>
 
         {pair ? (
+          // Deliberately unkeyed: the next pair is drawn into the same two
+          // buttons, so the one just pressed keeps keyboard focus and Enter
+          // answers the next question without hunting for it again.
           <div className="grid grid-cols-2 gap-3 sm:gap-4">
             <ContenderButton
               item={pair.items[0]}
-              disabled={isSaving}
+              isSaving={isSaving}
               onPick={() => choose(pair.items[0], pair.items[1], pair.profileId)}
             />
             <ContenderButton
               item={pair.items[1]}
-              disabled={isSaving}
+              isSaving={isSaving}
               onPick={() => choose(pair.items[1], pair.items[0], pair.profileId)}
             />
           </div>
@@ -300,7 +307,7 @@ function ProfileWatchlistRanking({ profileId, checkProfile }: {
             />
             <ResetButton
               key={profileId}
-              disabled={isSaving}
+              isSaving={isSaving}
               onReset={() => mutate(profileId, () => {
                 if (!saveRanking({})) {
                   toast.showToast("Could not reset your ranking. Please try again.", "error");
@@ -374,18 +381,21 @@ function ProfileWatchlistRanking({ profileId, checkProfile }: {
 function ContenderButton({
   item,
   onPick,
-  disabled,
+  isSaving,
 }: {
   item: WatchlistItem;
   onPick: () => void;
-  disabled: boolean;
+  isSaving: boolean;
 }) {
   return (
     <button
       onClick={onPick}
-      disabled={disabled}
-      aria-busy={disabled}
-      className="group text-left rounded-xl overflow-hidden border border-gray-800 bg-gray-900 hover:border-purple-500/60 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
+      // Not native `disabled`: browsers blur a disabled button, so every pick
+      // used to drop keyboard focus on the page body mid-duel. `mutate`
+      // already refuses a second choice while one is being saved.
+      aria-disabled={isSaving}
+      aria-busy={isSaving}
+      className="group text-left rounded-xl overflow-hidden border border-gray-800 bg-gray-900 hover:border-purple-500/60 aria-disabled:cursor-wait transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
     >
       <div className="relative aspect-2/3 bg-gray-800">
         {item.posterPath && (
@@ -409,20 +419,47 @@ function ContenderButton({
   );
 }
 
-function ResetButton({ onReset, disabled }: { onReset: () => Promise<boolean>; disabled: boolean }) {
+function ResetButton({ onReset, isSaving }: { onReset: () => Promise<boolean>; isSaving: boolean }) {
   const [confirming, setConfirming] = useState(false);
   const mounted = useRef(true);
+  const resetRef = useRef<HTMLButtonElement>(null);
+  const eraseRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  // Each step replaces the button that was pressed, which would leave focus on
+  // the page body. Where it should land once the swap has rendered – only set
+  // when the pressed button actually held focus, so a mouse click in Safari
+  // (which does not focus buttons) is not answered with a jump.
+  const focusAfterSwap = useRef<"reset" | "cancel" | null>(null);
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
+  useEffect(() => {
+    const target = focusAfterSwap.current;
+    focusAfterSwap.current = null;
+    if (target === "reset") resetRef.current?.focus();
+    // The safe answer, not the destructive one: a second Enter must not erase.
+    else if (target === "cancel") cancelRef.current?.focus();
+  }, [confirming]);
 
+  function swap(next: boolean, pressed: HTMLElement | null) {
+    if (pressed && document.activeElement === pressed) {
+      focusAfterSwap.current = next ? "cancel" : "reset";
+    }
+    setConfirming(next);
+  }
+
+  // Not native `disabled` on any of these: it blurs the pressed button in
+  // browsers. Each handler refuses to act while a save is pending instead.
   if (!confirming) {
     return (
       <button
-        disabled={disabled}
-        onClick={() => setConfirming(true)}
-        className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-white transition-colors"
+        ref={resetRef}
+        aria-disabled={isSaving}
+        onClick={(event) => {
+          if (!isSaving) swap(true, event.currentTarget);
+        }}
+        className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-white aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
       >
         <RotateCcw className="w-4 h-4" aria-hidden="true" />
         Reset
@@ -433,19 +470,23 @@ function ResetButton({ onReset, disabled }: { onReset: () => Promise<boolean>; d
   return (
     <span className="flex items-center gap-2 text-sm">
       <button
-        disabled={disabled}
-        aria-busy={disabled}
+        ref={eraseRef}
+        aria-disabled={isSaving}
+        aria-busy={isSaving}
         onClick={async () => {
-          if (await onReset() && mounted.current) setConfirming(false);
+          if (await onReset() && mounted.current) swap(false, eraseRef.current);
         }}
-        className="text-red-400 hover:text-red-300 transition-colors"
+        className="text-red-400 hover:text-red-300 aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
       >
         Erase the ranking
       </button>
       <button
-        disabled={disabled}
-        onClick={() => setConfirming(false)}
-        className="text-gray-500 hover:text-white transition-colors"
+        ref={cancelRef}
+        aria-disabled={isSaving}
+        onClick={(event) => {
+          if (!isSaving) swap(false, event.currentTarget);
+        }}
+        className="text-gray-500 hover:text-white aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
       >
         Cancel
       </button>

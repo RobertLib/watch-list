@@ -36,6 +36,13 @@ interface DiscoverFilterBarProps {
   genreAllLabel?: string;
   /** When given, the bar shows the result count (and its own pending state). */
   totalResults?: number;
+  /**
+   * Set while the listing the bar filters is still fetching. The bar's own
+   * transition ends as soon as the URL has changed, which is before the new
+   * results have even been asked for – so on its own, "Updating results…"
+   * would be gone again before the request it describes went out.
+   */
+  resultsPending?: boolean;
   /** Shown in place of the active-filter chips while nothing is filtered. */
   emptyHint?: string;
   /**
@@ -53,6 +60,7 @@ export function DiscoverFilterBar({
   genreLabel = "Genre",
   genreAllLabel = "All Genres",
   totalResults,
+  resultsPending = false,
   emptyHint,
   keepParams,
 }: DiscoverFilterBarProps) {
@@ -392,9 +400,12 @@ export function DiscoverFilterBar({
           emptyHint && <span className="text-sm text-gray-400">{emptyHint}</span>
         )}
 
-        {totalResults !== undefined && (
+        {/* Kept mounted through a pending load – there is no count to show
+            then – because a live region only announces changes to content it
+            already held, not its own arrival. */}
+        {(totalResults !== undefined || resultsPending) && (
           <span className="ml-auto text-sm text-gray-400" aria-live="polite">
-            {isPending
+            {isPending || resultsPending || totalResults === undefined
               ? "Updating results…"
               : formatResultCount(totalResults, type)}
           </span>

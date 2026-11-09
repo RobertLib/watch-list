@@ -35,6 +35,83 @@ const GA_MEASUREMENT_ID = /^G-[A-Z0-9]+$/i.test(
   ? process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID
   : undefined;
 
+/**
+ * The Content Security Policy, delivered as a `<meta>` tag because GitHub Pages
+ * cannot send response headers.
+ *
+ * What it can and cannot do here. Next's static export writes inline scripts –
+ * the RSC payload, the bootstrap – into every page, and nonces need a server
+ * minting one per request, so `script-src` has to allow `'unsafe-inline'`, and
+ * an injected inline script would run. What the policy still decides is where
+ * everything else may come from and go to: no script from another origin,
+ * no request leaving the page except to the APIs listed, no frame but the
+ * trailer player, no plugin, no `<base>` rewriting every relative URL, no form
+ * posting off-site. That caps what any injection could load or send.
+ *
+ * A `<meta>` policy cannot carry `frame-ancestors`, `report-uri` or `sandbox`
+ * – browsers ignore them there – and it governs only what the parser meets
+ * after it. React places it after the font preload, stylesheets and scripts
+ * Next puts at the top of `<head>`: this deployment's own files, which the
+ * policy allows anyway. Everything that can vary – the inline payloads in
+ * `<body>`, scripts inserted later, every fetch, image and frame – comes after.
+ * Not under `next dev`: React's development build needs `eval`, and the policy
+ * is for what ships. `npm run build && npm run start` serves it, and a
+ * violation shows up in the console there.
+ *
+ * Every origin the app reaches is listed below, by the directive that governs
+ * it. Adding one – a new API called from the browser, an image host, an embed –
+ * means adding it here in the same change, or the browser blocks it in
+ * production while everything works in development. Links and the streaming
+ * providers' deep links are navigations, which no directive here restricts.
+ */
+const CONTENT_SECURITY_POLICY = Object.entries({
+  "default-src": ["'self'"],
+  "script-src": [
+    "'self'",
+    "'unsafe-inline'",
+    ...(GA_MEASUREMENT_ID ? ["https://*.googletagmanager.com"] : []),
+  ],
+  // React sets `style` attributes, which only `'unsafe-inline'` permits.
+  "style-src": ["'self'", "'unsafe-inline'"],
+  "img-src": [
+    "'self'",
+    // The poster placeholder in `tmdb-image.ts`.
+    "data:",
+    // Posters, backdrops, profiles and provider logos.
+    "https://image.tmdb.org",
+    // Trailer thumbnails.
+    "https://img.youtube.com",
+    ...(GA_MEASUREMENT_ID
+      ? ["https://*.google-analytics.com", "https://*.googletagmanager.com"]
+      : []),
+  ],
+  // `next/font` serves the font from `/_next/static/media/`.
+  "font-src": ["'self'"],
+  "connect-src": [
+    "'self'",
+    "https://api.themoviedb.org",
+    // `src/lib/wikipedia.ts`.
+    "https://en.wikipedia.org",
+    "https://www.wikidata.org",
+    ...(GA_MEASUREMENT_ID
+      ? [
+          "https://*.google-analytics.com",
+          "https://*.analytics.google.com",
+          "https://*.googletagmanager.com",
+        ]
+      : []),
+  ],
+  // The trailer overlay.
+  "frame-src": ["https://www.youtube-nocookie.com"],
+  "worker-src": ["'self'"],
+  "manifest-src": ["'self'"],
+  "object-src": ["'none'"],
+  "base-uri": ["'self'"],
+  "form-action": ["'self'"],
+})
+  .map(([directive, sources]) => `${directive} ${sources.join(" ")}`)
+  .join("; ");
+
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
@@ -112,6 +189,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        {process.env.NODE_ENV === "production" && (
+          <meta
+            httpEquiv="Content-Security-Policy"
+            content={CONTENT_SECURITY_POLICY}
+          />
+        )}
+      </head>
       <body className={`${geistSans.variable} antialiased`}>
         {/* Skip to main content link for keyboard users */}
         <a

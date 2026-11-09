@@ -2,6 +2,7 @@
 
 import { Suspense } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { tmdbApi } from "@/lib/tmdb";
 import { GenreTags } from "@/components/GenreTags";
@@ -33,6 +34,7 @@ import { useAsyncData } from "@/hooks/useAsyncData";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { useCanonicalUrl } from "@/hooks/useCanonicalUrl";
 import { useSettings } from "@/hooks/useSettings";
+import { findYouTubeTrailer } from "@/hooks/useVideoOverlay";
 import { getTVWikipediaContent } from "@/lib/wikipedia";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
 import {
@@ -150,10 +152,7 @@ function TVDetail() {
     getRegionCode(region),
   );
 
-  const trailer = videos.results.find(
-    (video: { type: string; site: string }) =>
-      video.type === "Trailer" && video.site === "YouTube",
-  );
+  const trailer = findYouTubeTrailer(videos.results);
 
   const creators = details.created_by ?? [];
 
@@ -303,7 +302,9 @@ function TVDetail() {
                 </div>
               )}
 
-              {/* Key Crew */}
+              {/* Key Crew – Links like the cast's. A plain <a> here was a full
+                  document load in the static export: the app booted again
+                  and the in-memory TMDB cache went with it. */}
               {creators.length > 0 && (
                 <div className="mt-6">
                   <h3 className="font-semibold">Creators</h3>
@@ -312,12 +313,13 @@ function TVDetail() {
                       (c: { id: number; name: string }, i: number) => (
                         <span key={c.id}>
                           {i > 0 && ", "}
-                          <a
+                          <Link
                             href={personHref(createSlug(c.name, c.id))}
+                            prefetch={false}
                             className="hover:text-white transition-colors"
                           >
                             {c.name}
-                          </a>
+                          </Link>
                         </span>
                       ),
                     )}
@@ -352,7 +354,7 @@ function TVDetail() {
 
               {/* Action Buttons */}
               <div className="flex flex-wrap items-center gap-3 mt-6">
-                <TVTrailerButton tvId={details.id} trailer={trailer} />
+                <TVTrailerButton trailer={trailer} />
                 <DetailPageWatchlistButton
                   id={details.id}
                   title={details.name}

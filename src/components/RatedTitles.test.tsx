@@ -306,6 +306,25 @@ describe("RatedTitles", () => {
     },
   );
 
+  // Up to two hundred reads used to outlive the page that asked for them.
+  it("cancels its title lookups when the page leaves, without reporting a failure", async () => {
+    saveOneRating();
+    let signal!: AbortSignal;
+    getTitlesResolutionByRefs.mockImplementation((_refs, lookupSignal: AbortSignal) => {
+      signal = lookupSignal;
+      return new Promise((_resolve, reject) => {
+        lookupSignal.addEventListener("abort", () => reject(lookupSignal.reason), { once: true });
+      });
+    });
+    await renderRated();
+    expect(signal.aborted).toBe(false);
+
+    await act(async () => { cleanup(); });
+
+    expect(signal.aborted).toBe(true);
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
   it("shows scores before a slow network request settles", async () => {
     saveOneRating();
     getTitlesResolutionByRefs.mockImplementation(() => new Promise(() => {}));

@@ -6,16 +6,57 @@ import type { Review, ReviewsResponse } from "@/types/tmdb";
 
 const INITIAL_REVIEWS = 3;
 
+// What may not touch an emphasis delimiter on its outer side: a word character,
+// or another delimiter.
+const WORD_EDGE = "[\\p{L}\\p{N}_*]";
+
+/**
+ * Emphasis as CommonMark has it, simplified: the opening delimiter starts a word
+ * and the closing one ends it, with no space just inside either, on one line.
+ *
+ * The old patterns were a bare non-greedy `_(.+?)_`, which paired any two
+ * underscores it found – `snake_case and other_name` lost both, and
+ * `wiki/Fight_Club_(film)` came out `wiki/FightClub(film)`. An underscore inside
+ * a word is text, and so is a `*` with spaces either side of it.
+ */
+function emphasis(delimiter: "**" | "__" | "*" | "_"): RegExp {
+  const d = delimiter.replace(/\*/g, "\\*");
+  return new RegExp(
+    `(^|(?!${WORD_EDGE}).)${d}(?=\\S)([^\\n]*?\\S)${d}(?!${WORD_EDGE})`,
+    "gmu",
+  );
+}
+
+// Strong before emphasis: the other way round, `**bold**` comes out `*bold*`.
+const EMPHASIS = [emphasis("**"), emphasis("__"), emphasis("*"), emphasis("_")];
+
+// A bare link in the review. Left exactly as written: whatever it contains is
+// part of an address, not formatting.
+const BARE_URL = /(?:https?:\/\/|www\.)[^\s<>"*]+/giu;
+
+function stripInline(text: string): string {
+  let out = text.replace(/`([^`\n]+)`/g, "$1");
+  for (const pattern of EMPHASIS) out = out.replace(pattern, "$1$2");
+  return out;
+}
+
 function stripMarkdown(text: string): string {
-  return text
-    .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/__(.+?)__/g, "$1")
-    .replace(/\*(.+?)\*/g, "$1")
-    .replace(/_(.+?)_/g, "$1")
-    .replace(/`(.+?)`/g, "$1")
-    .replace(/#+\s/g, "")
-    .replace(/\[(.+?)\]\(.+?\)/g, "$1")
-    .trim();
+  const plain = text
+    // [label](url) and ![alt](url) keep their words. The address may hold one
+    // level of parentheses, as Wikipedia's `…/Fight_Club_(film)` does.
+    .replace(/!?\[([^\]\n]+)\]\((?:[^()\s]|\([^()\s]*\))+\)/g, "$1")
+    // Headings only where a heading can be – at the start of a line – so the
+    // space after "C#" or a "#1" in the middle of a sentence is left alone.
+    .replace(/^#{1,6}[ \t]+/gm, "");
+
+  // Emphasis is stripped around bare URLs, never inside them.
+  let result = "";
+  let last = 0;
+  for (const match of plain.matchAll(BARE_URL)) {
+    result += stripInline(plain.slice(last, match.index)) + match[0];
+    last = match.index + match[0].length;
+  }
+  return (result + stripInline(plain.slice(last))).trim();
 }
 
 function formatDate(dateStr: string): string {
