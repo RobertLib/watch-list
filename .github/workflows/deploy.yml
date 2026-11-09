@@ -1,0 +1,75 @@
+# Publishes the static export in `out/` to GitHub Pages, served at
+# https://www.watch-list.me (the custom domain is set in Settings → Pages, not by
+# a CNAME file: a Pages deployment from Actions takes it from there).
+#
+# Runs only after CI has passed on a push to main, so nothing reaches the site
+# that failed lint, typecheck or the test suite. `workflow_dispatch` is there for
+# redeploying by hand – after rotating the TMDB token, say.
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time, and never cancel one halfway: a half-published site
+# is worse than a late one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # `event == 'push'` as well as the branch filter above: a fork's pull request
+    # from a branch that happens to be called `main` passes that filter too.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The commit CI actually tested, not whatever main points at by now.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+
+      - run: npm ci
+
+      # Unlike CI, this build needs the token: every `NEXT_PUBLIC_` variable is
+      # inlined into the client bundle, and the pages call TMDB from the browser
+      # with it. Built without one, the site deploys fine and answers 401 to
+      # everything. It is public in the shipped JS either way – the secret only
+      # keeps it out of the repository.
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_TMDB_API_TOKEN: ${{ secrets.NEXT_PUBLIC_TMDB_API_TOKEN }}
+          NEXT_PUBLIC_BASE_URL: https://www.watch-list.me
+          NEXT_PUBLIC_GA_MEASUREMENT_ID: ${{ vars.NEXT_PUBLIC_GA_MEASUREMENT_ID }}
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
