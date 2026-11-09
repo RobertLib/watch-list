@@ -224,7 +224,16 @@ export default function RootLayout({
 
                 {/* Analytics loads after the page is interactive rather than from
                     <head>, so it competes with nothing that the visitor – or a
-                    crawler measuring Core Web Vitals – is waiting for. */}
+                    crawler measuring Core Web Vitals – is waiting for.
+
+                    Google Signals is switched off here, whatever the property's
+                    admin setting says. With it on, gtag also reports to
+                    `stats.g.doubleclick.net` and loads an image from
+                    `www.google.<country>/ads/ga-audiences` – a different host
+                    per visitor's country, which a CSP cannot allow without
+                    listing every Google ccTLD. Blocked, those requests only
+                    filled the console with violations; nothing they carried
+                    ever arrived. */}
                 {GA_MEASUREMENT_ID && (
                   <>
                     <Script
@@ -232,7 +241,7 @@ export default function RootLayout({
                       strategy="afterInteractive"
                     />
                     <Script id="google-analytics" strategy="afterInteractive">
-                      {`window.dataLayer = window.dataLayer || []; function gtag(){dataLayer.push(arguments);} gtag('js', new Date()); gtag('config', '${GA_MEASUREMENT_ID}');`}
+                      {`window.dataLayer = window.dataLayer || []; function gtag(){dataLayer.push(arguments);} gtag('js', new Date()); gtag('config', '${GA_MEASUREMENT_ID}', { allow_google_signals: false });`}
                     </Script>
                   </>
                 )}
