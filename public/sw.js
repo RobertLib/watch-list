@@ -48,7 +48,7 @@
 // though, and cannot be: a code-only deploy leaves this file byte-identical, so
 // `install` never re-runs for it. `/offline` is refreshed on activation and
 // then opportunistically after navigations (see `refreshOfflinePage`).
-const VERSION = "v9";
+const VERSION = "v10";
 const SHELL_CACHE = `shell-${VERSION}`;
 const STATIC_CACHE = `static-${VERSION}`;
 const IMAGE_CACHE = `images-${VERSION}`;
@@ -602,6 +602,17 @@ async function handleStatic(request, event) {
  * readable one with its status intact – and only an `ok` one is stored. A CORS
  * response serves an `<img>` exactly as well as an opaque one would have.
  *
+ * It sends that header only when the request carries an `Origin`, though, and
+ * without `Vary: Origin` – while letting the browser keep the file for a year.
+ * So any plain `<img>` load that bypassed this worker (the first visit, before
+ * it took control; a hard reload; the no-cors fallback below; an earlier
+ * version of this file) leaves a copy in the HTTP cache with no CORS header,
+ * and a CORS fetch answered from that copy fails, every time, with a console
+ * error per poster. Hence `cache: "reload"`: the request always reaches the
+ * CDN with its `Origin`, and the readable answer replaces the copy in the HTTP
+ * cache too. It costs a re-download only on a miss here, which is when the
+ * network was going to be asked anyway, give or take the browser's own cache.
+ *
  * Should the CDN ever stop sending that header, the CORS fetch fails outright –
  * a network error, not a status – and the request falls back to the plain
  * fetch the browser would have made without a worker. That response is opaque
@@ -619,7 +630,7 @@ async function handleImage(request, event) {
   let response;
   try {
     response = await fetch(
-      new Request(request.url, { mode: "cors", credentials: "omit" }),
+      new Request(request.url, { mode: "cors", credentials: "omit", cache: "reload" }),
     );
   } catch {
     return fetch(request);

@@ -28,11 +28,13 @@ const geistSans = Geist({
 // apostrophe pasted along with the id, a stray newline out of a CI secret – would
 // close the string it sits in and take the whole script with it, which is a
 // blank page rather than a missing metric. A malformed id is dropped the same
-// way an absent one is: no analytics, and the app itself unaffected.
-const GA_MEASUREMENT_ID = /^G-[A-Z0-9]+$/i.test(
-  process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID ?? "",
-)
-  ? process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID
+// way an absent one is: no analytics, and the app itself unaffected. Surrounding
+// whitespace is trimmed first, though: a trailing newline pasted into the
+// secret is harmless once removed, and rejecting the id over it would switch
+// analytics off without a word.
+const GA_MEASUREMENT_ID_RAW = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim() ?? "";
+const GA_MEASUREMENT_ID = /^G-[A-Z0-9]+$/i.test(GA_MEASUREMENT_ID_RAW)
+  ? GA_MEASUREMENT_ID_RAW
   : undefined;
 
 /**

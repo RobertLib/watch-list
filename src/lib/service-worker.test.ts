@@ -163,8 +163,8 @@ function cachedPaths(app: ReturnType<typeof worker>, cacheName: string) {
   return [...(app.buckets.get(cacheName)?.keys() ?? [])].map((url) => new URL(url).pathname);
 }
 
-const STATIC_CACHE = "static-v9";
-const IMAGE_CACHE = "images-v9";
+const STATIC_CACHE = "static-v10";
+const IMAGE_CACHE = "images-v10";
 const HOUR = 60 * 60 * 1000;
 
 function addWatchlist(app: ReturnType<typeof worker>) {
@@ -219,6 +219,17 @@ describe("service worker offline routes", () => {
     const poster = await app.request(url);
     expect(await poster.response!.text()).toBe("POSTER");
     expect(app.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("fetches posters as CORS past the HTTP cache, whose copy may lack the CORS header", async () => {
+    const app = worker();
+    app.add("/t/p/w500/poster.jpg", "POSTER", "image/jpeg");
+    await app.request("https://image.tmdb.org/t/p/w500/poster.jpg", "no-cors");
+
+    const sent = app.fetch.mock.calls[0][0] as Request;
+    expect(sent.mode).toBe("cors");
+    expect(sent.credentials).toBe("omit");
+    expect(sent.cache).toBe("reload");
   });
 
   it.each(["static-v4", "static-v5", "static-v6"])(

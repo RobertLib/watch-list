@@ -103,11 +103,17 @@ jobs:
       # Unlike CI, this build needs the token (see the first step). It is public
       # in the shipped JS either way – the secret only keeps it out of the
       # repository.
+      #
+      # The GA id is public too (it is in every page's markup), so a repository
+      # variable is the natural home for it – but it is read from either kind,
+      # because the two sit side by side in Settings and one read from the wrong
+      # one is an empty string: a site that builds, deploys and silently reports
+      # nothing.
       - run: npm run build
         env:
           NEXT_PUBLIC_TMDB_API_TOKEN: ${{ secrets.NEXT_PUBLIC_TMDB_API_TOKEN }}
           NEXT_PUBLIC_BASE_URL: https://www.watch-list.me
-          NEXT_PUBLIC_GA_MEASUREMENT_ID: ${{ vars.NEXT_PUBLIC_GA_MEASUREMENT_ID }}
+          NEXT_PUBLIC_GA_MEASUREMENT_ID: ${{ vars.NEXT_PUBLIC_GA_MEASUREMENT_ID || secrets.NEXT_PUBLIC_GA_MEASUREMENT_ID }}
 
       - uses: actions/upload-pages-artifact@v5
         with:
