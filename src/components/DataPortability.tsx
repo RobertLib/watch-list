@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
+import Link from "next/link";
 import { Download, Upload, AlertTriangle, ShieldCheck } from "lucide-react";
 import { useWatchlist } from "@/contexts/WatchlistContext";
 import { useWatched } from "@/contexts/WatchedContext";
@@ -347,6 +348,19 @@ export function DataPortability() {
           WatchList keeps no account, so everything you save lives in this
           browser only. Download a backup to keep it safe – or to move it to
           another device.
+        </p>
+        {/* A backup is this app's own file. A list kept somewhere else is a
+            different thing, and has its own page. */}
+        <p className="text-sm text-gray-400 mt-2 leading-relaxed">
+          Coming from Letterboxd, IMDb, Trakt or TV Time?{" "}
+          <Link
+            href="/import"
+            prefetch={false}
+            className="text-blue-400 hover:text-blue-300 transition-colors"
+          >
+            Import your lists
+          </Link>{" "}
+          instead.
         </p>
       </div>
 

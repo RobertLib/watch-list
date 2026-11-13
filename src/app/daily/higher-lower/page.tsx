@@ -4,10 +4,12 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { HigherLowerGame } from "@/components/HigherLowerGame";
 
+// "Higher or lower" alone is a card game and a hundred other sites; the title
+// says which one this is.
 export const metadata: Metadata = pageMetadata({
-  title: "Higher or Lower",
+  title: "Higher or Lower – Movie Ratings Game",
   description:
-    "Guess which of two films scored higher. A quick, endless game built from the ratings of the whole TMDB catalogue.",
+    "Which movie is rated higher? Two films, one score showing – guess the other and keep the streak going. Free, endless, no sign-up.",
   path: "/daily/higher-lower",
 });
 
@@ -23,7 +25,9 @@ export default function HigherLowerPage() {
           <ArrowLeft className="w-4 h-4" aria-hidden="true" />
           Daily puzzle
         </Link>
-        <h1 className="text-3xl font-bold mb-2">Higher or lower</h1>
+        <h1 className="text-3xl font-bold mb-2">
+          Higher or lower: which movie is rated higher?
+        </h1>
         <p className="text-gray-400">
           Two films, one score showing. Guess whether the other scored higher or
           lower on TMDb and keep the run going. A tie counts in your favour.

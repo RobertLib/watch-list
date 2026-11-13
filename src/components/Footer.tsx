@@ -121,6 +121,20 @@ export function Footer() {
               >
                 Your stats
               </Link>
+              <Link
+                href="/import"
+                prefetch={false}
+                className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
+              >
+                Import from Letterboxd, IMDb, Trakt
+              </Link>
+              <Link
+                href="/tv-time-alternative"
+                prefetch={false}
+                className="block text-gray-400 hover:text-white text-sm transition-colors focus:outline-none focus:text-white"
+              >
+                TV Time alternative
+              </Link>
             </nav>
           </div>
 

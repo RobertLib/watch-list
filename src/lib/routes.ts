@@ -20,6 +20,7 @@
 import type { MediaType } from "@/types/tmdb";
 import { extractIdFromSlug } from "./utils";
 import {
+  hasLikePage,
   hasPrerenderedPage,
   type PrerenderedKind,
 } from "./prerendered-titles";
@@ -83,6 +84,24 @@ export function mediaHref(mediaType: MediaType, slug: string): string {
   return mediaType === "movie" ? movieHref(slug) : tvHref(slug);
 }
 
+/** Where a title's "movies like this" page is written – whether or not it was. */
+export function likePath(mediaType: MediaType, slug: string): string {
+  return `/${mediaType === "movie" ? "movies-like" : "shows-like"}/${slug}`;
+}
+
+/**
+ * A title's "movies like this" page, or null where the build wrote none.
+ *
+ * Only the best-known titles have one (`LIKE_PAGE_LIMITS`), so unlike a title
+ * link this has nowhere to fall back to: a caller shows the link or does not.
+ */
+export function likeHref(mediaType: MediaType, slug: string): string | null {
+  const id = extractIdFromSlug(slug);
+  return id !== null && hasLikePage(mediaType, id, slug)
+    ? likePath(mediaType, slug)
+    : null;
+}
+
 export function personHref(slug: string): string {
   return titleHref("person", slug);
 }
@@ -96,10 +115,24 @@ export function dailyHref(day?: string): string {
   return withParams("/daily", { day });
 }
 
-export function moodHref(slug: string, page?: number): string {
-  return withParams(`/mood/${slug}`, {
-    page: page && page > 1 ? String(page) : undefined,
-  });
+/**
+ * A mood's picks, optionally narrowed to one streaming platform.
+ *
+ * `/mood/christmas` and `/mood/christmas/netflix`: the platform is a path
+ * segment for the same reason a genre's is – the build can list every one, and
+ * a page with a path of its own is one a search engine can index. Only some
+ * moods have platform pages (`Mood.platforms`); a link to one that does not is
+ * a 404, so callers ask `moods.ts` first.
+ */
+export function moodHref(
+  slug: string,
+  page?: number,
+  platformSlug?: string,
+): string {
+  return withParams(
+    platformSlug ? `/mood/${slug}/${platformSlug}` : `/mood/${slug}`,
+    { page: page && page > 1 ? String(page) : undefined },
+  );
 }
 
 /**

@@ -111,6 +111,30 @@ export async function GenreLandingPage({
   return (
     <>
       <StructuredData type="BreadcrumbList" data={{ breadcrumbItems }} />
+      {/* Page one, as the build saw it – the same titles the HTML lists. None
+          in a build without TMDB access, where the page lists none either. */}
+      {snapshot && snapshot.items.length > 0 && (
+        <StructuredData
+          type="TitleList"
+          data={{
+            name: platform
+              ? `${genre.name} ${noun} on ${platform.name}`
+              : `${genre.name} ${noun}`,
+            url: platform
+              ? absoluteUrl(
+                  genreHref(mediaType, genreSlug(genre), {
+                    provider: platform.slug,
+                  }),
+                )
+              : genreUrl,
+            titles: snapshot.items.map((item) => ({
+              id: item.id,
+              title: item.title,
+              mediaType,
+            })),
+          }}
+        />
+      )}
       <GenreListing
         mediaType={mediaType}
         genre={genre}

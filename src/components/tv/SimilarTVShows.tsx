@@ -3,23 +3,38 @@ import Link from "next/link";
 import { tmdbApi } from "@/lib/tmdb";
 import { createSlug } from "@/lib/utils";
 import { releaseYear } from "@/lib/dates";
-import type { TMDBResponse, TVShow } from "@/types/tmdb";
+import type { TVShow } from "@/types/tmdb";
 import { tvHref } from "@/lib/routes";
 
+/** How many the section shows; the snapshot keeps the same (`SIMILAR_KEPT`). */
+const SHOWN = 9;
+
 interface SimilarTVShowsProps {
-  similar: TMDBResponse<TVShow>;
+  /** The titles like this one, closest first – `likeResults`. */
+  similar: TVShow[];
+  /**
+   * The title's "shows like this" page, where the build wrote one: the full
+   * list, with what each has in common. Null for a title without one.
+   */
+  allHref?: string | null;
+  /**
+   * The title these are similar to. The heading names it – "Shows like
+   * Interstellar" is the phrase people look this section up by, where "Similar
+   * Shows" said nothing about which.
+   */
+  title: string;
 }
 
-function SimilarTVShowsContent({ similar }: SimilarTVShowsProps) {
-  if (similar.results.length === 0) {
+function SimilarTVShowsContent({ similar, title, allHref }: SimilarTVShowsProps) {
+  if (similar.length === 0) {
     return null;
   }
 
   return (
     <section className="mt-8">
-      <h2 className="text-2xl font-bold mb-6">Similar TV Shows</h2>
+      <h2 className="text-2xl font-bold mb-6">Shows like {title}</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {similar.results.slice(0, 9).map((show, index) => {
+        {similar.slice(0, SHOWN).map((show, index) => {
           const slug = createSlug(show.name, show.id);
           return (
             <Link
@@ -55,10 +70,19 @@ function SimilarTVShowsContent({ similar }: SimilarTVShowsProps) {
           );
         })}
       </div>
+      {allHref && (
+        <Link
+          href={allHref}
+          prefetch={false}
+          className="inline-block mt-6 text-blue-400 hover:text-blue-300 transition-colors"
+        >
+          See all shows like {title} →
+        </Link>
+      )}
     </section>
   );
 }
 
-export function SimilarTVShows({ similar }: SimilarTVShowsProps) {
-  return <SimilarTVShowsContent similar={similar} />;
+export function SimilarTVShows({ similar, title, allHref }: SimilarTVShowsProps) {
+  return <SimilarTVShowsContent similar={similar} title={title} allHref={allHref} />;
 }

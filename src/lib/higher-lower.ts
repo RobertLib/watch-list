@@ -82,3 +82,17 @@ export function recordRound(
     totalRounds: record.totalRounds + 1,
   };
 }
+
+/**
+ * A finished run, as text to post. The number and nothing else: the films that
+ * made up the run are different for every player, so there is no board to show
+ * and nothing to spoil.
+ */
+export function buildHigherLowerShareText(
+  streak: number,
+  beatBest: boolean,
+  url: string,
+): string {
+  const run = `${streak} in a row${beatBest ? " – a new best" : ""}`;
+  return `🎬 WatchList Higher or Lower\n🔥 ${run}\n${url}`;
+}

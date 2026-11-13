@@ -1,6 +1,12 @@
 import type { NextConfig } from "next";
-import { encodePrerenderedTitles } from "./src/lib/prerendered-titles";
-import { prerenderedTitles } from "./src/lib/prerendered-titles-server";
+import {
+  encodeLikePageIds,
+  encodePrerenderedTitles,
+} from "./src/lib/prerendered-titles";
+import {
+  likePageTitles,
+  prerenderedTitles,
+} from "./src/lib/prerendered-titles-server";
 
 /**
  * The titles `scripts/prebuild.mjs` chose to prerender, as the compact id and
@@ -24,6 +30,18 @@ function prerenderedTitleIds(): string {
 }
 
 /**
+ * The ids of the titles that also get a "movies like this" page, inlined for
+ * the same reason: a title page links to one only where the build wrote it,
+ * and the prerendered HTML and the hydrating browser have to agree on that.
+ */
+function likePageTitleIds(): string {
+  return encodeLikePageIds({
+    movie: likePageTitles("movie").map(({ id }) => id),
+    tv: likePageTitles("tv").map(({ id }) => id),
+  });
+}
+
+/**
  * The app is a static export: `next build` writes plain HTML, CSS and JS to
  * `out/`, and there is no server component of the deployment at all. Every page
  * renders a Client Component that talks to TMDB from the browser, which is what
@@ -42,6 +60,7 @@ const nextConfig: NextConfig = {
   output: "export",
   env: {
     PRERENDERED_TITLE_IDS: prerenderedTitleIds(),
+    LIKE_PAGE_TITLE_IDS: likePageTitleIds(),
   },
   images: {
     // No optimiser exists in a static export, so next/image serves TMDB URLs

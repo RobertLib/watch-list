@@ -30,6 +30,12 @@
  * regional traffic on something obscure does not buy it a page. The counts are
  * bounded by GitHub Pages' size limit – see `LIMITS`.
  *
+ * Which people: the ones those titles credit most often – their top-billed
+ * cast, directors, writers and creators (`prerender-people.mjs`). That costs a
+ * request per chosen title, here, before the build makes the same request
+ * again for the page; a minute of the build, for person pages the title pages
+ * actually link to.
+ *
  * Without a TMDB token – CI, a fresh checkout – the list is empty and the build
  * prerenders no titles; every title link stays on its query-string page. With a
  * token, a request that keeps failing fails the build: a deploy that silently
@@ -39,6 +45,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import nextEnv from "@next/env";
+import { rankPeople } from "./prerender-people.mjs";
 
 const CACHE_DIR = new URL("../.next/cache/", import.meta.url);
 const OUTPUT = new URL("prerendered-titles.json", CACHE_DIR);
@@ -61,31 +68,29 @@ const LISTS = {
       pages: 8,
     },
   ],
-  // TMDB's popular people are noisy – a burst of regional traffic puts someone
-  // at the top with no known work at all – so more are read than are kept, and
-  // only people known for something widely seen get a page (see `keep`).
-  person: [{ path: "/person/popular", params: {}, pages: 40 }],
 };
 
 /**
- * The most of each kind to keep, in list order.
+ * The most of each kind to keep: titles in list order, people most-credited
+ * first.
  *
- * Sized against GitHub Pages' 1 GB: a prerendered title is about 360 KB on disk
- * (its HTML, and the three payload files Next writes beside it for client
- * navigation – most of that the page's shell, the rest the snapshot that
- * `src/lib/title-details.ts` cuts down), and the rest of the site is about
- * 120 MB. 1,225 titles come to roughly 560 MB, which leaves room to grow;
+ * Sized against GitHub Pages' 1 GB. Measured on a build: a prerendered title is
+ * about 270 KB on disk and a person about 260 KB (the HTML, and the payload
+ * files Next writes beside it for client navigation – most of that the page's
+ * shell, the rest the snapshot that `src/lib/title-details.ts` cuts down), a
+ * "movies like this" page about 190 KB (`LIKE_PAGE_LIMITS`), and everything
+ * else – genres, moods, their platform landings, the app – about 120 MB. With
+ * these limits the whole site is roughly 665 MB, which leaves room to grow;
  * `scripts/postbuild.mjs` fails the build well before the limit.
+ *
+ * The people are the ones worth raising first. Six hundred of them are who
+ * the prerendered titles credit on four or more of their pages; a title page
+ * links to about a dozen people prominently and, at this limit, a third of
+ * those links reach a prerendered page rather than the `noindex` shell. At 250
+ * it was one in six.
  */
-const LIMITS = { movie: 650, tv: 325, person: 250 };
+const LIMITS = { movie: 650, tv: 325, person: 600 };
 
-/** Whether a list entry earns a page. Titles are vote-floored by their query. */
-const keep = {
-  movie: () => true,
-  tv: () => true,
-  person: (item) =>
-    (item.known_for ?? []).some((work) => (work.vote_count ?? 0) >= 1000),
-};
 
 const MAX_IN_FLIGHT = 6;
 const RETRIES = 4;
@@ -127,7 +132,7 @@ if (!token) {
     for (const response of responses) {
       for (const item of response.results ?? []) {
         const name = item.title ?? item.name;
-        if (!seen.has(item.id) && typeof name === "string" && !item.adult && keep[kind](item)) {
+        if (!seen.has(item.id) && typeof name === "string" && !item.adult) {
           seen.set(item.id, { id: item.id, name });
         }
       }
@@ -135,13 +140,36 @@ if (!token) {
     result[kind] = [...seen.values()].slice(0, LIMITS[kind]);
   }
 
+  // The people, from the credits of the titles just chosen. A title TMDB
+  // answers 404 for – removed in the minutes since it was listed – simply
+  // credits nobody; any other failure fails the build like the lists above.
+  const credited = await mapLimit(
+    [
+      ...result.movie.map(({ id }) => ({ path: `/movie/${id}/credits`, series: false })),
+      ...result.tv.map(({ id }) => ({ path: `/tv/${id}`, series: true })),
+    ],
+    MAX_IN_FLIGHT,
+    async ({ path, series }) => {
+      const answer = await tmdb(
+        path,
+        series ? { append_to_response: "credits" } : {},
+        { missingIsNull: true },
+      );
+      if (!answer) return {};
+      return series
+        ? { ...(answer.credits ?? {}), createdBy: answer.created_by }
+        : answer;
+    },
+  );
+  result.person = rankPeople(credited, LIMITS.person);
+
   writeFileSync(OUTPUT, JSON.stringify(result));
   console.log(
     `prebuild: prerendering ${result.movie.length} films, ${result.tv.length} series and ${result.person.length} people.`,
   );
 }
 
-async function tmdb(path, params) {
+async function tmdb(path, params, { missingIsNull = false } = {}) {
   const url = `https://api.themoviedb.org/3${path}?${new URLSearchParams(params)}`;
   for (let attempt = 0; ; attempt++) {
     let response;
@@ -156,6 +184,7 @@ async function tmdb(path, params) {
       continue;
     }
     if (response.ok) return response.json();
+    if (response.status === 404 && missingIsNull) return null;
     if (attempt >= RETRIES || ![429, 500, 502, 503, 504].includes(response.status)) {
       throw new Error(`prebuild: ${url} answered ${response.status}`);
     }

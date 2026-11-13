@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  decodeLikePageIds,
   decodePrerenderedTitles,
+  encodeLikePageIds,
   encodePrerenderedTitles,
+  hasLikePage,
   hasPrerenderedPage,
   slugHash,
 } from "./prerendered-titles";
@@ -89,5 +92,46 @@ describe("prerendered titles", () => {
 
     vi.stubEnv("PRERENDERED_TITLE_IDS", "");
     expect(hasPrerenderedPage("movie", 550, "fight-club-550")).toBe(false);
+  });
+});
+
+describe("the titles with a \"like this\" page", () => {
+  it("round-trips the ids of each kind", () => {
+    const decoded = decodeLikePageIds(
+      encodeLikePageIds({ movie: [550, 13, 157336, 13], tv: [1396] }),
+    );
+
+    expect([...decoded.movie]).toEqual([13, 550, 157336]);
+    expect([...decoded.tv]).toEqual([1396]);
+  });
+
+  it("decodes nothing from an empty, absent or mangled list", () => {
+    expect(decodeLikePageIds("").movie.size).toBe(0);
+    expect(decodeLikePageIds("").tv.size).toBe(0);
+    // Whatever cannot be a gap is skipped rather than read as an id.
+    expect([...decodeLikePageIds("a.!.-3|").movie]).toEqual([10]);
+  });
+
+  it("answers yes only for a listed title whose own page is under that slug", () => {
+    vi.stubEnv(
+      "PRERENDERED_TITLE_IDS",
+      encodePrerenderedTitles({
+        movie: [title(550, "Fight Club"), title(13, "Forrest Gump")],
+        tv: [title(1396, "Breaking Bad")],
+        person: [],
+      }),
+    );
+    vi.stubEnv("LIKE_PAGE_TITLE_IDS", encodeLikePageIds({ movie: [550], tv: [] }));
+
+    expect(hasLikePage("movie", 550, "fight-club-550")).toBe(true);
+    // Prerendered, but past the cut for a like page of its own.
+    expect(hasLikePage("movie", 13, "forrest-gump-13")).toBe(false);
+    expect(hasLikePage("tv", 1396, "breaking-bad-1396")).toBe(false);
+    // The like page is written under the title page's slug: a renamed title's
+    // link would name a file that is not there.
+    expect(hasLikePage("movie", 550, "fight-club-directors-cut-550")).toBe(false);
+
+    vi.stubEnv("LIKE_PAGE_TITLE_IDS", "");
+    expect(hasLikePage("movie", 550, "fight-club-550")).toBe(false);
   });
 });

@@ -6,7 +6,9 @@ import Link from "next/link";
 import {
   ArrowDown,
   ArrowUp,
+  Check,
   RotateCcw,
+  Share2,
   Star,
   Trophy,
 } from "lucide-react";
@@ -16,6 +18,7 @@ import { toast } from "@/components/Toast";
 import {
   EMPTY_RECORD,
   HIGHER_LOWER_STORAGE_KEY,
+  buildHigherLowerShareText,
   getRecord,
   recordRound,
   saveRecord,
@@ -31,7 +34,9 @@ import {
   type DuelFilm,
   type RatedFilm,
 } from "@/lib/rating-duel-data";
-import { movieHref } from "@/lib/routes";
+import { absoluteUrl, movieHref } from "@/lib/routes";
+import { shareText } from "@/lib/share-text";
+import { useTransientFlag } from "@/hooks/useTransientFlag";
 
 type Phase =
   | "loading"
@@ -430,14 +435,17 @@ export function HigherLowerGame() {
             Final score {streak}
             {beatBest && " – a new best."}
           </p>
-          <button
-            ref={playAgainRef}
-            onClick={restart}
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-          >
-            <RotateCcw className="w-4 h-4" aria-hidden="true" />
-            Play again
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              ref={playAgainRef}
+              onClick={restart}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+            >
+              <RotateCcw className="w-4 h-4" aria-hidden="true" />
+              Play again
+            </button>
+            <ShareRunButton streak={streak} beatBest={beatBest} />
+          </div>
         </div>
       )}
 
@@ -450,17 +458,65 @@ export function HigherLowerGame() {
             You got {streak} right
             {beatBest && " – a new best."}
           </p>
-          <button
-            ref={playAgainRef}
-            onClick={restart}
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-          >
-            <RotateCcw className="w-4 h-4" aria-hidden="true" />
-            Play again
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              ref={playAgainRef}
+              onClick={restart}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+            >
+              <RotateCcw className="w-4 h-4" aria-hidden="true" />
+              Play again
+            </button>
+            <ShareRunButton streak={streak} beatBest={beatBest} />
+          </div>
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Posts the finished run. Beside "Play again", never in place of it: focus
+ * lands on that button when a run ends, and the next run is what most players
+ * want. A run of nothing is not offered – there is no result in it to post.
+ */
+function ShareRunButton({
+  streak,
+  beatBest,
+}: {
+  streak: number;
+  beatBest: boolean;
+}) {
+  const [copied, markCopied] = useTransientFlag(2000);
+
+  if (streak === 0) return null;
+
+  async function share() {
+    const url =
+      typeof window === "undefined"
+        ? absoluteUrl("/daily/higher-lower")
+        : `${window.location.origin}/daily/higher-lower`;
+    const outcome = await shareText(
+      buildHigherLowerShareText(streak, beatBest, url),
+    );
+    if (outcome === "copied") markCopied();
+    else if (outcome === "failed") {
+      toast.showToast("Could not copy your result", "error");
+    }
+  }
+
+  return (
+    <button
+      onClick={share}
+      className="inline-flex items-center gap-2 px-6 py-3 rounded-lg border border-gray-600 hover:border-gray-400 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+    >
+      {copied ? (
+        <Check className="w-4 h-4" aria-hidden="true" />
+      ) : (
+        <Share2 className="w-4 h-4" aria-hidden="true" />
+      )}
+      {copied ? "Copied" : "Share result"}
+    </button>
   );
 }
 

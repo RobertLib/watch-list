@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { MOODS, findMood } from "./moods";
+import {
+  MOODS,
+  MOOD_GROUPS,
+  findMood,
+  moodMediaNoun,
+  moodsWithPlatforms,
+} from "./moods";
 import { MOVIE_SORT_OPTIONS, TV_SORT_OPTIONS } from "@/types/filters";
 
 /**
@@ -51,7 +57,7 @@ describe("MOODS", () => {
 
   it("sorts by something the movie sanitiser will actually keep", () => {
     for (const mood of MOODS) {
-      if (!mood.movie.sortBy) continue;
+      if (!mood.movie?.sortBy) continue;
       expect(MOVIE_SORT_VALUES).toContain(mood.movie.sortBy);
     }
   });
@@ -103,14 +109,107 @@ describe("MOODS", () => {
   });
 
   it("gives every mood something to actually query by", () => {
+    // A side with only a sort and a vote floor is every film on TMDB, best
+    // first – a list, but not a mood.
     for (const mood of MOODS) {
-      const { genre, withKeywords, withRuntimeLte, withRuntimeGte } =
-        mood.movie;
+      for (const filters of [mood.movie, mood.tv]) {
+        if (!filters) continue;
 
-      expect(
-        Boolean(genre || withKeywords || withRuntimeLte || withRuntimeGte),
-      ).toBe(true);
+        expect(
+          Boolean(
+            filters.genre ||
+              filters.withKeywords ||
+              filters.withRuntimeLte ||
+              filters.withRuntimeGte ||
+              filters.withOriginalLanguage ||
+              filters.primaryReleaseDateGte ||
+              filters.primaryReleaseDateLte ||
+              filters.firstAirDateGte ||
+              filters.firstAirDateLte ||
+              filters.voteCountLte,
+          ),
+          mood.slug,
+        ).toBe(true);
+      }
     }
+  });
+
+  // `loadMoodPicks` asks only for the halves a mood has; one with neither
+  // would be a page with a heading and nothing under it.
+  it("gives every mood films, series or both", () => {
+    for (const mood of MOODS) {
+      expect(Boolean(mood.movie || mood.tv), mood.slug).toBe(true);
+    }
+  });
+
+  it("gives every mood a heading that says what is on the page", () => {
+    for (const mood of MOODS) {
+      expect(mood.title.trim().length, mood.slug).toBeGreaterThan(8);
+      // The `<title>` is this plus " | WatchList", and " on Amazon Prime Video"
+      // on a landing; past ~60 characters a search result cuts it.
+      expect(mood.title.length, mood.slug).toBeLessThanOrEqual(50);
+    }
+    const titles = MOODS.map((mood) => mood.title);
+    expect(new Set(titles).size).toBe(titles.length);
+  });
+
+  it("files every mood under a section the index page shows", () => {
+    const groups = new Set<string>(MOOD_GROUPS.map((group) => group.id));
+    for (const mood of MOODS) {
+      expect(groups, mood.slug).toContain(mood.group);
+    }
+    // And no section is a heading over nothing.
+    for (const group of MOOD_GROUPS) {
+      expect(MOODS.some((mood) => mood.group === group.id), group.id).toBe(true);
+    }
+  });
+
+  it("puts a date bound only on the side that reads it", () => {
+    // `buildFilteredUrl` sends the release pair to films and the air-date pair
+    // to series, and silently drops the other – a decade written with the
+    // wrong pair is a list of every decade.
+    for (const mood of MOODS) {
+      expect(mood.movie?.firstAirDateGte ?? mood.movie?.firstAirDateLte, mood.slug).toBeUndefined();
+      expect(mood.tv?.primaryReleaseDateGte ?? mood.tv?.primaryReleaseDateLte, mood.slug).toBeUndefined();
+
+      for (const [from, to] of [
+        [mood.movie?.primaryReleaseDateGte, mood.movie?.primaryReleaseDateLte],
+        [mood.tv?.firstAirDateGte, mood.tv?.firstAirDateLte],
+      ]) {
+        for (const date of [from, to]) {
+          if (date) expect(date, mood.slug).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        }
+        if (from && to) expect(from < to, mood.slug).toBe(true);
+      }
+    }
+  });
+
+  it("keeps a vote ceiling above its floor", () => {
+    for (const mood of MOODS) {
+      for (const filters of [mood.movie, mood.tv]) {
+        if (filters?.voteCountLte === undefined) continue;
+        expect(filters.voteCountLte, mood.slug).toBeGreaterThan(filters.voteCountGte ?? 0);
+      }
+    }
+  });
+});
+
+describe("moodsWithPlatforms", () => {
+  // Seven platforms each: every mood added here is seven more pages, most of
+  // them thin for a narrow mood. A handful, chosen – not the table.
+  it("is a chosen few, not every mood", () => {
+    const withPlatforms = moodsWithPlatforms();
+    expect(withPlatforms.length).toBeGreaterThan(0);
+    expect(withPlatforms.length).toBeLessThanOrEqual(15);
+    expect(withPlatforms.every((mood) => mood.platforms)).toBe(true);
+  });
+});
+
+describe("moodMediaNoun", () => {
+  it("names what a mood's page lists", () => {
+    expect(moodMediaNoun(findMood("easy-watch")!)).toBe("Movies & TV Shows");
+    expect(moodMediaNoun(findMood("mind-bending")!)).toBe("Movies");
+    expect(moodMediaNoun(findMood("limited-series")!)).toBe("TV Shows");
   });
 });
 

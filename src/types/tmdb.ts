@@ -430,6 +430,11 @@ export interface MovieDetails extends Omit<Movie, "genre_ids"> {
   homepage: string | null;
   belongs_to_collection: MovieCollection | null;
   "watch/providers"?: WatchProvidersResponse;
+  /**
+   * `YYYY-MM-DD` (UTC) the build took this snapshot on. Not TMDB's: set by
+   * `build-time-tmdb.ts`, and absent from an answer the browser loaded itself.
+   */
+  snapshot_date?: string;
   // append_to_response fields
   credits?: Credits;
   videos?: VideosResponse;
@@ -466,6 +471,11 @@ export interface TVShowDetails extends Omit<TVShow, "genre_ids"> {
   next_episode_to_air: Episode | null;
   last_episode_to_air: Episode | null;
   "watch/providers"?: WatchProvidersResponse;
+  /**
+   * `YYYY-MM-DD` (UTC) the build took this snapshot on. Not TMDB's: set by
+   * `build-time-tmdb.ts`, and absent from an answer the browser loaded itself.
+   */
+  snapshot_date?: string;
   // append_to_response fields
   credits?: Credits;
   videos?: VideosResponse;

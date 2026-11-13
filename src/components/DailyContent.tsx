@@ -91,10 +91,10 @@ function TodaysPuzzle() {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-2xl mx-auto mb-8 text-center">
-        <h1 className="text-3xl font-bold mb-2">Daily Film Puzzle</h1>
+        <h1 className="text-3xl font-bold mb-2">Guess the Movie</h1>
         <p className="text-gray-400">
-          One film a day, the same for everybody. Six guesses – each wrong one
-          sharpens the picture and unlocks a clue.
+          The daily film puzzle: one film a day, the same for everybody. Six
+          guesses – each wrong one sharpens the picture and unlocks a clue.
         </p>
       </div>
 

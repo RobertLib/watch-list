@@ -13,6 +13,10 @@ const api = vi.hoisted(() => ({
   getImageUrl: vi.fn(() => "/poster.jpg"),
 }));
 
+// Where the visitor is. The build's snapshot knows only its own region.
+const settings = vi.hoisted(() => ({ region: "US" }));
+vi.mock("@/hooks/useSettings", () => ({ useSettings: () => settings }));
+
 vi.mock("@/lib/tmdb", () => ({ tmdbApi: api }));
 vi.mock("@/lib/wikipedia", () => ({ getMovieWikipediaContent: vi.fn() }));
 vi.mock("next/navigation", () => ({
@@ -98,6 +102,7 @@ const article: WikipediaContent = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  settings.region = "US";
   wiki.mockReset().mockResolvedValue(null);
   api.getMovieDetails.mockResolvedValue(film("Q105702"));
 });
@@ -213,5 +218,61 @@ describe("MovieContent snapshot", () => {
     });
 
     expect(screen.getByText("Movie not found")).toBeTruthy();
+  });
+});
+
+describe("MovieContent where to watch", () => {
+  const netflix = { provider_id: 8, provider_name: "Netflix", logo_path: "/n.jpg", display_priority: 1 };
+  /** A build's snapshot: one region's providers, and the day it was taken. */
+  const snapshot = (): MovieDetails => ({
+    ...film(null),
+    snapshot_date: "2026-11-13",
+    "watch/providers": { id: 935, results: { US: { link: "", flatrate: [netflix] } } },
+  });
+
+  it("answers from the snapshot for a visitor in the build's region, dated as taken", async () => {
+    api.getMovieDetails.mockReturnValue(new Promise(() => {}));
+    await act(async () => {
+      render(<MovieContent slug="dr-strangelove-935" snapshot={snapshot()} />);
+    });
+
+    expect(screen.getByRole("heading", { level: 2, name: "Where to watch Dr. Strangelove" })).toBeTruthy();
+    expect(screen.getByText("Dr. Strangelove is streaming on Netflix.")).toBeTruthy();
+    expect(screen.getByText(/Checked November 13, 2026/)).toBeTruthy();
+  });
+
+  // The snapshot says nothing about any other country. Before the visitor's
+  // own providers load – and for as long as that load fails – "not available
+  // here" would be a claim with nothing behind it.
+  it("does not call a title unavailable in a region the snapshot knows nothing about", async () => {
+    settings.region = "CZ";
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    api.getMovieDetails.mockRejectedValue(new Error("TMDB API error: 503 Service Unavailable"));
+    await act(async () => {
+      render(<MovieContent slug="dr-strangelove-935" snapshot={snapshot()} />);
+    });
+
+    expect(screen.getByRole("heading", { level: 2, name: "Where to watch Dr. Strangelove" })).toBeTruthy();
+    expect(screen.getByText("Checking where it is available in your region…")).toBeTruthy();
+    expect(screen.queryByText(/not available/)).toBeNull();
+    expect(screen.queryByText(/streaming on Netflix/)).toBeNull();
+  });
+
+  it("says so once the visitor's own answer shows the title is not available there", async () => {
+    settings.region = "CZ";
+    // The browser's own answer carries every region that has the title: CZ is
+    // not among them.
+    api.getMovieDetails.mockResolvedValue({
+      ...film(null),
+      "watch/providers": { id: 935, results: { US: { link: "", flatrate: [netflix] } } },
+    });
+    await act(async () => {
+      render(<MovieContent slug="dr-strangelove-935" snapshot={snapshot()} />);
+    });
+
+    expect(
+      screen.getByText("Dr. Strangelove is not available to stream, rent or buy here right now."),
+    ).toBeTruthy();
+    expect(screen.getByText(/Region: Czech/)).toBeTruthy();
   });
 });

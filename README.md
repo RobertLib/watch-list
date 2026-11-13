@@ -19,13 +19,15 @@ nothing runs on a server at request time. See [Architecture](#architecture).
 - **Episode tracking** — Tick individual episodes or a whole aired season; per-season progress bars and a "Continue Watching" row on the home page that offers the next unwatched episode of every series in progress
 - **Release calendar** — Upcoming episode air dates and film release dates for everything you follow, using regional cinema dates where available, grouped by planning horizon, with an `.ics` export into your own calendar app
 - **What to watch tonight** — One pick off your own list, filtered by the time you actually have, whether it is streaming on your platforms right now, and the mood you are in. A grid is what you were already stuck in
-- **Browse by mood** — Curated pages for the way people really choose: something easy, something mind-bending, something under ninety minutes, lights off
+- **Browse by mood** — Sixty curated lists for the way people really choose: something easy, something mind-bending, something under ninety minutes, lights off – and by theme (heists, time travel, whodunits), time of year, language and decade. The broadest ones also have a page per streaming platform ("feel-good movies on Netflix")
+- **Movies like …** — For the best-known films and series, a page of twenty titles to watch next, with what each has in common with the one you liked
+- **Import from Letterboxd, IMDb, Trakt or TV Time** — Choose the export file as it was downloaded and bring across a watchlist, a watched history, scores and ticked episodes. Read in the browser, matched to TMDb, and only ever added to what is already here
 - **Rank your watchlist** — Pairwise duels ("which of these two?") folded into an Elo rating, ending in a personal top ten that shares as a link
 - **Compare two lists** — Paste a friend's share link and see what you have both already saved. Both lists live in the URL, so the overlap needs no accounts on either side
 - **Named lists** — Lists of your own beyond the watchlist ("October horror", "films to show my dad"), each shareable as a link
-- **Your stats** — Hours watched, top genres, decades you live in, a histogram of your own scores, achievements, a yearly target and a year in review worth sharing
+- **Your stats** — Hours watched, top genres, decades you live in, a histogram of your own scores, achievements, a yearly target and a year in review worth sharing – as text, or as an image the browser draws
 - **Profiles** — More than one person per browser, with separate watchlists, ticks, ratings, streaks and "since you were last here" (see [how personal data is stored](#how-personal-data-is-stored))
-- **Puzzle archive & a second game** — Every daily puzzle that has run is still playable, with a streak calendar and badges; plus "higher or lower", a run on TMDb ratings that lasts until a wrong answer or the last film in its pool
+- **Puzzle archive & a second game** — Every daily puzzle that has run is still playable, with a streak calendar and badges; plus "higher or lower", a run on TMDb ratings that lasts until a wrong answer or the last film in its pool, with a result to share
 - **Since you were last here** — The home page opens with what aired while you were away, rather than looking identical to the last visit. Each profile has its own last visit, so someone who follows nothing cannot acknowledge another person's interval. Every followed title is checked in bounded batches before the visit is acknowledged. Unreadable saved titles or a failed or cancelled check keep the previous interval available for retry, including after the connection returns
 - **Offline & installable** — A service worker keeps the app usable with no connection, or one too slow to answer: pages visited before load from cache and fill themselves in from browser storage, and the app's own assets and posters are served from cache
 - **Your own ratings** — Score anything out of ten; rating a title marks it watched. Highly rated titles pull harder on your recommendations and poorly rated ones stop feeding them altogether
@@ -116,8 +118,8 @@ port; `npm run build` avoids that requirement and produces the static `out/`
 export. The same script runs in CI.
 
 `npm run build` runs `scripts/prebuild.mjs` first: it empties Next's fetch cache
-(so the TMDb snapshots are taken fresh) and, with a token, picks the titles to
-prerender into `.next/cache/prerendered-titles.json`. Without a token it
+(so the TMDb snapshots are taken fresh) and, with a token, picks the titles and
+people to prerender into `.next/cache/prerendered-titles.json`. Without a token it
 prerenders none, and the build still succeeds. `scripts/postbuild.mjs` then fails
 the build if `out/` has grown close to GitHub Pages' 1 GB limit. `next dev` reads
 the list the last build left behind, so title paths work in development only
@@ -189,6 +191,15 @@ repository's Pages settings.
 - **Only the publishing job can publish.** `pages: write` and `id-token: write`
   belong to the deploy job alone; the build job, which runs `npm ci` and with it
   every dependency's install scripts, can only read the repository.
+- **New URLs are announced through IndexNow.** Before the deploy, while the
+  site still serves the previous sitemap, the build compares it with the new
+  one (`scripts/indexnow.mjs`); after the deploy, a last job posts the URLs
+  that were added or removed, signed with the key file in `public/`. Bing,
+  Seznam, Yandex and Naver hear about a page then rather than at their next
+  crawl. Only the difference is sent, never the whole sitemap daily; running
+  the workflow by hand with "Submit every sitemap URL" sends all of it, for the
+  first run or after a change to what the pages contain. A refused submission
+  is a warning on the run, not a failed deploy.
 
 ## Architecture
 
@@ -215,9 +226,11 @@ It is now a static export, and the shape of everything follows from that:
   What the build *can* list has paths of its own, generated by
   `generateStaticParams`: every genre (`/genres/movie/action-28`), every genre
   on each landing platform (`/genres/movie/action-28/netflix`), every mood
-  (`/mood/easy-watch`), and the best-known films, series and people
+  (`/mood/easy-watch`) and, for some, its landing per platform
+  (`/mood/easy-watch/netflix`), and the best-known films, series and people
   (`/movie/fight-club-550`, `/tv/breaking-bad-1396`, `/person/tom-hanks-31`),
-  which `scripts/prebuild.mjs` picks before each build. Every link is built
+  which `scripts/prebuild.mjs` picks before each build – the best-known of
+  those again with a "like this" page (`/movies-like/fight-club-550`). Every link is built
   through `src/lib/routes.ts`, so those choices live in one file — a title link
   points at the path when the build wrote one, and at `?id=` otherwise. The query forms genres
   and moods had before (`/genres/movie?genre=…`, `/mood?id=…`) move the visitor
@@ -292,10 +305,20 @@ own HTML file, with its content in it.
   load fails – offline, rate-limited, TMDb blocked – the snapshot stays on
   screen with a small "Try again" notice rather than being replaced by an error.
   The deploy workflow rebuilds daily so the snapshots stay current.
+- **The content is where the page says it is.** No indexable route has a
+  `loading.tsx`. Next lists that file as unsupported in a static export, and
+  what it did there was write the skeleton into `<main>` and the page itself
+  into a hidden block after the footer, for a script to swap in. A browser –
+  and Google, which runs scripts – saw the page; anything reading the HTML
+  as written saw a skeleton. The three personal routes that keep one
+  (`/calendar`, `/profile`, `/watchlist`) are `noindex` and render from
+  browser storage anyway.
 - **The best-known titles are pages of their own.** Before each build,
   `scripts/prebuild.mjs` picks about 650 films and 325 series (the most-voted,
-  plus this month's popular releases with a vote floor) and 250 people (popular,
-  and known for something widely seen). Each is prerendered at
+  plus this month's popular releases with a vote floor) and 600 people – the
+  ones those titles credit most often as top-billed cast, director, writer or
+  creator (`scripts/prerender-people.mjs`), so that the people a title page
+  links to are the people who have a page. Each is prerendered at
   `/movie/<slug>`, `/tv/<slug>` or `/person/<slug>` with its details in the
   HTML: heading, summary, cast and crew, similar titles, JSON-LD, a title like
   "Fight Club (1999) – Where to Watch", and its backdrop as the social card. The
@@ -312,15 +335,30 @@ own HTML file, with its content in it.
 - **Prerendered pages hydrate without mismatches.** What they render cannot
   depend on the visitor: numbers and dates are formatted in `en-US` and UTC, a
   living person's age waits for the browser's own day, and a visitor outside
-  the US sees no "where to watch" until their region's providers load, rather
-  than the build's.
+  the US is told their region is still being checked until its providers load,
+  rather than shown the build's – or told the title is unavailable, which the
+  build's snapshot of one region cannot know.
+- **A title page answers its own title.** It is called "… – Where to Watch",
+  so that section leads the page: a second-level heading naming the title, a
+  sentence saying where it streams, rents and sells (`src/lib/where-to-watch.ts`),
+  the region and the day the providers were read, then the services.
+- **"Movies like …" is a page.** The 450 best-known prerendered films and 200
+  series also get `/movies-like/<slug>` or `/shows-like/<slug>`: twenty titles
+  from TMDb's recommendations, topped up with its similar titles, each with the
+  genres it shares (`src/lib/like-titles.ts`). It costs no request – it is a
+  different cut of the answer the title page already asked for – and the list
+  of which titles have one ships in the bundle beside the title ids.
+- **Listing pages say what they list.** Genre, platform, mood and "like this"
+  pages carry an `ItemList` of their titles in the summary-page form: a
+  position and the canonical URL of each title's own page.
 - **Every indexable page has a path of its own and a canonical.** Query-string
   variants of it — filters, a later page — serve the same HTML, so they
   canonicalise to the path.
-- **Thin pages stay out.** A landing with fewer than
-  `MIN_INDEXABLE_LANDING_RESULTS` titles (counted at build time) is `noindex`
-  and left out of the sitemap; the visitor who follows a link to it still gets
-  the page.
+- **Thin pages stay out.** A genre or mood landing with fewer than
+  `MIN_INDEXABLE_LANDING_RESULTS` titles, or a "like this" page with fewer than
+  `MIN_INDEXABLE_LIKE_RESULTS` (both counted at build time), is `noindex` and
+  left out of the sitemap; the visitor who follows a link to it still gets the
+  page. Only twelve of the sixty moods have platform landings at all.
 - **The sitemap lists exactly the indexable pages**, and its test fails if a
   listed route declares `noindex`.
 - **Personal pages and query-addressed title pages are `noindex, follow`**,
@@ -346,15 +384,19 @@ src/
 │   │   │   └── [genre]/     # Films in one genre, prerendered per genre
 │   │   │       └── [platform]/ # …on one streaming platform
 │   │   └── tv/              # The same for series
+│   ├── import/              # Import from Letterboxd, IMDb, Trakt, TV Time
 │   ├── list/                # A shared list          — ?items= &t=
 │   ├── lists/               # Your own named lists
 │   ├── match/               # Compare two lists      — ?mine= &theirs=
 │   ├── mood/                # Old ?id= addresses, redirected to [slug]
 │   │   └── [slug]/          # One curated mood, prerendered per mood
+│   │       └── [platform]/  # …on one streaming platform, for some moods
 │   ├── moods/               # The mood picker
 │   ├── movie/               # Film detail            — ?id=
 │   │   └── [slug]/          # …prerendered, for the best-known films
 │   ├── movies/              # Films listing with filtering
+│   ├── movies-like/
+│   │   └── [slug]/          # "Movies like …", for the best-known films
 │   ├── offline/             # Served by the service worker with no connection
 │   ├── people/              # People listing
 │   ├── person/              # Person detail          — ?id=
@@ -362,18 +404,21 @@ src/
 │   ├── profile/             # Settings & backup
 │   ├── ratings/             # What you scored
 │   ├── search/              # Search results         — ?q= &page=
+│   ├── shows-like/
+│   │   └── [slug]/          # "Shows like …", for the best-known series
 │   ├── stats/               # Your watching stats
 │   ├── tonight/             # What to watch tonight
 │   ├── tv/                  # Series detail          — ?id=
 │   │   └── [slug]/          # …prerendered, for the best-known series
 │   ├── tv-shows/            # Series listing with filtering
+│   ├── tv-time-alternative/ # For people TV Time left behind
 │   └── watchlist/           # Personal watchlist
 │       └── ranking/         # Pairwise ranking of the watchlist
 ├── components/
 │   ├── carousels/           # Home-page rows, one file
 │   ├── movie/               # Movie-specific components
 │   ├── person/              # Person-specific components
-│   ├── skeletons/           # Loading skeletons, shared by pages and loading.tsx
+│   ├── skeletons/           # Loading skeletons, shared by pages and the personal routes' loading.tsx
 │   └── tv/                  # TV-specific components
 ├── contexts/                # Watchlist, watched, episode progress, genres
 ├── hooks/
@@ -388,6 +433,8 @@ src/
 │   ├── build-time-tmdb.ts   # The TMDb snapshots the build writes into pages
 │   ├── title-details.ts     # What a title page loads, and the cut-down snapshot of it
 │   ├── title-metadata.ts    # A prerendered title's <head>: title, summary, social card
+│   ├── where-to-watch.ts    # "Where can I watch this?", as a sentence
+│   ├── like-titles.ts       # What a "movies like this" page lists
 │   ├── prerendered-titles*.ts # Which titles have a page of their own
 │   ├── genre-catalog.ts     # Every TMDb genre, so the build can list their pages
 │   ├── streaming-landing.ts # The platforms with genre landings, and when one is indexable
@@ -411,6 +458,9 @@ src/
 │   ├── higher-lower.ts      # That game's personal best (localStorage)
 │   ├── tonight*.ts          # The shortlist for tonight and the rules that narrow it
 │   ├── moods.ts             # Curated TMDB queries behind the mood pages
+│   ├── import/              # Other services' exports: CSV, ZIP, formats, matching, writing
+│   ├── year-card*.ts        # The year in review as an image: what it says, and painting it
+│   ├── share-text.ts        # Share sheet or clipboard, for a game result
 │   ├── ranking.ts           # Elo over pairwise choices (localStorage)
 │   ├── collections.ts       # Named lists (localStorage)
 │   ├── profiles.ts          # More than one person per browser
@@ -430,8 +480,10 @@ src/
 │   └── utils.ts             # Slug generation and other utilities
 └── types/                   # TypeScript type definitions (tmdb, filters)
 scripts/
-├── prebuild.mjs             # Fresh fetch cache; picks the titles to prerender
-└── postbuild.mjs            # Fails the build when out/ nears Pages' 1 GB
+├── prebuild.mjs             # Fresh fetch cache; picks the titles and people to prerender
+├── prerender-people.mjs     # Which people: the ones the chosen titles credit most
+├── postbuild.mjs            # Fails the build when out/ nears Pages' 1 GB
+└── indexnow.mjs             # Tells IndexNow which URLs a deploy added or removed
 ```
 
 The `hooks/` and `lib/` listings name the files worth knowing first, not every

@@ -115,3 +115,74 @@ export function hasPrerenderedPage(
   const hash = decoded.titles[kind].get(id);
   return hash !== undefined && hash === slugHash(slug);
 }
+
+/**
+ * Which of those titles also have a "movies like this" page – `/movies-like/
+ * <slug>`, `/shows-like/<slug>`.
+ *
+ * Not all of them: that page is worth building for the titles people ask the
+ * question about, and each one is disk the title pages are already competing
+ * for (see `LIKE_PAGE_LIMITS`). So it is a second list, inlined beside the
+ * first as `LIKE_PAGE_TITLE_IDS`: per kind, the ids sorted, each as the base-36
+ * gap from the one before, joined by `.`; films then series, joined by `|`.
+ * No slug hash of its own – a like page is written under the title page's slug,
+ * so the question is asked only once that one has answered yes.
+ */
+export type LikePageKind = "movie" | "tv";
+
+export const LIKE_PAGE_KINDS: readonly LikePageKind[] = ["movie", "tv"];
+
+/** Ids → the `LIKE_PAGE_TITLE_IDS` string. Used by `next.config.ts`. */
+export function encodeLikePageIds(
+  ids: Record<LikePageKind, readonly number[]>,
+): string {
+  return LIKE_PAGE_KINDS.map((kind) => {
+    let previous = 0;
+    return [...new Set(ids[kind])]
+      .sort((a, b) => a - b)
+      .map((id) => {
+        const gap = id - previous;
+        previous = id;
+        return gap.toString(36);
+      })
+      .join(".");
+  }).join("|");
+}
+
+export function decodeLikePageIds(
+  encoded: string,
+): Record<LikePageKind, Set<number>> {
+  const parts = encoded.split("|");
+  return Object.fromEntries(
+    LIKE_PAGE_KINDS.map((kind, index) => {
+      let previous = 0;
+      const ids = new Set<number>();
+      for (const entry of (parts[index] ?? "").split(".")) {
+        const gap = parseInt(entry, 36);
+        if (!Number.isSafeInteger(gap) || gap <= 0) continue;
+        previous += gap;
+        ids.add(previous);
+      }
+      return [kind, ids];
+    }),
+  ) as Record<LikePageKind, Set<number>>;
+}
+
+let decodedLikePages: {
+  raw: string;
+  ids: Record<LikePageKind, Set<number>>;
+} | null = null;
+
+/**
+ * Whether the build wrote a "like this" page for this title, under this slug.
+ * False for a slug the title page was not written under, for the same reason
+ * `hasPrerenderedPage` is: the file is named by the slug.
+ */
+export function hasLikePage(kind: LikePageKind, id: number, slug: string): boolean {
+  if (!hasPrerenderedPage(kind, id, slug)) return false;
+  const raw = process.env.LIKE_PAGE_TITLE_IDS ?? "";
+  if (decodedLikePages?.raw !== raw) {
+    decodedLikePages = { raw, ids: decodeLikePageIds(raw) };
+  }
+  return decodedLikePages.ids[kind].has(id);
+}

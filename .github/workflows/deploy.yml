@@ -20,6 +20,14 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      # For the first run, or after a change to what the pages contain: tell
+      # IndexNow about every URL in the sitemap, not only the ones this deploy
+      # added or removed (see `scripts/indexnow.mjs`).
+      indexnow_all:
+        description: "Submit every sitemap URL to IndexNow, not only the new ones"
+        type: boolean
+        default: false
   schedule:
     - cron: "17 4 * * *"
 
@@ -154,6 +162,20 @@ jobs:
           NEXT_PUBLIC_BASE_URL: https://www.watch-list.me
           NEXT_PUBLIC_GA_MEASUREMENT_ID: ${{ vars.NEXT_PUBLIC_GA_MEASUREMENT_ID || secrets.NEXT_PUBLIC_GA_MEASUREMENT_ID }}
 
+      # Before the deploy, on purpose: the live site still serves the previous
+      # sitemap, and what the new one lists beyond it is what this deploy adds.
+      # The list waits in an artifact until the pages can actually be fetched.
+      - name: List the URLs this deploy adds or removes
+        env:
+          ALL: ${{ inputs.indexnow_all && '--all' || '' }}
+        run: node scripts/indexnow.mjs diff https://www.watch-list.me/sitemap.xml out/sitemap.xml indexnow-urls.txt $ALL
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: indexnow-urls
+          path: indexnow-urls.txt
+          retention-days: 1
+
       - uses: actions/upload-pages-artifact@v5
         with:
           path: out
@@ -173,3 +195,27 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v5
+
+  # After the deploy, so nothing is announced before it can be fetched. Its own
+  # job: `deploy` stays the one that runs nothing but GitHub's action, and a
+  # refused submission is a warning on this run rather than a failed deploy –
+  # the site is live either way, and the sitemap says everything this would.
+  indexnow:
+    needs: [latest, deploy]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.latest.outputs.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: indexnow-urls
+
+      - run: node scripts/indexnow.mjs submit indexnow-urls.txt

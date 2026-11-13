@@ -11,7 +11,12 @@ import {
   convertMovieToMediaItem,
   convertTVShowToMediaItem,
 } from "./media-converters";
+import {
+  streamingPlatformProviderFilter,
+  type StreamingPlatform,
+} from "./streaming-landing";
 import type { Mood } from "./moods";
+import type { FilterOptions } from "@/types/filters";
 import type { MediaItem } from "@/types/tmdb";
 
 /** How deep the pager goes. The value of these pages is the first screenful. */
@@ -23,41 +28,59 @@ export interface MoodPicksPage {
   moviesFailed: boolean;
   showsFailed: boolean;
   totalPages: number;
+  /**
+   * Films and series together, across every page – what decides whether a
+   * mood's landing for one platform has enough on it to be indexed
+   * (`isIndexableLanding`). Counts only the halves that answered.
+   */
+  totalResults: number;
+}
+
+/**
+ * One half's filters, narrowed to a platform where the page is a landing for
+ * one. The platform is pinned the way a genre landing pins it: by the filter
+ * bar's own key, which wins over the visitor's saved services – the page is
+ * about that platform, whatever they subscribe to.
+ */
+function withPlatform(
+  filters: FilterOptions,
+  platform: StreamingPlatform | undefined,
+): FilterOptions {
+  return platform
+    ? { ...filters, watchProviders: streamingPlatformProviderFilter(platform) }
+    : filters;
 }
 
 export async function loadMoodPicks(
   mood: Mood,
   page: number,
+  platform?: StreamingPlatform,
 ): Promise<MoodPicksPage> {
-  // Both halves are fetched together where the mood has a television side; a
-  // failure in either leaves the other section available and offers a retry.
+  // Both halves are fetched together where the mood has both; a failure in
+  // either leaves the other section available and offers a retry. A half the
+  // mood does not have is not asked for at all – `discoverMovies` with no
+  // filters is every film on TMDB, not none.
   const [movieResult, showResult] = await Promise.allSettled([
-    tmdbDiscoverApi.discoverMovies(page, mood.movie),
+    mood.movie
+      ? tmdbDiscoverApi.discoverMovies(page, withPlatform(mood.movie, platform))
+      : Promise.resolve(null),
     mood.tv
-      ? tmdbDiscoverApi.discoverTVShows(page, mood.tv)
+      ? tmdbDiscoverApi.discoverTVShows(page, withPlatform(mood.tv, platform))
       : Promise.resolve(null),
   ]);
 
+  const movies = movieResult.status === "fulfilled" ? movieResult.value : null;
+  const shows = showResult.status === "fulfilled" ? showResult.value : null;
+
   return {
-    movies:
-      movieResult.status === "fulfilled"
-        ? movieResult.value.results.map(convertMovieToMediaItem)
-        : [],
-    shows:
-      showResult.status === "fulfilled" && showResult.value
-        ? showResult.value.results.map(convertTVShowToMediaItem)
-        : [],
+    movies: movies ? movies.results.map(convertMovieToMediaItem) : [],
+    shows: shows ? shows.results.map(convertTVShowToMediaItem) : [],
     moviesFailed: movieResult.status === "rejected",
     showsFailed: showResult.status === "rejected",
     totalPages: Math.min(
       MAX_MOOD_PAGE,
-      Math.max(
-        1,
-        movieResult.status === "fulfilled" ? movieResult.value.total_pages : 0,
-        showResult.status === "fulfilled" && showResult.value
-          ? showResult.value.total_pages
-          : 0,
-      ),
+      Math.max(1, movies?.total_pages ?? 0, shows?.total_pages ?? 0),
     ),
+    totalResults: (movies?.total_results ?? 0) + (shows?.total_results ?? 0),
   };
 }
