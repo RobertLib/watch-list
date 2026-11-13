@@ -43,11 +43,43 @@ import type {
 
 // `external_ids` is what carries the Wikidata id – the only thing the Wikipedia
 // panel trusts to name the right article.
+//
+// `recommendations` and `similar` are two answers to "what is like this?":
+// the first from what people who watched it also watched, the second from its
+// genres and keywords. The first is the better list and the page leads with
+// it (`likeResults`); the second is the fallback for a title too little
+// watched to have any – and what tops the list up on its "movies like" page.
 export const MOVIE_APPENDED_SECTIONS =
-  "watch/providers,credits,videos,similar,translations,keywords,reviews,release_dates,images,external_ids";
+  "watch/providers,credits,videos,similar,recommendations,translations,keywords,reviews,release_dates,images,external_ids";
 
 export const TV_APPENDED_SECTIONS =
-  "watch/providers,credits,videos,similar,translations,keywords,reviews,content_ratings,external_ids,images";
+  "watch/providers,credits,videos,similar,recommendations,translations,keywords,reviews,content_ratings,external_ids,images";
+
+/**
+ * The titles like this one, best answer first: TMDB's recommendations, then
+ * its similar titles, each once and never the title itself.
+ *
+ * One list rather than two sections, because they answer one question and
+ * overlap heavily – and because a caller that reads only `recommendations`
+ * shows nothing for the thousands of titles that have none.
+ */
+export function likeResults<T extends Movie | TVShow>(details: {
+  id: number;
+  recommendations?: TMDBResponse<T>;
+  similar?: TMDBResponse<T>;
+}): T[] {
+  const seen = new Set<number>([details.id]);
+  const results: T[] = [];
+  for (const title of [
+    ...(details.recommendations?.results ?? []),
+    ...(details.similar?.results ?? []),
+  ]) {
+    if (seen.has(title.id)) continue;
+    seen.add(title.id);
+    results.push(title);
+  }
+  return results;
+}
 
 /**
  * The page titles, shared by the build's metadata and the browser's
@@ -186,14 +218,24 @@ function trimTranslations<T extends Translation | TVTranslation>(
   };
 }
 
-/** The nine `SimilarMovies`/`SimilarTVShows` show, with the fields they read. */
-function trimSimilar<T extends Movie | TVShow>(
-  similar: TMDBResponse<T> | undefined,
-): TMDBResponse<T> | undefined {
+/**
+ * The nine `SimilarMovies`/`SimilarTVShows` show, with the fields they read.
+ *
+ * Taken from `likeResults` – recommendations first, similar titles after – and
+ * stored under `similar` alone: the snapshot keeps the one list the section
+ * renders, not the two it was merged from, which would be the same nine titles
+ * written into every page twice.
+ */
+function trimLike<T extends Movie | TVShow>(details: {
+  id: number;
+  recommendations?: TMDBResponse<T>;
+  similar?: TMDBResponse<T>;
+}): TMDBResponse<T> | undefined {
+  const similar = details.similar ?? details.recommendations;
   if (!similar) return undefined;
   return {
     ...similar,
-    results: similar.results.slice(0, SIMILAR_KEPT).map(
+    results: likeResults(details).slice(0, SIMILAR_KEPT).map(
       (title) =>
         pick(title as Movie & TVShow, [
           "id",
@@ -217,7 +259,8 @@ export function movieSnapshot(details: MovieDetails): MovieDetails {
     images: undefined,
     videos: trimVideos(details.videos),
     reviews: trimReviews(details.reviews),
-    similar: trimSimilar(details.similar),
+    similar: trimLike(details),
+    recommendations: undefined,
     translations: trimTranslations(details.translations),
     "watch/providers": trimProviders(details["watch/providers"]),
     release_dates: details.release_dates && {
@@ -236,7 +279,8 @@ export function tvSnapshot(details: TVShowDetails): TVShowDetails {
     images: undefined,
     videos: trimVideos(details.videos),
     reviews: trimReviews(details.reviews),
-    similar: trimSimilar(details.similar),
+    similar: trimLike(details),
+    recommendations: undefined,
     translations: trimTranslations(details.translations),
     "watch/providers": trimProviders(details["watch/providers"]),
     content_ratings: details.content_ratings && {

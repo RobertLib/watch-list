@@ -578,6 +578,57 @@ describe("the end of a run", () => {
   });
 });
 
+describe("sharing a finished run", () => {
+  it("copies the run and where to play it", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", {
+      locks: createProfileLockManager(),
+      clipboard: { writeText },
+    });
+    resolveRatingDuel.mockResolvedValueOnce({ correct: true, challengerRating: 8 })
+      .mockResolvedValueOnce({ correct: false, challengerRating: 6 });
+    render(<HigherLowerGame />);
+    await act(async () => {});
+
+    await click("Higher");
+    await click("Next round");
+    await click("Higher");
+    await click("Share result");
+
+    expect(writeText).toHaveBeenCalledWith(
+      `🎬 WatchList Higher or Lower\n🔥 1 in a row – a new best\n${window.location.origin}/daily/higher-lower`,
+    );
+    expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy();
+  });
+
+  // A run that ended on its first answer has no result in it to post.
+  it("offers nothing to share after a run of none", async () => {
+    resolveRatingDuel.mockResolvedValueOnce({ correct: false, challengerRating: 6 });
+    render(<HigherLowerGame />);
+    await act(async () => {});
+
+    await click("Higher");
+
+    expect(screen.getByText("You got 0 right")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Share result" })).toBeNull();
+  });
+
+  it("says so when the result could not be copied", async () => {
+    resolveRatingDuel.mockResolvedValueOnce({ correct: true, challengerRating: 8 })
+      .mockResolvedValueOnce({ correct: false, challengerRating: 6 });
+    render(<HigherLowerGame />);
+    await act(async () => {});
+
+    await click("Higher");
+    await click("Next round");
+    await click("Higher");
+    // The stubbed navigator has neither a share sheet nor a clipboard.
+    await click("Share result");
+
+    expect(toast.showToast).toHaveBeenCalledWith("Could not copy your result", "error");
+  });
+});
+
 describe("playing with a keyboard and a screen reader", () => {
   /**
    * The choices used to unmount for a spinner while a round was settled, so the

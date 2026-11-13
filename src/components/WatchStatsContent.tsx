@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { BarChart3, Check, Share2, Target, Trophy } from "lucide-react";
+import { BarChart3, Check, Download, Share2, Target, Trophy } from "lucide-react";
 import { getWatchStatsFacts } from "@/lib/api";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { LoadFailureNotice } from "@/components/LoadFailureNotice";
@@ -30,6 +30,8 @@ import {
   subscribeToGoal,
   type YearlyGoal,
 } from "@/lib/goal";
+import { buildYearCard, yearCardFilename } from "@/lib/year-card";
+import { deliverYearCard, renderYearCard } from "@/lib/year-card-image";
 import {
   buildStatsShareText,
   formatWatchTime,
@@ -667,6 +669,7 @@ function YearInReview({
 }) {
   const [year, setYear] = useState(years[0]);
   const [copied, markCopied] = useTransientFlag(2500);
+  const [isDrawing, setIsDrawing] = useState(false);
 
   // Removing a year's last title or switching profiles can remove its option.
   // Reset before committing the render so the picker, summary and shared text
@@ -701,6 +704,34 @@ function YearInReview({
       markCopied();
     } catch {
       toast.showToast("Could not copy your year", "error");
+    }
+  }
+
+  /**
+   * The year as a picture, for the places a link does no good: a feed shows an
+   * image, and the link a text share carries previews as the site's one card
+   * for everybody. Drawn here, in the browser (`year-card.ts`), and handed to
+   * the share sheet where that takes files or saved as a file where it does not.
+   */
+  async function saveImage() {
+    if (isDrawing) return;
+    setIsDrawing(true);
+    try {
+      const location = typeof window === "undefined" ? new URL(SITE_URL) : window.location;
+      // The address as people say it: "watch-list.me", not "www.watch-list.me".
+      const site = location.host.replace(/^www\./, "");
+      const blob = await renderYearCard(buildYearCard(stats, year, site));
+      const delivery = await deliverYearCard(
+        blob,
+        yearCardFilename(year),
+        buildStatsShareText(stats, `${year} in review`, location.origin),
+      );
+      if (delivery === "saved") toast.showToast("Saved your year as an image", "success");
+    } catch (error) {
+      console.error("Error drawing the year in review:", error);
+      toast.showToast("Could not create the image", "error");
+    } finally {
+      setIsDrawing(false);
     }
   }
 
@@ -739,6 +770,16 @@ function YearInReview({
               <Share2 className="w-4 h-4" aria-hidden="true" />
             )}
             {copied ? "Copied" : "Share"}
+          </button>
+          <button
+            onClick={saveImage}
+            // Not native `disabled`: that would blur the button just pressed.
+            aria-disabled={isDrawing}
+            aria-busy={isDrawing}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 aria-disabled:opacity-60 aria-disabled:cursor-wait text-sm font-medium text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          >
+            <Download className="w-4 h-4" aria-hidden="true" />
+            {isDrawing ? "Drawing…" : "Save image"}
           </button>
         </div>
       </div>

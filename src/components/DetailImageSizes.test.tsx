@@ -5,8 +5,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { SimilarMovies } from "./movie/SimilarMovies";
 import { SimilarTVShows } from "./tv/SimilarTVShows";
-import { MovieWatchProviders } from "./movie/MovieWatchProviders";
-import { TVWatchProviders } from "./tv/TVWatchProviders";
+import { WhereToWatch } from "./WhereToWatch";
 import { MovieDetails } from "./movie/MovieDetails";
 import { TVDetails } from "./tv/TVDetails";
 import { MovieCast } from "./movie/MovieCast";
@@ -18,7 +17,6 @@ import type {
   Movie,
   MovieDetails as MovieDetailsType,
   RegionWatchProviders,
-  TMDBResponse,
   TVShow,
   TVShowDetails,
 } from "@/types/tmdb";
@@ -66,10 +64,6 @@ const show = {
   adult: false, original_language: "en", original_name: "A Show", popularity: 1,
 } satisfies TVShow;
 
-function page<T>(results: T[]): TMDBResponse<T> {
-  return { page: 1, results, total_pages: 1, total_results: results.length };
-}
-
 const providers: RegionWatchProviders = {
   streaming: [{ provider_id: 8, provider_name: "Netflix", logo_path: "/netflix.jpg", display_priority: 1 }],
   rent: [],
@@ -85,10 +79,9 @@ const credits: Credits = {
 };
 
 it.each<[string, () => ReactElement, string, string]>([
-  ["a similar film's 64px poster", () => <SimilarMovies similar={page([movie])} />, "A Film", "w154"],
-  ["a similar show's 64px poster", () => <SimilarTVShows similar={page([show])} />, "A Show", "w154"],
-  ["a film's 24px provider logo", () => <MovieWatchProviders providers={providers} title="A Film" />, "Netflix", "w92"],
-  ["a show's 24px provider logo", () => <TVWatchProviders providers={providers} title="A Show" />, "Netflix", "w92"],
+  ["a similar film's 64px poster", () => <SimilarMovies similar={[movie]} title="Another Film" />, "A Film", "w154"],
+  ["a similar show's 64px poster", () => <SimilarTVShows similar={[show]} title="Another Show" />, "A Show", "w154"],
+  ["a title's 24px provider logo", () => <WhereToWatch providers={providers} title="A Film" regionName="Canada" />, "Netflix", "w92"],
   [
     "a film's 40px studio logo",
     () => (

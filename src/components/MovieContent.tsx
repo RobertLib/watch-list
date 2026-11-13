@@ -8,7 +8,7 @@ import { tmdbApi } from "@/lib/tmdb";
 import { GenreTags } from "@/components/GenreTags";
 import { MovieCast } from "@/components/movie/MovieCast";
 import { SimilarMovies } from "@/components/movie/SimilarMovies";
-import { MovieWatchProviders } from "@/components/movie/MovieWatchProviders";
+import { WhereToWatch } from "@/components/WhereToWatch";
 import { MovieDetails } from "@/components/movie/MovieDetails";
 import { MovieTrailerButton } from "@/components/movie/MovieTrailerButton";
 import { MovieCollection } from "@/components/movie/MovieCollection";
@@ -35,21 +35,28 @@ import { useAsyncData } from "@/hooks/useAsyncData";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { useCanonicalUrl } from "@/hooks/useCanonicalUrl";
 import { useSettings } from "@/hooks/useSettings";
+import { useLocalDay } from "@/hooks/useLocalDay";
 import { findYouTubeTrailer } from "@/hooks/useVideoOverlay";
 import { getMovieWikipediaContent } from "@/lib/wikipedia";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
-import { MOVIE_APPENDED_SECTIONS, moviePageTitle } from "@/lib/title-details";
+import {
+  MOVIE_APPENDED_SECTIONS,
+  SNAPSHOT_REGION,
+  likeResults,
+  moviePageTitle,
+} from "@/lib/title-details";
 import type { MovieDetails as MovieDetailsData } from "@/types/tmdb";
 import { releaseYear } from "@/lib/dates";
 import { resolveRegionProviders } from "@/lib/media-converters";
 import { resolveMovieCertification } from "@/lib/media-certification";
-import { getRegionCode } from "@/lib/region";
+import { getRegionCode, getRegionName } from "@/lib/region";
 import {
-  SITE_URL,
   absoluteMediaUrl,
   absoluteUrl,
   genreHref,
+  likeHref,
   personHref,
+  SITE_URL,
 } from "@/lib/routes";
 
 function formatRuntime(minutes: number | null): string {
@@ -99,6 +106,9 @@ function MovieDetail({
 }) {
   const id = extractIdFromSlug(slug);
   const { region } = useSettings();
+  // The day the providers below were read: the snapshot's own date while the
+  // page shows the build's copy, today once the browser has loaded its own.
+  const today = useLocalDay();
 
   const { data, isLoading, error, reload, refreshError, isRetrying } = useAsyncData(
     async () => (id ? tmdbApi.getMovieDetails(id, MOVIE_APPENDED_SECTIONS) : null),
@@ -157,12 +167,8 @@ function MovieDetail({
   const details = data;
   const credits = details.credits || { cast: [], crew: [] };
   const videos = details.videos || { results: [] };
-  const similar = details.similar || {
-    page: 1,
-    results: [],
-    total_pages: 0,
-    total_results: 0,
-  };
+  // Recommendations first, similar titles after – one list, see `likeResults`.
+  const similar = likeResults(details);
   const translations = details.translations || {
     id: details.id,
     translations: [],
@@ -171,10 +177,16 @@ function MovieDetail({
   // Resolved from the already-appended watch/providers payload, so the "Where to
   // Watch" section costs no request of its own – and follows the region setting
   // without refetching, because every region is already in the payload.
-  const watchProviders = resolveRegionProviders(
-    details["watch/providers"],
-    getRegionCode(region),
-  );
+  //
+  // A build's snapshot carries one region's providers (`SNAPSHOT_REGION`), so
+  // for a visitor anywhere else it says nothing yet – which is not the same as
+  // saying the title is unavailable there, and must not be shown as that.
+  const providersKnown =
+    details.snapshot_date === undefined ||
+    getRegionCode(region) === SNAPSHOT_REGION;
+  const watchProviders = providersKnown
+    ? resolveRegionProviders(details["watch/providers"], getRegionCode(region))
+    : null;
 
   const trailer = findYouTubeTrailer(videos.results);
 
@@ -413,6 +425,12 @@ function MovieDetail({
       <div className="container mx-auto px-4 py-8">
         <div className="grid lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2">
+            <WhereToWatch
+              providers={watchProviders}
+              title={details.title}
+              regionName={getRegionName(region)}
+              checkedOn={details.snapshot_date ?? today}
+            />
             <MovieCast credits={credits} />
             <MediaFullCrew credits={credits} />
             <MediaKeywords keywords={details.keywords?.keywords ?? []} />
@@ -427,7 +445,11 @@ function MovieDetail({
             {details.belongs_to_collection && (
               <MovieCollection collection={details.belongs_to_collection} />
             )}
-            <SimilarMovies similar={similar} />
+            <SimilarMovies
+              similar={similar}
+              title={details.title}
+              allHref={likeHref("movie", canonicalSlug)}
+            />
           </div>
 
           {/* Sidebar */}
@@ -455,10 +477,6 @@ function MovieDetail({
                 }}
               />
             </div>
-            <MovieWatchProviders
-              providers={watchProviders}
-              title={details.title}
-            />
             <LanguageSupport translations={translations} />
             <MovieDetails
               details={details}

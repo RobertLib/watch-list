@@ -34,6 +34,8 @@ vi.mock("@/lib/prerendered-titles-server", () => ({
       tv: [{ id: 1396, slug: "breaking-bad-1396" }],
       person: [{ id: 31, slug: "tom-hanks-31" }],
     })[kind] ?? [],
+  likePageTitles: (kind: string) =>
+    ({ movie: [{ id: 550, slug: "fight-club-550" }] })[kind] ?? [],
 }));
 
 const appDir = fileURLToPath(new URL(".", import.meta.url));
@@ -119,6 +121,17 @@ describe("sitemap", async () => {
    */
   it("lists no platform landing it could not count", () => {
     expect(paths.filter((path) => path.split("/").length > 4)).toEqual([]);
+  });
+
+  // The same for a mood's landings, which sit one segment shallower:
+  // `/mood/christmas/netflix`.
+  it("lists no mood landing it could not count", () => {
+    expect(paths.filter((path) => /^\/mood\/[^/]+\/[^/]+$/.test(path))).toEqual([]);
+  });
+
+  // And a "like this" page is `noindex` until its list has been counted.
+  it("lists no like page it could not count", () => {
+    expect(paths.filter((path) => /^\/(movies|shows)-like\//.test(path))).toEqual([]);
   });
 
   it("lists every prerendered film, series and person at its path", () => {

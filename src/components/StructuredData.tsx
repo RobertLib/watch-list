@@ -88,6 +88,7 @@ interface StructuredDataProps {
     | "Person"
     | "MovieCollection"
     | "CollectionPage"
+    | "TitleList"
     | "FAQPage";
   data: {
     title?: string;
@@ -112,6 +113,8 @@ interface StructuredDataProps {
     breadcrumbItems?: Array<{ name: string; url: string }>;
     faqItems?: Array<{ question: string; answer: string }>;
     listItems?: Array<{ name: string; description?: string; url: string }>;
+    /** The films or series a listing page shows, in the page's order. */
+    titles?: Array<{ id: number; title: string; mediaType: "movie" | "tv" }>;
     url?: string; // Canonical URL for the entity
     parts?: Array<{
       id: number;
@@ -402,6 +405,40 @@ export function StructuredData({ type, data }: StructuredDataProps) {
               url: item.url,
             })) || [],
         },
+      };
+      break;
+
+    /**
+     * The titles a listing page shows – a genre, a genre on a platform, a mood
+     * – in the order it shows them.
+     *
+     * Those pages said what they were (a breadcrumb) and nothing about what was
+     * on them. Google's list markup comes in two shapes, and the one that fits
+     * is "summary page + detail pages": the listing links out to a page per
+     * title, so each entry is a position and the canonical URL of that title's
+     * page, and nothing else – the film's own markup lives on its own page.
+     * The other shape, with each film described inline, is for a page that
+     * links nowhere and must point every URL at an anchor on itself.
+     *
+     * One media type per list, because the guidelines want every item of a
+     * list to be the same type: a mood with films and series emits two.
+     */
+    case "TitleList":
+      structuredData = {
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        name: data.name,
+        url: data.url,
+        numberOfItems: data.titles?.length ?? 0,
+        itemListElement:
+          data.titles?.map((title, index) => ({
+            "@type": "ListItem",
+            position: index + 1,
+            url: absoluteMediaUrl(
+              title.mediaType,
+              createSlug(title.title, title.id),
+            ),
+          })) || [],
       };
       break;
 

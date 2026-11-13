@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   EMPTY_RECORD,
   HIGHER_LOWER_STORAGE_KEY,
+  buildHigherLowerShareText,
   getRecord,
   recordRound,
   sanitizeRecord,
@@ -122,5 +123,21 @@ describe("recordRound", () => {
 
     expect(record).toEqual({ best: 4, totalRounds: 10 });
     expect(next).not.toBe(record);
+  });
+});
+
+describe("buildHigherLowerShareText", () => {
+  it("states the run and where to play", () => {
+    expect(
+      buildHigherLowerShareText(12, false, "https://watch-list.test/daily/higher-lower"),
+    ).toBe(
+      "🎬 WatchList Higher or Lower\n🔥 12 in a row\nhttps://watch-list.test/daily/higher-lower",
+    );
+  });
+
+  it("says so when the run was a new best", () => {
+    expect(buildHigherLowerShareText(7, true, "https://watch-list.test/x")).toContain(
+      "7 in a row – a new best",
+    );
   });
 });

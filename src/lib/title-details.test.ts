@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { mergeCastByPerson } from "./media-converters";
 import { findYouTubeTrailer } from "./trailer";
 import {
+  MOVIE_APPENDED_SECTIONS,
   SNAPSHOT_REGION,
+  TV_APPENDED_SECTIONS,
+  likeResults,
   movieSnapshot,
   moviePageTitle,
   personPageTitle,
@@ -162,5 +165,52 @@ describe("page titles", () => {
     );
     expect(moviePageTitle({ title: "Untitled", release_date: "" })).toBe("Untitled – Where to Watch");
     expect(personPageTitle({ name: "Tom Hanks" })).toBe("Tom Hanks – Movies & TV Shows");
+  });
+});
+
+describe("the titles like a title", () => {
+  const entry = (id: number) => ({
+    id, title: `Film ${id}`, overview: "", poster_path: null, release_date: "2000-01-01",
+    vote_average: 7, vote_count: 10, backdrop_path: null, genre_ids: [18],
+  });
+  const list = (ids: number[]) => ({
+    page: 1, total_pages: 1, total_results: ids.length, results: ids.map(entry),
+  });
+
+  it("asks TMDB for both answers in the one request", () => {
+    for (const sections of [MOVIE_APPENDED_SECTIONS, TV_APPENDED_SECTIONS]) {
+      expect(sections.split(",")).toEqual(expect.arrayContaining(["recommendations", "similar"]));
+    }
+  });
+
+  it("puts recommendations first, then similar titles, each once and never itself", () => {
+    const details = film({
+      recommendations: list([1, 2]),
+      similar: list([2, 550, 3]),
+    } as Partial<MovieDetails>);
+
+    expect(likeResults(details).map((title) => title.id)).toEqual([1, 2, 3]);
+  });
+
+  it("falls back to similar titles for a film with no recommendations", () => {
+    const details = film({ similar: list([4, 5]) } as Partial<MovieDetails>);
+
+    expect(likeResults(details).map((title) => title.id)).toEqual([4, 5]);
+  });
+
+  // The page reads the snapshot through the same `likeResults`, so the nine it
+  // keeps have to be the nine the browser's full answer would lead with – and
+  // kept once, not under both names.
+  it("keeps the merged nine in the snapshot, once", () => {
+    const snapshot = movieSnapshot(
+      film({
+        recommendations: list([1, 2, 3, 4, 5, 6]),
+        similar: list([6, 7, 8, 9, 10, 11]),
+      } as Partial<MovieDetails>),
+    );
+
+    expect(snapshot.similar?.results.map((title) => title.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(snapshot.recommendations).toBeUndefined();
+    expect(likeResults(snapshot).map((title) => title.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 });

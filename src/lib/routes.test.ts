@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { encodePrerenderedTitles } from "./prerendered-titles";
+import { encodeLikePageIds, encodePrerenderedTitles } from "./prerendered-titles";
 import {
   SITE_URL,
   absoluteMediaUrl,
@@ -7,6 +7,8 @@ import {
   collectionHref,
   dailyHref,
   genreHref,
+  likeHref,
+  likePath,
   matchHref,
   mediaHref,
   moodHref,
@@ -245,5 +247,40 @@ describe("absolute URLs", () => {
     expect(absoluteMediaUrl("movie", "550-fight-club")).toBe(
       `${SITE_URL}/movie?id=550-fight-club`,
     );
+  });
+});
+
+describe("\"like this\" pages", () => {
+  it("has a path per media type", () => {
+    expect(likePath("movie", "fight-club-550")).toBe("/movies-like/fight-club-550");
+    expect(likePath("tv", "breaking-bad-1396")).toBe("/shows-like/breaking-bad-1396");
+  });
+
+  // Unlike a title, there is no query-string page to fall back to: the link is
+  // shown only where the build wrote the page.
+  it("links only to a page the build wrote", () => {
+    vi.stubEnv(
+      "PRERENDERED_TITLE_IDS",
+      encodePrerenderedTitles({
+        movie: [{ id: 550, slug: "fight-club-550" }, { id: 13, slug: "forrest-gump-13" }],
+        tv: [],
+        person: [],
+      }),
+    );
+    vi.stubEnv("LIKE_PAGE_TITLE_IDS", encodeLikePageIds({ movie: [550], tv: [] }));
+
+    expect(likeHref("movie", "fight-club-550")).toBe("/movies-like/fight-club-550");
+    expect(likeHref("movie", "forrest-gump-13")).toBeNull();
+    expect(likeHref("movie", "heat-949")).toBeNull();
+    expect(likeHref("movie", "not-a-slug")).toBeNull();
+  });
+});
+
+describe("mood links", () => {
+  it("addresses a mood, its pages and its landing for one platform", () => {
+    expect(moodHref("christmas")).toBe("/mood/christmas");
+    expect(moodHref("christmas", 3)).toBe("/mood/christmas?page=3");
+    expect(moodHref("christmas", 1, "netflix")).toBe("/mood/christmas/netflix");
+    expect(moodHref("christmas", 2, "netflix")).toBe("/mood/christmas/netflix?page=2");
   });
 });

@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createSlug } from "./utils";
-import type { PrerenderedKind } from "./prerendered-titles";
+import type { LikePageKind, PrerenderedKind } from "./prerendered-titles";
 
 export interface PrerenderedTitle {
   id: number;
@@ -66,6 +66,39 @@ export function prerenderedTitleParams(
   fallback: string,
 ): { slug: string }[] {
   const titles = prerenderedTitles(kind);
+  return titles.length > 0
+    ? titles.map(({ slug }) => ({ slug }))
+    : [{ slug: fallback }];
+}
+
+/**
+ * How many titles get a "movies like this" page, counted from the top of the
+ * prerendered list – which `scripts/prebuild.mjs` writes most-voted first, so
+ * these are the best-known of the best-known.
+ *
+ * Not all of them, for the reason the title pages are capped at all: GitHub
+ * Pages allows a site 1 GB. A like page is about 190 KB on disk – most of it
+ * the shell every page carries – so these 650 are roughly 125 MB, where one
+ * for every prerendered title would be 190 MB the title and person pages
+ * could not then grow into. And the question is asked about the famous ones:
+ * "movies like Inception", not like the six-hundredth most-voted film.
+ */
+export const LIKE_PAGE_LIMITS: Record<LikePageKind, number> = {
+  movie: 450,
+  tv: 200,
+};
+
+/** The titles with a "like this" page, with the slug it is built at. */
+export function likePageTitles(kind: LikePageKind): PrerenderedTitle[] {
+  return prerenderedTitles(kind).slice(0, LIKE_PAGE_LIMITS[kind]);
+}
+
+/** As `prerenderedTitleParams`: never empty, for the same reason. */
+export function likePageParams(
+  kind: LikePageKind,
+  fallback: string,
+): { slug: string }[] {
+  const titles = likePageTitles(kind);
   return titles.length > 0
     ? titles.map(({ slug }) => ({ slug }))
     : [{ slug: fallback }];

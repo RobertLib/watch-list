@@ -1,7 +1,7 @@
 import { MetadataRoute } from "next";
-import { SITE_URL, genreHref, moodHref } from "@/lib/routes";
+import { SITE_URL, genreHref, likePath, moodHref } from "@/lib/routes";
 import { genreSlug, genresFor } from "@/lib/genre-catalog";
-import { MOODS } from "@/lib/moods";
+import { MOODS, moodsWithPlatforms } from "@/lib/moods";
 import {
   STREAMING_LANDING_PLATFORMS,
   isIndexableLanding,
@@ -9,9 +9,16 @@ import {
 import {
   buildTimeTmdbAvailable,
   getGenreSnapshot,
+  getMoodSnapshot,
+  getMovieLikeSnapshot,
+  getTVLikeSnapshot,
 } from "@/lib/build-time-tmdb";
-import { prerenderedTitles } from "@/lib/prerendered-titles-server";
-import { KINDS } from "@/lib/prerendered-titles";
+import {
+  likePageTitles,
+  prerenderedTitles,
+} from "@/lib/prerendered-titles-server";
+import { KINDS, LIKE_PAGE_KINDS } from "@/lib/prerendered-titles";
+import { isIndexableLikePage } from "@/lib/like-titles";
 import type { MediaType } from "@/types/tmdb";
 
 // A static export has no runtime, so this file is written once at build time.
@@ -23,9 +30,9 @@ const MEDIA_TYPES: MediaType[] = ["movie", "tv"];
  * The sitemap: the pages that are actually pages.
  *
  * The fixed routes, and every route whose parameters the build enumerates –
- * one page per genre, per mood, per genre-on-a-platform landing that has
- * enough titles to be worth indexing, and per prerendered film, series and
- * person (`scripts/prebuild.mjs` chose them). Every other title is addressed
+ * one page per genre, per mood, per genre-on-a-platform and mood-on-a-platform
+ * landing that has enough titles to be worth indexing, and per prerendered
+ * film, series and person (`scripts/prebuild.mjs` chose them). Every other title is addressed
  * by query string (`/movie?id=…`), one shell for every film, and is not here.
  *
  * The one rule every entry here has to keep: a URL in a sitemap is a URL being
@@ -59,6 +66,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { path: "/daily", priority: 0.7 },
     { path: "/daily/archive", priority: 0.5 },
     { path: "/daily/higher-lower", priority: 0.5 },
+    { path: "/import", priority: 0.6 },
+    { path: "/tv-time-alternative", priority: 0.5 },
     { path: "/about", priority: 0.4 },
   ];
 
@@ -71,10 +80,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const moods = MOODS.map((mood) => ({ path: moodHref(mood.slug), priority: 0.7 }));
 
-  const landings = (await indexableLandingPaths()).map((path) => ({
-    path,
-    priority: 0.6,
-  }));
+  const landings = [
+    ...(await indexableLandingPaths()),
+    ...(await indexableMoodLandingPaths()),
+  ].map((path) => ({ path, priority: 0.6 }));
 
   // A title page with no snapshot is `noindex` (`title-metadata.ts`), and a
   // build without TMDB access has no list to read – so this is empty exactly
@@ -90,7 +99,19 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })),
   );
 
-  return [...fixed, ...genres, ...moods, ...landings, ...titles].map(({ path, priority }) => ({
+  const likePages = (await indexableLikePaths()).map((path) => ({
+    path,
+    priority: 0.5,
+  }));
+
+  return [
+    ...fixed,
+    ...genres,
+    ...moods,
+    ...landings,
+    ...titles,
+    ...likePages,
+  ].map(({ path, priority }) => ({
     url: `${SITE_URL}${path}`,
     changeFrequency: "weekly" as const,
     priority,
@@ -118,6 +139,55 @@ async function indexableLandingPaths(): Promise<string[]> {
         ? genreHref(mediaType, genreSlug(genre), { provider: platform.slug })
         : null;
     }),
+  );
+
+  return paths.filter((path): path is string => path !== null);
+}
+
+/**
+ * The same for the moods that have a page per platform: only the landings with
+ * enough titles, counted from the snapshot the page's own metadata reads.
+ */
+async function indexableMoodLandingPaths(): Promise<string[]> {
+  if (!buildTimeTmdbAvailable()) return [];
+
+  const candidates = moodsWithPlatforms().flatMap((mood) =>
+    STREAMING_LANDING_PLATFORMS.map((platform) => ({ mood, platform })),
+  );
+
+  const paths = await Promise.all(
+    candidates.map(async ({ mood, platform }) => {
+      const snapshot = await getMoodSnapshot(mood.slug, platform.slug);
+      return isIndexableLanding(snapshot?.totalResults)
+        ? moodHref(mood.slug, 1, platform.slug)
+        : null;
+    }),
+  );
+
+  return paths.filter((path): path is string => path !== null);
+}
+
+/**
+ * The "movies like this" pages with enough on them to be indexed.
+ *
+ * Counted from each page's own snapshot, like the landings: one with a handful
+ * of titles is `noindex` (`isIndexableLikePage`) and must not be listed. That
+ * is a load per page, but not a request – it is the URL the title page's
+ * snapshot already asked for, answered from the build's fetch cache.
+ */
+async function indexableLikePaths(): Promise<string[]> {
+  if (!buildTimeTmdbAvailable()) return [];
+
+  const paths = await Promise.all(
+    LIKE_PAGE_KINDS.flatMap((kind) =>
+      likePageTitles(kind).map(async ({ id, slug }) => {
+        const page =
+          kind === "movie"
+            ? await getMovieLikeSnapshot(id)
+            : await getTVLikeSnapshot(id);
+        return isIndexableLikePage(page) ? likePath(kind, slug) : null;
+      }),
+    ),
   );
 
   return paths.filter((path): path is string => path !== null);

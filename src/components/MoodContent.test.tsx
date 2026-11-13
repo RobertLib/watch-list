@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { MediaItem, Movie, TMDBResponse, TVShow } from "@/types/tmdb";
 import { MoodContent } from "./MoodContent";
 import { findMood } from "@/lib/moods";
+import { findStreamingPlatform } from "@/lib/streaming-landing";
 import type { MoodPicksPage } from "@/lib/mood-data";
 
 const api = vi.hoisted(() => ({
@@ -186,6 +187,32 @@ describe("MoodContent", () => {
     expect(screen.queryByText("Could not load series")).toBeNull();
   });
 
+  // `discoverMovies` with no filters is every film on TMDB: a mood with no film
+  // half must not ask for one, and must not report its absence as "nothing
+  // came back".
+  it("only requests series for a series-only mood", async () => {
+    navigation.mood = "limited-series";
+    api.discoverTVShows.mockResolvedValue(page(2, "A series"));
+    await renderMood();
+
+    expect(api.discoverMovies).not.toHaveBeenCalled();
+    expect(screen.getByText("A series")).toBeDefined();
+    expect(screen.getByText("Page 1 of 2")).toBeDefined();
+    expect(screen.queryByText("Nothing came back for this one. Try another mood.")).toBeNull();
+    expect(screen.queryByText("Could not load films")).toBeNull();
+  });
+
+  it("links to the moods beside it, not to all of them", async () => {
+    navigation.mood = "under-90-minutes";
+    await renderMood();
+
+    // The same section of `/moods`, and the way back to the rest.
+    expect(screen.getByRole("link", { name: /All evening/ }).getAttribute("href"))
+      .toBe("/mood/long-epics");
+    expect(screen.queryByRole("link", { name: /Whodunit/ })).toBeNull();
+    expect(screen.getByRole("link", { name: "All moods →" }).getAttribute("href")).toBe("/moods");
+  });
+
   it("loads an available page when settings shrink the mood catalogue", async () => {
     navigation.query = "page=4";
     navigation.settingsKey = "US|all|";
@@ -270,13 +297,16 @@ describe("MoodContent build snapshot", () => {
     moviesFailed: false,
     showsFailed: false,
     totalPages: 10,
+    totalResults: 400,
   };
 
   it("prerenders page one from the snapshot", async () => {
     navigation.suspend = true;
     await renderMood(snapshot);
 
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Something easy");
+    // The heading says what is listed; the mood's own name is the line above.
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Feel-Good Movies & TV Shows");
+    expect(screen.getByText("Something easy")).toBeDefined();
     expect(screen.getByText("Snapshot film")).toBeDefined();
     expect(screen.getByText("Snapshot series")).toBeDefined();
     expect(screen.getByRole("link", { name: "Next →" }).getAttribute("href"))
@@ -304,5 +334,70 @@ describe("MoodContent build snapshot", () => {
 
     expect(screen.queryByText("Snapshot film")).toBeNull();
     expect(screen.getByText("Loading picks")).toBeDefined();
+  });
+});
+
+describe("MoodContent on one platform", () => {
+  const netflix = findStreamingPlatform("netflix")!;
+
+  async function renderLanding(snapshot: MoodPicksPage | null = null) {
+    await act(async () => {
+      render(
+        <MoodContent
+          mood={findMood(navigation.mood)!}
+          platform={netflix}
+          snapshot={snapshot}
+        />,
+      );
+    });
+  }
+
+  it("asks for the mood's picks on that platform only", async () => {
+    await renderLanding();
+
+    // The platform's provider id, by the filter bar's own key – which is what
+    // wins over the visitor's saved services.
+    expect(api.discoverMovies.mock.calls[0][1]).toMatchObject({
+      genre: "35|10751|10749",
+      watchProviders: "8",
+    });
+    expect(api.discoverTVShows.mock.calls[0][1]).toMatchObject({ watchProviders: "8" });
+  });
+
+  it("heads the page with the platform and pages within it", async () => {
+    api.discoverMovies.mockResolvedValue(page(3, "A film"));
+    await renderLanding();
+
+    expect(screen.getByRole("heading", { level: 1 }).textContent)
+      .toBe("Feel-Good Movies & TV Shows on Netflix");
+    expect(screen.getByRole("link", { name: "Next →" }).getAttribute("href"))
+      .toBe("/mood/easy-watch/netflix?page=2");
+    // Back to the mood itself, and sideways to the other platforms.
+    expect(screen.getByRole("link", { name: /on every service/ }).getAttribute("href"))
+      .toBe("/mood/easy-watch");
+    expect(screen.getByRole("link", { name: "Hulu" }).getAttribute("href"))
+      .toBe("/mood/easy-watch/hulu");
+    expect(screen.queryByRole("link", { name: "Netflix" })).toBeNull();
+  });
+
+  it("says the platform has nothing, rather than that the mood is empty", async () => {
+    navigation.mood = "mind-bending";
+    api.discoverMovies.mockResolvedValue({ ...page(1, "x"), results: [], total_results: 0 });
+    await renderLanding();
+
+    expect(
+      screen.getByText("Nothing in this mood is streaming on Netflix in your region right now."),
+    ).toBeDefined();
+  });
+});
+
+describe("MoodContent without platform pages", () => {
+  // Only some moods have a page per platform; a link from one that does not
+  // would be a 404.
+  it("offers no platform links for a mood that has none", async () => {
+    navigation.mood = "heist";
+    await renderMood();
+
+    expect(screen.queryByRole("link", { name: "Netflix" })).toBeNull();
   });
 });

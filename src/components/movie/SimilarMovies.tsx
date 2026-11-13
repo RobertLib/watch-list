@@ -3,23 +3,38 @@ import Link from "next/link";
 import { tmdbApi } from "@/lib/tmdb";
 import { createSlug } from "@/lib/utils";
 import { releaseYear } from "@/lib/dates";
-import type { TMDBResponse, Movie } from "@/types/tmdb";
+import type { Movie } from "@/types/tmdb";
 import { movieHref } from "@/lib/routes";
 
+/** How many the section shows; the snapshot keeps the same (`SIMILAR_KEPT`). */
+const SHOWN = 9;
+
 interface SimilarMoviesProps {
-  similar: TMDBResponse<Movie>;
+  /** The titles like this one, closest first – `likeResults`. */
+  similar: Movie[];
+  /**
+   * The title's "movies like this" page, where the build wrote one: the full
+   * list, with what each has in common. Null for a title without one.
+   */
+  allHref?: string | null;
+  /**
+   * The title these are similar to. The heading names it – "Movies like
+   * Interstellar" is the phrase people look this section up by, where "Similar
+   * Movies" said nothing about which.
+   */
+  title: string;
 }
 
-function SimilarMoviesContent({ similar }: SimilarMoviesProps) {
-  if (similar.results.length === 0) {
+function SimilarMoviesContent({ similar, title, allHref }: SimilarMoviesProps) {
+  if (similar.length === 0) {
     return null;
   }
 
   return (
     <section className="mt-8">
-      <h2 className="text-2xl font-bold mb-6">Similar Movies</h2>
+      <h2 className="text-2xl font-bold mb-6">Movies like {title}</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {similar.results.slice(0, 9).map((movie, index) => {
+        {similar.slice(0, SHOWN).map((movie, index) => {
           const slug = createSlug(movie.title, movie.id);
           return (
             <Link
@@ -55,10 +70,19 @@ function SimilarMoviesContent({ similar }: SimilarMoviesProps) {
           );
         })}
       </div>
+      {allHref && (
+        <Link
+          href={allHref}
+          prefetch={false}
+          className="inline-block mt-6 text-blue-400 hover:text-blue-300 transition-colors"
+        >
+          See all movies like {title} →
+        </Link>
+      )}
     </section>
   );
 }
 
-export function SimilarMovies({ similar }: SimilarMoviesProps) {
-  return <SimilarMoviesContent similar={similar} />;
+export function SimilarMovies({ similar, title, allHref }: SimilarMoviesProps) {
+  return <SimilarMoviesContent similar={similar} title={title} allHref={allHref} />;
 }

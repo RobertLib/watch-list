@@ -8,7 +8,7 @@ import { tmdbApi } from "@/lib/tmdb";
 import { GenreTags } from "@/components/GenreTags";
 import { TVCast } from "@/components/tv/TVCast";
 import { SimilarTVShows } from "@/components/tv/SimilarTVShows";
-import { TVWatchProviders } from "@/components/tv/TVWatchProviders";
+import { WhereToWatch } from "@/components/WhereToWatch";
 import { TVDetails } from "@/components/tv/TVDetails";
 import { TVTrailerButton } from "@/components/tv/TVTrailerButton";
 import { TVSeasons } from "@/components/tv/TVSeasons";
@@ -35,21 +35,28 @@ import { useAsyncData } from "@/hooks/useAsyncData";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { useCanonicalUrl } from "@/hooks/useCanonicalUrl";
 import { useSettings } from "@/hooks/useSettings";
+import { useLocalDay } from "@/hooks/useLocalDay";
 import { findYouTubeTrailer } from "@/hooks/useVideoOverlay";
 import { getTVWikipediaContent } from "@/lib/wikipedia";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
-import { TV_APPENDED_SECTIONS, tvPageTitle } from "@/lib/title-details";
+import {
+  SNAPSHOT_REGION,
+  TV_APPENDED_SECTIONS,
+  likeResults,
+  tvPageTitle,
+} from "@/lib/title-details";
 import type { TVShowDetails } from "@/types/tmdb";
 import { formatTmdbDate, releaseYear } from "@/lib/dates";
 import { resolveRegionProviders } from "@/lib/media-converters";
 import { resolveTVCertification } from "@/lib/media-certification";
-import { getRegionCode } from "@/lib/region";
+import { getRegionCode, getRegionName } from "@/lib/region";
 import {
-  SITE_URL,
   absoluteMediaUrl,
   absoluteUrl,
   genreHref,
+  likeHref,
   personHref,
+  SITE_URL,
 } from "@/lib/routes";
 
 
@@ -98,6 +105,9 @@ function TVDetail({
 }) {
   const id = extractIdFromSlug(slug);
   const { region } = useSettings();
+  // The day the providers below were read: the snapshot's own date while the
+  // page shows the build's copy, today once the browser has loaded its own.
+  const today = useLocalDay();
 
   const { data, isLoading, error, reload, refreshError, isRetrying } = useAsyncData(
     async () => (id ? tmdbApi.getTVShowDetails(id, TV_APPENDED_SECTIONS) : null),
@@ -152,12 +162,8 @@ function TVDetail({
   const details = data;
   const credits = details.credits || { cast: [], crew: [] };
   const videos = details.videos || { results: [] };
-  const similar = details.similar || {
-    page: 1,
-    results: [],
-    total_pages: 0,
-    total_results: 0,
-  };
+  // Recommendations first, similar titles after – one list, see `likeResults`.
+  const similar = likeResults(details);
   const translations = details.translations || {
     id: details.id,
     translations: [],
@@ -166,10 +172,16 @@ function TVDetail({
   // Resolved from the already-appended watch/providers payload, so the "Where to
   // Watch" section costs no request of its own – and follows the region setting
   // without refetching, because every region is already in the payload.
-  const watchProviders = resolveRegionProviders(
-    details["watch/providers"],
-    getRegionCode(region),
-  );
+  //
+  // A build's snapshot carries one region's providers (`SNAPSHOT_REGION`), so
+  // for a visitor anywhere else it says nothing yet – which is not the same as
+  // saying the title is unavailable there, and must not be shown as that.
+  const providersKnown =
+    details.snapshot_date === undefined ||
+    getRegionCode(region) === SNAPSHOT_REGION;
+  const watchProviders = providersKnown
+    ? resolveRegionProviders(details["watch/providers"], getRegionCode(region))
+    : null;
 
   const trailer = findYouTubeTrailer(videos.results);
 
@@ -420,6 +432,12 @@ function TVDetail({
       <div className="container mx-auto px-4 py-8">
         <div className="grid lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2">
+            <WhereToWatch
+              providers={watchProviders}
+              title={details.name}
+              regionName={getRegionName(region)}
+              checkedOn={details.snapshot_date ?? today}
+            />
             <TVCast credits={credits} />
             <MediaFullCrew credits={credits} />
             <MediaKeywords keywords={details.keywords?.results ?? []} />
@@ -439,7 +457,11 @@ function TVDetail({
                 posterPath={details.poster_path}
               />
             )}
-            <SimilarTVShows similar={similar} />
+            <SimilarTVShows
+              similar={similar}
+              title={details.name}
+              allHref={likeHref("tv", canonicalSlug)}
+            />
           </div>
 
           {/* Sidebar */}
@@ -467,7 +489,6 @@ function TVDetail({
                 }}
               />
             </div>
-            <TVWatchProviders providers={watchProviders} title={details.name} />
             <LanguageSupport translations={translations} />
             <TVDetails
               details={details}

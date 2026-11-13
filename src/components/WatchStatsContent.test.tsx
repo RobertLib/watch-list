@@ -40,6 +40,15 @@ vi.mock("@/components/Toast", () => ({
   toast: { showToast: vi.fn() },
 }));
 
+// jsdom has no canvas to draw on; what the card says is `year-card.test.ts`'s
+// business, and here only that the button draws and delivers one.
+const renderYearCard = vi.fn();
+const deliverYearCard = vi.fn();
+vi.mock("@/lib/year-card-image", () => ({
+  renderYearCard: (...args: unknown[]) => renderYearCard(...args),
+  deliverYearCard: (...args: unknown[]) => deliverYearCard(...args),
+}));
+
 vi.mock("next/link", () => ({
   default: (props: React.ComponentProps<"a"> & { prefetch?: boolean }) => {
     const attrs = { ...props };
@@ -967,5 +976,85 @@ describe("the yearly goal", () => {
     await renderStats();
 
     expect(screen.queryByText(`Set a target for ${YEAR}`)).toBeNull();
+  });
+});
+
+describe("the year in review, as an image", () => {
+  const image = new Blob(["png"], { type: "image/png" });
+
+  beforeEach(() => {
+    renderYearCard.mockReset().mockResolvedValue(image);
+    deliverYearCard.mockReset().mockResolvedValue("saved");
+    getWatchStatsFacts.mockResolvedValue({});
+    seed({ watched: [seen("Fight Club", 550), seen("Heat", 949)] });
+  });
+
+  async function saveImage() {
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Save image" }));
+    });
+  }
+
+  it("draws the year's numbers and hands the picture over", async () => {
+    await renderStats();
+    await saveImage();
+
+    expect(renderYearCard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        heading: `${YEAR} in review`,
+        total: { value: "2", label: "titles finished" },
+        site: window.location.host,
+      }),
+    );
+    // The file is named for its year, and travels with the same text a plain
+    // share would send.
+    expect(deliverYearCard).toHaveBeenCalledWith(
+      image,
+      `watchlist-${YEAR}-in-review.png`,
+      expect.stringContaining(`${YEAR} in review`),
+    );
+    expect(toast.showToast).toHaveBeenCalledWith("Saved your year as an image", "success");
+  });
+
+  // The share sheet says what happened itself; a toast on top would be noise,
+  // and one after a dismissal would be wrong.
+  it("says nothing more when the share sheet took it, or was closed", async () => {
+    await renderStats();
+    vi.mocked(toast.showToast).mockClear();
+
+    deliverYearCard.mockResolvedValueOnce("shared");
+    await saveImage();
+    deliverYearCard.mockResolvedValueOnce("dismissed");
+    await saveImage();
+
+    expect(toast.showToast).not.toHaveBeenCalled();
+  });
+
+  it("says so when the picture could not be drawn", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    renderYearCard.mockRejectedValue(new Error("No 2D canvas in this browser"));
+    await renderStats();
+    await saveImage();
+
+    expect(deliverYearCard).not.toHaveBeenCalled();
+    expect(toast.showToast).toHaveBeenCalledWith("Could not create the image", "error");
+    // And the button is usable again.
+    expect(screen.getByRole("button", { name: "Save image" }).getAttribute("aria-disabled")).toBe("false");
+  });
+
+  it("draws one picture at a time", async () => {
+    let finish!: (blob: Blob) => void;
+    renderYearCard.mockReturnValue(new Promise<Blob>((resolve) => { finish = resolve; }));
+    await renderStats();
+
+    await saveImage();
+    expect(screen.getByRole("button", { name: "Drawing…" }).getAttribute("aria-busy")).toBe("true");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Drawing…" }));
+    });
+    expect(renderYearCard).toHaveBeenCalledTimes(1);
+
+    await act(async () => { finish(image); });
+    expect(screen.getByRole("button", { name: "Save image" })).toBeDefined();
   });
 });

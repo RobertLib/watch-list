@@ -40,6 +40,7 @@ import {
   type TVSectionsSnapshot,
 } from "./listing-sections";
 import { tmdbApi } from "./tmdb";
+import { movieLikePage, tvLikePage, type LikePageData } from "./like-titles";
 import {
   MOVIE_APPENDED_SECTIONS,
   TV_APPENDED_SECTIONS,
@@ -191,21 +192,31 @@ export const getGenreSnapshot = cache(
   },
 );
 
-/** Page one of a mood's picks. A half that failed fails the build. */
+/**
+ * Page one of a mood's picks – or of its landing for one platform. A half that
+ * failed fails the build. Wrapped in `cache` because a landing's metadata reads
+ * it too: one with too few titles is `noindex`.
+ */
 export const getMoodSnapshot = cache(
-  (slug: string): Promise<MoodPicksPage | null> => {
+  (slug: string, platformSlug?: string): Promise<MoodPicksPage | null> => {
     const mood = findMood(slug);
     if (!mood) return Promise.resolve(null);
+    const platform = platformSlug
+      ? findStreamingPlatform(platformSlug)
+      : undefined;
 
-    return buildTimeLoad(`mood ${slug}`, async () => {
-      const picks = await loadMoodPicks(mood, 1);
-      if (picks.moviesFailed || picks.showsFailed) {
-        throw new Error(
-          `the ${picks.moviesFailed ? "film" : "series"} half did not load`,
-        );
-      }
-      return picks;
-    });
+    return buildTimeLoad(
+      `mood ${slug}${platform ? ` on ${platform.name}` : ""}`,
+      async () => {
+        const picks = await loadMoodPicks(mood, 1, platform);
+        if (picks.moviesFailed || picks.showsFailed) {
+          throw new Error(
+            `the ${picks.moviesFailed ? "film" : "series"} half did not load`,
+          );
+        }
+        return picks;
+      },
+    );
   },
 );
 
@@ -220,6 +231,17 @@ export async function getHomeSnapshot(): Promise<Record<HomeRow, MediaItem[]> | 
 }
 
 /**
+ * The day a snapshot is taken, in UTC – what a title page shows beside its
+ * streaming providers as the day they were checked. Stated in the snapshot
+ * rather than read from a clock when the page renders: the prerendered HTML
+ * and the browser hydrating it have to print the same day, and the browser's
+ * clock is a different one.
+ */
+function snapshotDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
  * A title page's snapshot: the details the browser would load, cut down to
  * what the first render shows (`title-details.ts`). Wrapped in `cache` because
  * the page's metadata reads it as well. `null` for a title TMDB answers 404
@@ -229,8 +251,10 @@ export const getMovieSnapshot = cache(
   (id: number): Promise<MovieDetails | null> =>
     buildTimeLoad(
       `film ${id}`,
-      async () =>
-        movieSnapshot(await tmdbApi.getMovieDetails(id, MOVIE_APPENDED_SECTIONS)),
+      async () => ({
+        ...movieSnapshot(await tmdbApi.getMovieDetails(id, MOVIE_APPENDED_SECTIONS)),
+        snapshot_date: snapshotDate(),
+      }),
       { missingIsNull: true },
     ),
 );
@@ -239,8 +263,35 @@ export const getTVSnapshot = cache(
   (id: number): Promise<TVShowDetails | null> =>
     buildTimeLoad(
       `series ${id}`,
+      async () => ({
+        ...tvSnapshot(await tmdbApi.getTVShowDetails(id, TV_APPENDED_SECTIONS)),
+        snapshot_date: snapshotDate(),
+      }),
+      { missingIsNull: true },
+    ),
+);
+
+/**
+ * A title's "movies like this" page (`like-titles.ts`). The same TMDB request
+ * as the title page's snapshot – the same URL, so the build's fetch cache
+ * answers the second of the two – with a different cut taken from it.
+ */
+export const getMovieLikeSnapshot = cache(
+  (id: number): Promise<LikePageData | null> =>
+    buildTimeLoad(
+      `titles like film ${id}`,
       async () =>
-        tvSnapshot(await tmdbApi.getTVShowDetails(id, TV_APPENDED_SECTIONS)),
+        movieLikePage(await tmdbApi.getMovieDetails(id, MOVIE_APPENDED_SECTIONS)),
+      { missingIsNull: true },
+    ),
+);
+
+export const getTVLikeSnapshot = cache(
+  (id: number): Promise<LikePageData | null> =>
+    buildTimeLoad(
+      `titles like series ${id}`,
+      async () =>
+        tvLikePage(await tmdbApi.getTVShowDetails(id, TV_APPENDED_SECTIONS)),
       { missingIsNull: true },
     ),
 );

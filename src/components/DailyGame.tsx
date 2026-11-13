@@ -51,6 +51,7 @@ import { cn } from "@/lib/utils";
 import type { DailyPuzzleView } from "@/lib/daily-puzzle-data";
 import type { MediaItem } from "@/types/tmdb";
 import { absoluteUrl, movieHref } from "@/lib/routes";
+import { shareText } from "@/lib/share-text";
 import {
   DEFAULT_PROFILE_ID,
   getActiveProfileId,
@@ -834,26 +835,10 @@ function Result({
       isArchive && !playedLive,
     );
 
-    if (typeof navigator !== "undefined" && navigator.share) {
-      try {
-        await navigator.share({ text });
-        return;
-      } catch (error) {
-        // A dismissed sheet is intentional; a refused or unsupported share
-        // still falls through to the clipboard. Treating a dismissal the same
-        // way sent a cancelled share on to a clipboard write that iOS refuses
-        // outside the gesture – and an error toast for having changed your mind.
-        if (
-          error !== null && typeof error === "object" &&
-          "name" in error && error.name === "AbortError"
-        ) return;
-      }
-    }
-
-    try {
-      await navigator.clipboard.writeText(text);
-      markCopied();
-    } catch {
+    // A dismissed share sheet is an answer, not a failure – see `shareText`.
+    const outcome = await shareText(text);
+    if (outcome === "copied") markCopied();
+    else if (outcome === "failed") {
       toast.showToast("Could not copy your result", "error");
     }
   }
