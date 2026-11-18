@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { SITE_URL, genreHref, moodHref } from "@/lib/routes";
+import { localeFromPathname, stripLocale } from "@/i18n/locale";
 import { MOVIE_GENRES, TV_GENRES, genreSlug } from "@/lib/genre-catalog";
 import { MOODS } from "@/lib/moods";
 import sitemap from "./sitemap";
@@ -27,15 +28,20 @@ vi.stubEnv("NEXT_PUBLIC_TMDB_API_TOKEN", "");
 
 // The prerendered titles are whatever `scripts/prebuild.mjs` last wrote into
 // `.next/cache` – a fixed list here, so the suite does not depend on a build.
+// The Czech tree prerenders fewer titles, under the slugs of their Czech names.
 vi.mock("@/lib/prerendered-titles-server", () => ({
-  prerenderedTitles: (kind: string) =>
-    ({
-      movie: [{ id: 550, slug: "fight-club-550" }],
-      tv: [{ id: 1396, slug: "breaking-bad-1396" }],
-      person: [{ id: 31, slug: "tom-hanks-31" }],
-    })[kind] ?? [],
-  likePageTitles: (kind: string) =>
-    ({ movie: [{ id: 550, slug: "fight-club-550" }] })[kind] ?? [],
+  prerenderedTitles: (kind: string, locale = "en") =>
+    (locale === "cs"
+      ? ({ movie: [{ id: 550, slug: "klub-rvacu-550" }] } as Record<string, unknown[]>)
+      : ({
+          movie: [{ id: 550, slug: "fight-club-550" }],
+          tv: [{ id: 1396, slug: "breaking-bad-1396" }],
+          person: [{ id: 31, slug: "tom-hanks-31" }],
+        } as Record<string, unknown[]>))[kind] ?? [],
+  likePageTitles: (kind: string, locale = "en") =>
+    locale === "cs"
+      ? []
+      : (({ movie: [{ id: 550, slug: "fight-club-550" }] }) as Record<string, unknown[]>)[kind] ?? [],
 }));
 
 const appDir = fileURLToPath(new URL(".", import.meta.url));
@@ -46,8 +52,11 @@ const appDir = fileURLToPath(new URL(".", import.meta.url));
  * the way the router does.
  */
 function pageSourceFor(pathname: string): string {
-  let dir = appDir;
-  for (const segment of pathname.split("/").filter(Boolean)) {
+  // Each language is a tree of its own: English in the `(en)` route group,
+  // Czech under `cs/`.
+  const czech = localeFromPathname(pathname) === "cs";
+  let dir = czech ? `${appDir}cs/` : `${appDir}(en)/`;
+  for (const segment of stripLocale(pathname).split("/").filter(Boolean)) {
     if (existsSync(`${dir}${segment}/`)) {
       dir = `${dir}${segment}/`;
       continue;
@@ -61,7 +70,10 @@ function pageSourceFor(pathname: string): string {
 
 describe("sitemap", async () => {
   const entries = await sitemap();
-  const paths = entries.map((entry) => new URL(entry.url).pathname);
+  const allPaths = entries.map((entry) => new URL(entry.url).pathname);
+  // The assertions about which pages are listed read the English tree; the
+  // Czech one is checked against it in "lists every English page in Czech too".
+  const paths = allPaths.filter((path) => localeFromPathname(path) === "en");
 
   it("lists something", () => {
     expect(entries.length).toBeGreaterThan(0);
@@ -138,6 +150,33 @@ describe("sitemap", async () => {
     expect(paths).toEqual(
       expect.arrayContaining(["/movie/fight-club-550", "/tv/breaking-bad-1396", "/person/tom-hanks-31"]),
     );
+  });
+
+  it("lists every shared English page in Czech too, paired by hreflang", () => {
+    const czech = new Set(allPaths.filter((path) => localeFromPathname(path) === "cs"));
+    for (const path of paths) {
+      if (/^\/(movie|tv|person)\//.test(path)) continue;
+      expect(czech).toContain(path === "/" ? "/cs" : `/cs${path}`);
+    }
+
+    const home = entries.find((entry) => entry.url === `${SITE_URL}/cs`);
+    expect(home?.alternates?.languages).toEqual({
+      en: `${SITE_URL}/`,
+      cs: `${SITE_URL}/cs`,
+      "x-default": `${SITE_URL}/`,
+    });
+  });
+
+  it("pairs a title's two pages by id, under each tree's own slug", () => {
+    const czech = entries.find((entry) => entry.url === `${SITE_URL}/cs/movie/klub-rvacu-550`);
+    expect(czech?.alternates?.languages).toMatchObject({
+      en: `${SITE_URL}/movie/fight-club-550`,
+      cs: `${SITE_URL}/cs/movie/klub-rvacu-550`,
+    });
+    // A title only one tree prerendered names no translation.
+    const englishOnly = entries.find((entry) => entry.url === `${SITE_URL}/tv/breaking-bad-1396`);
+    expect(englishOnly).toBeDefined();
+    expect(englishOnly).not.toHaveProperty("alternates");
   });
 
   it("lists no route twice", () => {

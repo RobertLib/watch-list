@@ -1,4 +1,6 @@
 import type { FilterOptions } from "@/types/filters";
+import type { Locale } from "@/i18n/locale";
+import { MOOD_GROUP_HEADINGS_CS, MOOD_TEXT_CS } from "./moods-cs";
 
 /**
  * Moods: the way people actually describe what they want to watch.
@@ -1323,7 +1325,29 @@ export function moodsWithPlatforms(): Mood[] {
 }
 
 /** "Movies", "TV Shows" or both – what a mood's page lists, for its title. */
-export function moodMediaNoun(mood: Mood): string {
+export function moodMediaNoun(mood: Mood, locale: Locale = "en"): string {
+  if (locale === "cs") {
+    if (mood.movie && mood.tv) return "Filmy a seriály";
+    return mood.movie ? "Filmy" : "Seriály";
+  }
   if (mood.movie && mood.tv) return "Movies & TV Shows";
   return mood.movie ? "Movies" : "TV Shows";
+}
+
+/**
+ * A mood with its words in `locale`. The query half – genres, keywords, the
+ * vote floor – is the same in both languages; only `label`, `title` and
+ * `description` are translated (`moods-cs.ts`), and a mood the Czech table
+ * does not have yet keeps its English words rather than none.
+ */
+export function localizeMood(mood: Mood, locale: Locale): Mood {
+  if (locale === "en") return mood;
+  const text = MOOD_TEXT_CS[mood.slug];
+  return text ? { ...mood, ...text } : mood;
+}
+
+/** A section heading of `/moods` in `locale`. */
+export function moodGroupHeading(group: MoodGroup, locale: Locale): string {
+  if (locale === "cs") return MOOD_GROUP_HEADINGS_CS[group];
+  return MOOD_GROUPS.find((entry) => entry.id === group)?.heading ?? group;
 }

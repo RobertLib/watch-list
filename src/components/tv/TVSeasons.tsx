@@ -18,11 +18,19 @@ import { useEpisodeProgress } from "@/contexts/EpisodeProgressContext";
 import { useProfileGuard } from "@/hooks/useProfileGuard";
 import { useLocalDay } from "@/hooks/useLocalDay";
 import { toast } from "@/components/Toast";
-import { STORAGE_REFUSED_MESSAGE } from "@/lib/media-list";
+import { storageRefusedMessage } from "@/lib/media-list";
 import { cn } from "@/lib/utils";
 import { formatTmdbDate, releaseYear } from "@/lib/dates";
 import type { ShowRef } from "@/lib/episode-progress";
 import type { Season, SeasonDetails, Episode } from "@/types/tmdb";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount, type PluralForms, formatRating } from "@/i18n/format";
+import type { Locale } from "@/i18n/locale";
+
+const EPISODES: PluralForms = {
+  en: ["episode", "episodes"],
+  cs: ["epizoda", "epizody", "epizod"],
+};
 
 interface TVSeasonsProps {
   seasons: Season[];
@@ -31,12 +39,19 @@ interface TVSeasonsProps {
   posterPath: string | null;
 }
 
-function formatDate(dateStr: string | null | undefined): string | null {
-  return formatTmdbDate(dateStr, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+function formatDate(
+  dateStr: string | null | undefined,
+  locale: Locale,
+): string | null {
+  return formatTmdbDate(
+    dateStr,
+    {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    },
+    locale,
+  );
 }
 
 function hasAired(episode: Pick<Episode, "air_date">, today: string): boolean {
@@ -55,6 +70,8 @@ function EpisodeRow({
   checkProfile: () => boolean;
 }) {
   const { isEpisodeWatched, setSeasonWatched } = useEpisodeProgress();
+  const locale = useLocale();
+  const t = useT();
   const saving = useRef(false);
   const [isSaving, setIsSaving] = useState(false);
   const hasOverview = Boolean(episode.overview);
@@ -88,7 +105,9 @@ function EpisodeRow({
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <span className="text-gray-500 text-xs">No image</span>
+            <span className="text-gray-500 text-xs">
+              {t("No image", "Bez obrázku")}
+            </span>
           </div>
         )}
       </div>
@@ -108,19 +127,25 @@ function EpisodeRow({
           {episode.air_date && (
             <span className="flex items-center gap-1">
               <Calendar className="w-3 h-3" />
-              {aired ? formatDate(episode.air_date) : `Airs ${formatDate(episode.air_date)}`}
+              {aired
+                ? formatDate(episode.air_date, locale)
+                : t(
+                    `Airs ${formatDate(episode.air_date, locale)}`,
+                    `Premiéra ${formatDate(episode.air_date, locale)}`,
+                  )}
             </span>
           )}
           {episode.runtime && (
             <span className="flex items-center gap-1">
               <Clock className="w-3 h-3" />
-              {episode.runtime}m
+              {episode.runtime}
+              {t("m", " min")}
             </span>
           )}
           {episode.vote_average > 0 && (
             <span className="flex items-center gap-1 text-yellow-400">
               <Star className="w-3 h-3 fill-current" />
-              {episode.vote_average.toFixed(1)}
+              {formatRating(episode.vote_average, locale)}
             </span>
           )}
         </div>
@@ -151,7 +176,7 @@ function EpisodeRow({
                   !watched,
                 ))
               ) {
-                toast.showToast(STORAGE_REFUSED_MESSAGE, "error");
+                toast.showToast(storageRefusedMessage(locale), "error");
               }
             } finally {
               saving.current = false;
@@ -162,10 +187,20 @@ function EpisodeRow({
           aria-pressed={watched}
           aria-label={
             watched
-              ? `Mark ${label} as not watched`
-              : `Mark ${label} as watched`
+              ? t(
+                  `Mark ${label} as not watched`,
+                  `Označit ${label} jako nezhlédnutou`,
+                )
+              : t(
+                  `Mark ${label} as watched`,
+                  `Označit ${label} jako zhlédnutou`,
+                )
           }
-          title={watched ? "Watched" : "Mark as watched"}
+          title={
+            watched
+              ? t("Watched", "Zhlédnuto")
+              : t("Mark as watched", "Označit jako zhlédnutou")
+          }
           className={cn(
             "shrink-0 self-center p-2 rounded-full transition-colors disabled:opacity-60 disabled:cursor-wait focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
             watched
@@ -201,6 +236,8 @@ function SeasonRow({
   const [error, setError] = useState(false);
   const [isPending, startTransition] = useTransition();
   const { watchedInSeason, setSeasonWatched } = useEpisodeProgress();
+  const locale = useLocale();
+  const t = useT();
   const saving = useRef(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -272,7 +309,7 @@ function SeasonRow({
               aria-hidden="true"
             >
               <span className="text-gray-500 text-xs text-center px-1">
-                No image
+                {t("No image", "Bez obrázku")}
               </span>
             </div>
           )}
@@ -293,13 +330,19 @@ function SeasonRow({
             {season.vote_average > 0 && (
               <span className="text-yellow-400 text-sm flex items-center gap-0.5">
                 <Star className="w-3.5 h-3.5 fill-current" aria-hidden="true" />
-                {season.vote_average.toFixed(1)}
+                {formatRating(season.vote_average, locale)}
               </span>
             )}
           </div>
           <p className="text-gray-400 text-sm mt-0.5">
-            {season.episode_count} episode
-            {season.episode_count !== 1 ? "s" : ""}
+            {locale === "cs" ? (
+              formatCount(season.episode_count, locale, EPISODES)
+            ) : (
+              <>
+                {season.episode_count} episode
+                {season.episode_count !== 1 ? "s" : ""}
+              </>
+            )}
             {season.air_date && (
               <> · {releaseYear(season.air_date)}</>
             )}
@@ -315,7 +358,10 @@ function SeasonRow({
                 aria-valuenow={watchedCount}
                 aria-valuemin={0}
                 aria-valuemax={season.episode_count}
-                aria-label={`${season.name} progress`}
+                aria-label={t(
+                  `${season.name} progress`,
+                  `${season.name} – postup`,
+                )}
               >
                 <div
                   className="h-full rounded-full bg-green-500 transition-[width] duration-300"
@@ -324,7 +370,9 @@ function SeasonRow({
               </div>
               <span className="text-xs text-gray-400 shrink-0">
                 {watchedCount === season.episode_count ? (
-                  <span className="text-green-400">Completed</span>
+                  <span className="text-green-400">
+                    {t("Completed", "Dokončeno")}
+                  </span>
                 ) : (
                   <>
                     {watchedCount} / {season.episode_count}
@@ -359,17 +407,17 @@ function SeasonRow({
           <>
             {error && (
               <p className="text-gray-400 text-sm py-4 text-center">
-                Failed to load episodes.
+                {t("Failed to load episodes.", "Epizody se nepodařilo načíst.")}
               </p>
             )}
             {!error && !details && isPending && (
               <p className="text-gray-400 text-sm py-4 text-center">
-                Loading episodes…
+                {t("Loading episodes…", "Načítání epizod…")}
               </p>
             )}
             {details && details.episodes.length === 0 && (
               <p className="text-gray-400 text-sm py-4 text-center">
-                No episodes available yet.
+                {t("No episodes available yet.", "Epizody zatím nejsou k dispozici.")}
               </p>
             )}
 
@@ -392,7 +440,7 @@ function SeasonRow({
                           !allAiredWatched,
                         ))
                       ) {
-                        toast.showToast(STORAGE_REFUSED_MESSAGE, "error");
+                        toast.showToast(storageRefusedMessage(locale), "error");
                       }
                     } finally {
                       saving.current = false;
@@ -404,8 +452,10 @@ function SeasonRow({
                 >
                   <Check className="w-4 h-4" aria-hidden="true" />
                   {allAiredWatched
-                    ? "Unmark all"
-                    : `Mark ${airedEpisodeNumbers.length} aired as watched`}
+                    ? t("Unmark all", "Zrušit označení všech")
+                    : locale === "cs"
+                      ? `Označit odvysílané jako zhlédnuté (${airedEpisodeNumbers.length})`
+                      : `Mark ${airedEpisodeNumbers.length} aired as watched`}
                 </button>
               </div>
             )}
@@ -435,6 +485,8 @@ export function TVSeasons({
 }: TVSeasonsProps) {
   const { watchedCount, profileId } = useEpisodeProgress();
   const { checkProfile } = useProfileGuard();
+  const locale = useLocale();
+  const t = useT();
 
   const regularSeasons = seasons.filter((s) => s.season_number > 0);
   const specials = seasons.filter((s) => s.season_number === 0);
@@ -454,10 +506,16 @@ export function TVSeasons({
   return (
     <div className="mt-8">
       <div className="flex items-baseline justify-between gap-4 mb-4">
-        <h2 className="text-2xl font-bold text-white">Seasons</h2>
+        <h2 className="text-2xl font-bold text-white">{t("Seasons", "Řady")}</h2>
         {totalWatched > 0 && (
           <p className="text-sm text-gray-400">
-            {totalWatched} episode{totalWatched !== 1 ? "s" : ""} watched
+            {locale === "cs" ? (
+              <>Zhlédnuto: {formatCount(totalWatched, locale, EPISODES)}</>
+            ) : (
+              <>
+                {totalWatched} episode{totalWatched !== 1 ? "s" : ""} watched
+              </>
+            )}
           </p>
         )}
       </div>

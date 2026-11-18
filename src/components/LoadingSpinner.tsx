@@ -1,4 +1,7 @@
+import { useT } from "@/i18n/LocaleProvider";
+
 export function LoadingSpinner({ className = "" }: { className?: string }) {
+  const t = useT();
   return (
     <div
       className={`flex items-center justify-center ${className}`}
@@ -9,7 +12,7 @@ export function LoadingSpinner({ className = "" }: { className?: string }) {
         className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"
         aria-hidden="true"
       ></div>
-      <span className="sr-only">Loading...</span>
+      <span className="sr-only">{t("Loading...", "Načítání…")}</span>
     </div>
   );
 }
@@ -38,6 +41,7 @@ export function LoadingSection({
   title?: string;
   count?: number;
 }) {
+  const t = useT();
   return (
     <section className="mb-12" role="status">
       {/* Rendered only when there is one. An unconditional `<h2>{title}</h2>`
@@ -45,7 +49,9 @@ export function LoadingSection({
           shows up as one in every audit. */}
       {title && <h2 className="text-2xl font-bold mb-6">{title}</h2>}
 
-      <span className="sr-only">Loading content...</span>
+      <span className="sr-only">
+        {t("Loading content...", "Načítání obsahu…")}
+      </span>
 
       <div
         className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6"

@@ -1,4 +1,5 @@
 import type { WatchStats } from "./stats";
+import type { Locale, Localized } from "@/i18n/locale";
 
 /**
  * Achievements for the watching record, as opposed to the puzzle's badges.
@@ -20,8 +21,8 @@ export interface Achievement {
 
 interface AchievementSpec {
   id: string;
-  label: string;
-  description: string;
+  label: Localized;
+  description: Localized;
   emoji: string;
   measure: (stats: WatchStats) => number;
   target: number;
@@ -30,78 +31,90 @@ interface AchievementSpec {
 const SPECS: AchievementSpec[] = [
   {
     id: "first-ten",
-    label: "Getting started",
-    description: "Ten titles watched.",
+    label: { en: "Getting started", cs: "První krůčky" },
+    description: { en: "Ten titles watched.", cs: "Deset zhlédnutých titulů." },
     emoji: "🌱",
     measure: (stats) => stats.totalTitles,
     target: 10,
   },
   {
     id: "century",
-    label: "Century",
-    description: "A hundred titles watched.",
+    label: { en: "Century", cs: "Stovka" },
+    description: { en: "A hundred titles watched.", cs: "Sto zhlédnutých titulů." },
     emoji: "💯",
     measure: (stats) => stats.totalTitles,
     target: 100,
   },
   {
     id: "binger",
-    label: "Binger",
-    description: "A hundred episodes ticked off.",
+    label: { en: "Binger", cs: "Epizoda za epizodou" },
+    description: { en: "A hundred episodes ticked off.", cs: "Sto odškrtnutých epizod." },
     emoji: "📺",
     measure: (stats) => stats.episodes,
     target: 100,
   },
   {
     id: "marathon",
-    label: "Marathon",
-    description: "A hundred hours of screen time.",
+    label: { en: "Marathon", cs: "Maraton" },
+    description: { en: "A hundred hours of screen time.", cs: "Sto hodin před obrazovkou." },
     emoji: "🏃",
     measure: (stats) => Math.floor(stats.minutes / 60),
     target: 100,
   },
   {
     id: "omnivore",
-    label: "Omnivore",
-    description: "Watched something from six different genres.",
+    label: { en: "Omnivore", cs: "Od všeho trochu" },
+    description: {
+      en: "Watched something from six different genres.",
+      cs: "Zhlédli jste něco ze šesti různých žánrů.",
+    },
     emoji: "🍽️",
     measure: (stats) => stats.topGenres.length,
     target: 6,
   },
   {
     id: "time-traveller",
-    label: "Time traveller",
-    description: "Watched something from four different decades.",
+    label: { en: "Time traveller", cs: "Cesta časem" },
+    description: {
+      en: "Watched something from four different decades.",
+      cs: "Zhlédli jste něco ze čtyř různých desetiletí.",
+    },
     emoji: "🕰️",
     measure: (stats) => stats.decades.length,
     target: 4,
   },
   {
     id: "critic",
-    label: "Critic",
-    description: "Scored twenty-five titles of your own.",
+    label: { en: "Critic", cs: "Kritické oko" },
+    description: {
+      en: "Scored twenty-five titles of your own.",
+      cs: "Ohodnotili jste dvacet pět titulů.",
+    },
     emoji: "⭐",
     measure: (stats) => stats.ratedCount,
     target: 25,
   },
   {
     id: "completionist",
-    label: "Series watcher",
-    description: "Finished twenty-five series.",
+    label: { en: "Series watcher", cs: "Seriálová vášeň" },
+    description: { en: "Finished twenty-five series.", cs: "Dokončili jste dvacet pět seriálů." },
     emoji: "📚",
     measure: (stats) => stats.series,
     target: 25,
   },
 ];
 
-export function achievementsFor(stats: WatchStats): Achievement[] {
+export function achievementsFor(
+  stats: WatchStats,
+  locale: Locale = "en",
+): Achievement[] {
   return SPECS.map((spec) => {
     const current = spec.measure(stats);
 
     return {
       id: spec.id,
-      label: spec.label,
-      description: spec.description,
+      label: spec.label[locale],
+      description: spec.description[locale],
       emoji: spec.emoji,
       earned: current >= spec.target,
       progress: { current: Math.min(current, spec.target), target: spec.target },

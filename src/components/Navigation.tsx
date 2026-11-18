@@ -11,7 +11,11 @@ import {
   Dices,
   Sparkles,
 } from "lucide-react";
-import Link from "next/link";
+import Link from "@/i18n/Link";
+import { LanguageSwitch } from "@/i18n/LanguageSwitch";
+import { useLocale, useLocalizeHref, useT } from "@/i18n/LocaleProvider";
+import { stripLocale } from "@/i18n/locale";
+import { formatCount, pluralForm } from "@/i18n/format";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { isPlainPrimaryClick } from "@/lib/plain-click";
@@ -36,6 +40,9 @@ function isApplePlatform(): boolean {
 export function Navigation() {
   const pathname = usePathname();
   const router = useRouter();
+  const locale = useLocale();
+  const t = useT();
+  const localizeHref = useLocalizeHref();
   const [searchResults, setSearchResults] = useState<MediaItem[]>([]);
   const [personResults, setPersonResults] = useState<Person[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -81,36 +88,39 @@ export function Navigation() {
   // Only the most recently started search is allowed to write to state.
   const searchRunId = useRef(0);
 
-  // Check if link is active
+  // Check if link is active. The links are written as English paths, and on a
+  // Czech page the pathname is `/cs/…` – compared without the prefix, so the
+  // same ladder marks the same link in both trees.
   const isActiveLink = (href: string) => {
+    const path = stripLocale(pathname);
     if (href === "/") {
-      return pathname === "/";
+      return path === "/";
     }
     if (href === "/genres") {
-      return pathname.startsWith("/genres");
+      return path.startsWith("/genres");
     }
     if (href === "/movies") {
-      return pathname.startsWith("/movies") || pathname.startsWith("/movie");
+      return path.startsWith("/movies") || path.startsWith("/movie");
     }
     if (href === "/tv-shows") {
-      return pathname.startsWith("/tv-shows") || pathname.startsWith("/tv");
+      return path.startsWith("/tv-shows") || path.startsWith("/tv");
     }
     if (href === "/watchlist") {
-      return pathname === "/watchlist";
+      return path === "/watchlist";
     }
     if (href === "/calendar") {
-      return pathname === "/calendar";
+      return path === "/calendar";
     }
     if (href === "/tonight") {
-      return pathname === "/tonight";
+      return path === "/tonight";
     }
     if (href === "/moods") {
-      return pathname === "/moods" || pathname.startsWith("/mood");
+      return path === "/moods" || path.startsWith("/mood");
     }
     if (href === "/people") {
-      return pathname.startsWith("/people") || pathname.startsWith("/person");
+      return path.startsWith("/people") || path.startsWith("/person");
     }
-    return pathname === href;
+    return path === href;
   };
 
   // The header survives navigation. Discard its open panels before the new page
@@ -229,7 +239,7 @@ export function Navigation() {
     const trimmed = query.trim();
     if (!trimmed) return;
 
-    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+    router.push(localizeHref(`/search?q=${encodeURIComponent(trimmed)}`));
     clearSearch();
   };
 
@@ -453,6 +463,20 @@ export function Navigation() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isSearching, isSearchOpen, isMobileMenuOpen, cancelScheduledFocus, clearSearch]);
 
+  // "Found 3 results" for the screen reader. Czech agrees the verb with the
+  // count as well as the noun – "Nalezen 1 výsledek", "Nalezeny 3 výsledky",
+  // "Nalezeno 12 výsledků" – so it is built from both forms.
+  const foundResultsMessage = (count: number) =>
+    locale === "cs"
+      ? `${pluralForm(count, locale, {
+          en: ["", ""],
+          cs: ["Nalezen", "Nalezeny", "Nalezeno"],
+        })} ${formatCount(count, locale, {
+          en: ["result", "results"],
+          cs: ["výsledek", "výsledky", "výsledků"],
+        })}`
+      : `Found ${count} results`;
+
   // The results panel is open. Read by the combobox attributes on the input and
   // by the panel itself, so the two cannot disagree about it.
   const isResultsOpen =
@@ -504,7 +528,7 @@ export function Navigation() {
       {/* Navigation */}
       <nav
         className="fixed top-0 left-0 right-0 z-50 bg-black/95 backdrop-blur-sm border-b border-gray-800"
-        aria-label="Main navigation"
+        aria-label={t("Main navigation", "Hlavní navigace")}
       >
         <div className="container mx-auto px-6 lg:px-8">
           <div className="flex items-center justify-between gap-4 h-16">
@@ -515,7 +539,7 @@ export function Navigation() {
                 prefetch={false}
                 onClick={handleLinkClick}
                 className="flex items-center gap-2 text-2xl font-bold text-white hover:text-gray-300 transition-colors group"
-                aria-label="WatchList home page"
+                aria-label={t("WatchList home page", "Úvodní stránka WatchListu")}
               >
                 <div className="relative">
                   <div className="w-8 h-8 bg-linear-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center shadow-lg group-hover:shadow-blue-500/25 transition-all duration-300">
@@ -532,7 +556,7 @@ export function Navigation() {
             <div
               className="hidden xl:flex items-center gap-8"
               role="navigation"
-              aria-label="Main menu"
+              aria-label={t("Main menu", "Hlavní nabídka")}
             >
               <Link
                 href="/"
@@ -546,7 +570,7 @@ export function Navigation() {
                 )}
                 aria-current={isActiveLink("/") ? "page" : undefined}
               >
-                Home
+                {t("Home", "Domů")}
               </Link>
               <Link
                 href="/movies"
@@ -560,7 +584,7 @@ export function Navigation() {
                 )}
                 aria-current={isActiveLink("/movies") ? "page" : undefined}
               >
-                Movies
+                {t("Movies", "Filmy")}
               </Link>
               <Link
                 href="/tv-shows"
@@ -574,7 +598,7 @@ export function Navigation() {
                 )}
                 aria-current={isActiveLink("/tv-shows") ? "page" : undefined}
               >
-                TV Shows
+                {t("TV Shows", "Seriály")}
               </Link>
               <Link
                 href="/genres"
@@ -588,7 +612,7 @@ export function Navigation() {
                 )}
                 aria-current={isActiveLink("/genres") ? "page" : undefined}
               >
-                Genres
+                {t("Genres", "Žánry")}
               </Link>
               <Link
                 href="/people"
@@ -602,7 +626,7 @@ export function Navigation() {
                 )}
                 aria-current={isActiveLink("/people") ? "page" : undefined}
               >
-                People
+                {t("People", "Osobnosti")}
               </Link>
               <Link
                 href="/tonight"
@@ -615,10 +639,10 @@ export function Navigation() {
                     : "text-gray-300 hover:text-white",
                 )}
                 aria-current={isActiveLink("/tonight") ? "page" : undefined}
-                aria-label="What to watch tonight"
+                aria-label={t("What to watch tonight", "Co dnes večer sledovat")}
               >
                 <Dices className="w-4 h-4" aria-hidden="true" />
-                Tonight
+                {t("Tonight", "Dnes večer")}
               </Link>
               <Link
                 href="/calendar"
@@ -631,10 +655,10 @@ export function Navigation() {
                     : "text-gray-300 hover:text-white",
                 )}
                 aria-current={isActiveLink("/calendar") ? "page" : undefined}
-                aria-label="Release calendar"
+                aria-label={t("Release calendar", "Kalendář premiér")}
               >
                 <CalendarDays className="w-4 h-4" aria-hidden="true" />
-                Calendar
+                {t("Calendar", "Kalendář")}
               </Link>
               <Link
                 href="/watchlist"
@@ -652,7 +676,7 @@ export function Navigation() {
                 // titles were saved. The counter adds its own spoken form.
               >
                 <Heart className="w-4 h-4" aria-hidden="true" />
-                Watchlist
+                {t("Watchlist", "Můj seznam")}
                 <WatchlistCounter className="absolute -top-2 -right-4" />
               </Link>
             </div>
@@ -664,7 +688,11 @@ export function Navigation() {
                 ref={searchToggleRef}
                 onClick={handleSearchIconClick}
                 className="p-2 text-gray-300 hover:text-white transition-colors"
-                aria-label={isSearchOpen ? "Close search" : "Open search"}
+                aria-label={
+                  isSearchOpen
+                    ? t("Close search", "Zavřít hledání")
+                    : t("Open search", "Otevřít hledání")
+                }
                 aria-expanded={isSearchOpen}
                 aria-controls="search-container"
               >
@@ -677,17 +705,27 @@ export function Navigation() {
                 prefetch={false}
                 onClick={handleLinkClick}
                 className="p-2 text-gray-300 hover:text-white transition-colors"
-                aria-label="Go to profile page"
+                aria-label={t("Go to profile page", "Přejít na profil")}
               >
                 <User size={20} aria-hidden="true" />
               </Link>
+
+              {/* The same page in the other language. Only where the full menu
+                  is shown; below xl it sits at the foot of the mobile menu. */}
+              <div className="hidden xl:flex">
+                <LanguageSwitch compact />
+              </div>
 
               {/* Mobile Menu Button */}
               <button
                 ref={mobileMenuToggleRef}
                 onClick={handleMobileMenuToggle}
                 className="xl:hidden p-2 text-gray-300 hover:text-white transition-colors"
-                aria-label={isMobileMenuOpen ? "Close menu" : "Open menu"}
+                aria-label={
+                  isMobileMenuOpen
+                    ? t("Close menu", "Zavřít nabídku")
+                    : t("Open menu", "Otevřít nabídku")
+                }
                 aria-expanded={isMobileMenuOpen}
                 aria-controls="mobile-menu"
               >
@@ -724,13 +762,19 @@ export function Navigation() {
               role="search"
             >
               <label htmlFor="search-input" className="sr-only">
-                Search movies, TV shows and people
+                {t(
+                  "Search movies, TV shows and people",
+                  "Hledat filmy, seriály a osobnosti",
+                )}
               </label>
               <input
                 id="search-input"
                 ref={searchInputRef}
                 type="text"
-                placeholder="Search movies, TV shows, people…  (press / anywhere)"
+                placeholder={t(
+                  "Search movies, TV shows, people…  (press / anywhere)",
+                  "Hledejte filmy, seriály, osobnosti…  (stiskněte / kdekoli)",
+                )}
                 value={searchQuery}
                 onChange={(e) => updateSearchQuery(e.target.value)}
                 className="w-full px-4 py-3 pl-12 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors"
@@ -757,7 +801,7 @@ export function Navigation() {
                   type="button"
                   onClick={clearQuery}
                   className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white focus:outline-none focus:text-white"
-                  aria-label="Clear search"
+                  aria-label={t("Clear search", "Vymazat hledání")}
                   tabIndex={isSearchOpen ? 0 : -1}
                 >
                   <X size={20} aria-hidden="true" />
@@ -786,7 +830,7 @@ export function Navigation() {
             <nav
               className="space-y-4 pt-4"
               role="navigation"
-              aria-label="Mobile menu"
+              aria-label={t("Mobile menu", "Mobilní nabídka")}
             >
               <Link
                 href="/"
@@ -800,7 +844,7 @@ export function Navigation() {
                 )}
                 aria-current={isActiveLink("/") ? "page" : undefined}
               >
-                Home
+                {t("Home", "Domů")}
               </Link>
               <Link
                 href="/movies"
@@ -814,7 +858,7 @@ export function Navigation() {
                 )}
                 aria-current={isActiveLink("/movies") ? "page" : undefined}
               >
-                Movies
+                {t("Movies", "Filmy")}
               </Link>
               <Link
                 href="/tv-shows"
@@ -828,7 +872,7 @@ export function Navigation() {
                 )}
                 aria-current={isActiveLink("/tv-shows") ? "page" : undefined}
               >
-                TV Shows
+                {t("TV Shows", "Seriály")}
               </Link>
               <Link
                 href="/genres"
@@ -842,7 +886,7 @@ export function Navigation() {
                 )}
                 aria-current={isActiveLink("/genres") ? "page" : undefined}
               >
-                Genres
+                {t("Genres", "Žánry")}
               </Link>
               <Link
                 href="/people"
@@ -856,7 +900,7 @@ export function Navigation() {
                 )}
                 aria-current={isActiveLink("/people") ? "page" : undefined}
               >
-                People
+                {t("People", "Osobnosti")}
               </Link>
               <Link
                 href="/tonight"
@@ -871,7 +915,7 @@ export function Navigation() {
                 aria-current={isActiveLink("/tonight") ? "page" : undefined}
               >
                 <Dices className="w-4 h-4" aria-hidden="true" />
-                Tonight
+                {t("Tonight", "Dnes večer")}
               </Link>
               <Link
                 href="/moods"
@@ -886,7 +930,7 @@ export function Navigation() {
                 aria-current={isActiveLink("/moods") ? "page" : undefined}
               >
                 <Sparkles className="w-4 h-4" aria-hidden="true" />
-                Moods
+                {t("Moods", "Nálady")}
               </Link>
               <Link
                 href="/calendar"
@@ -899,10 +943,10 @@ export function Navigation() {
                     : "text-gray-300 hover:text-white",
                 )}
                 aria-current={isActiveLink("/calendar") ? "page" : undefined}
-                aria-label="Release calendar"
+                aria-label={t("Release calendar", "Kalendář premiér")}
               >
                 <CalendarDays className="w-4 h-4" aria-hidden="true" />
-                Calendar
+                {t("Calendar", "Kalendář")}
               </Link>
               <Link
                 href="/watchlist"
@@ -917,9 +961,12 @@ export function Navigation() {
                 aria-current={isActiveLink("/watchlist") ? "page" : undefined}
               >
                 <Heart className="w-4 h-4" aria-hidden="true" />
-                Watchlist
+                {t("Watchlist", "Můj seznam")}
                 <WatchlistCounter className="absolute -top-1 left-3" />
               </Link>
+              <div className="border-t border-gray-800 pt-4">
+                <LanguageSwitch />
+              </div>
             </nav>
           </div>
         </div>
@@ -957,17 +1004,17 @@ export function Navigation() {
                   className="text-2xl font-bold text-white"
                 >
                   {isLoading
-                    ? "Searching..."
+                    ? t("Searching...", "Hledáme…")
                     : searchResults.length > 0 || personResults.length > 0
-                      ? "Search Results"
+                      ? t("Search Results", "Výsledky hledání")
                       : hasSearchError
-                        ? "Search unavailable"
-                        : "No Results"}
+                        ? t("Search unavailable", "Hledání není dostupné")
+                        : t("No Results", "Žádné výsledky")}
                 </h2>
                 <button
                   onClick={clearSearch}
                   className="p-2 text-gray-400 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-white focus:ring-opacity-50 rounded-md"
-                  aria-label="Close search results"
+                  aria-label={t("Close search results", "Zavřít výsledky hledání")}
                 >
                   <X size={24} aria-hidden="true" />
                 </button>
@@ -975,18 +1022,21 @@ export function Navigation() {
 
               {hasSearchError && !isLoading && (
                 <p role="alert" className="text-gray-400 text-center mb-6">
-                  Some search results could not be loaded. Try again in a moment.
+                  {t(
+                    "Some search results could not be loaded. Try again in a moment.",
+                    "Některé výsledky se nepodařilo načíst. Zkuste to za chvíli znovu.",
+                  )}
                 </p>
               )}
 
               <div id="search-results-info" className="sr-only">
                 {isLoading
-                  ? "Searching for results..."
+                  ? t("Searching for results...", "Hledáme výsledky…")
                   : searchResults.length > 0 || personResults.length > 0
-                    ? `Found ${searchResults.length + personResults.length} results`
+                    ? foundResultsMessage(searchResults.length + personResults.length)
                     : hasSearchError
-                      ? "Search unavailable"
-                      : "No results found"}
+                      ? t("Search unavailable", "Hledání není dostupné")
+                      : t("No results found", "Nic jsme nenašli")}
               </div>
 
               {isLoading ? (
@@ -997,7 +1047,7 @@ export function Navigation() {
                 >
                   <LoadingSpinner className="mb-4" />
                   <p className="text-gray-400 text-lg">
-                    Searching for results...
+                    {t("Searching for results...", "Hledáme výsledky…")}
                   </p>
                 </div>
               ) : searchResults.length > 0 || personResults.length > 0 ? (
@@ -1012,7 +1062,7 @@ export function Navigation() {
                   {personResults.length > 0 && (
                     <div className="mt-8">
                       <h3 className="text-lg font-semibold text-white mb-4">
-                        People
+                        {t("People", "Osobnosti")}
                       </h3>
                       <PersonGrid
                         people={personResults}
@@ -1029,7 +1079,9 @@ export function Navigation() {
                       className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
                     >
                       <Search size={16} aria-hidden="true" />
-                      See all results for “{searchQuery.trim()}”
+                      {locale === "cs"
+                        ? `Zobrazit všechny výsledky pro „${searchQuery.trim()}“`
+                        : `See all results for “${searchQuery.trim()}”`}
                     </button>
                   </div>
                 </div>
@@ -1040,7 +1092,10 @@ export function Navigation() {
                   aria-live="polite"
                 >
                   <p className="text-gray-400 text-lg">
-                    No results found. Try a different search term.
+                    {t(
+                      "No results found. Try a different search term.",
+                      "Nic jsme nenašli. Zkuste jiný hledaný výraz.",
+                    )}
                   </p>
                 </div>
               ) : null}

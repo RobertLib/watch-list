@@ -6,6 +6,7 @@ import { MediaSection } from "./MediaSection";
 import { SnapshotAwareLoadMore, type SnapshotState } from "./AsyncDiscoverySection";
 import { convertTVShowToMediaItem } from "@/lib/media-converters";
 import { MAX_TMDB_PAGE, sanitizePage } from "@/lib/discover-filters";
+import { useT } from "@/i18n/LocaleProvider";
 
 interface PaginatedTVSectionProps {
   title: string;
@@ -33,6 +34,7 @@ export function PaginatedTVSection({
     Math.min(initialTotalPages, MAX_TMDB_PAGE),
   );
   const hasNextPage = currentPage < totalPages;
+  const t = useT();
 
   const loadMore = async () => {
     if (currentPage >= totalPages) {
@@ -65,11 +67,11 @@ export function PaginatedTVSection({
         title={title}
         items={mediaItems}
         size="medium"
-        emptyMessage="No TV shows found."
+        emptyMessage={t("No TV shows found.", "Nenašli jsme žádné seriály.")}
       />
       {hasNextPage && tvShows.length > 0 && (
         <SnapshotAwareLoadMore snapshot={snapshot} onLoadMore={loadMore}>
-          Load More TV Shows
+          {t("Load More TV Shows", "Načíst další seriály")}
         </SnapshotAwareLoadMore>
       )}
     </div>

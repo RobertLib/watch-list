@@ -1,3 +1,5 @@
+import type { Locale } from "@/i18n/locale";
+
 /**
  * Complete list of supported regions from TMDB API
  */
@@ -299,6 +301,254 @@ export const REGIONS_DATA: RegionData[] = [
 ];
 
 /**
+ * Every region's name in Czech, as CLDR spells it (`Intl.DisplayNames` with
+ * `cs`, written out once). Static rather than computed in the page: the build
+ * and the browser can carry different CLDR versions, and a name that differs
+ * between the prerender and the hydration is a mismatch.
+ */
+const REGION_NAMES_CS: Record<string, string> = {
+  AD: "Andorra",
+  AE: "Spojené arabské emiráty",
+  AF: "Afghánistán",
+  AG: "Antigua a Barbuda",
+  AI: "Anguilla",
+  AL: "Albánie",
+  AM: "Arménie",
+  AO: "Angola",
+  AR: "Argentina",
+  AS: "Americká Samoa",
+  AT: "Rakousko",
+  AU: "Austrálie",
+  AW: "Aruba",
+  AZ: "Ázerbájdžán",
+  BA: "Bosna a Hercegovina",
+  BB: "Barbados",
+  BD: "Bangladéš",
+  BE: "Belgie",
+  BF: "Burkina Faso",
+  BG: "Bulharsko",
+  BH: "Bahrajn",
+  BI: "Burundi",
+  BJ: "Benin",
+  BM: "Bermudy",
+  BN: "Brunej",
+  BO: "Bolívie",
+  BR: "Brazílie",
+  BS: "Bahamy",
+  BT: "Bhútán",
+  BW: "Botswana",
+  BY: "Bělorusko",
+  BZ: "Belize",
+  CA: "Kanada",
+  CD: "Kongo – Kinshasa",
+  CF: "Středoafrická republika",
+  CG: "Kongo – Brazzaville",
+  CH: "Švýcarsko",
+  CI: "Pobřeží slonoviny",
+  CK: "Cookovy ostrovy",
+  CL: "Chile",
+  CM: "Kamerun",
+  CN: "Čína",
+  CO: "Kolumbie",
+  CR: "Kostarika",
+  CU: "Kuba",
+  CV: "Kapverdy",
+  CY: "Kypr",
+  CZ: "Česko",
+  DE: "Německo",
+  DJ: "Džibutsko",
+  DK: "Dánsko",
+  DM: "Dominika",
+  DO: "Dominikánská republika",
+  DZ: "Alžírsko",
+  EC: "Ekvádor",
+  EE: "Estonsko",
+  EG: "Egypt",
+  EH: "Západní Sahara",
+  ER: "Eritrea",
+  ES: "Španělsko",
+  ET: "Etiopie",
+  FI: "Finsko",
+  FJ: "Fidži",
+  FK: "Falklandské ostrovy",
+  FM: "Mikronésie",
+  FO: "Faerské ostrovy",
+  FR: "Francie",
+  GA: "Gabon",
+  GB: "Spojené království",
+  GD: "Grenada",
+  GE: "Gruzie",
+  GF: "Francouzská Guyana",
+  GH: "Ghana",
+  GI: "Gibraltar",
+  GL: "Grónsko",
+  GM: "Gambie",
+  GN: "Guinea",
+  GP: "Guadeloupe",
+  GQ: "Rovníková Guinea",
+  GR: "Řecko",
+  GT: "Guatemala",
+  GU: "Guam",
+  GW: "Guinea-Bissau",
+  GY: "Guyana",
+  HK: "Hongkong – ZAO Číny",
+  HN: "Honduras",
+  HR: "Chorvatsko",
+  HT: "Haiti",
+  HU: "Maďarsko",
+  ID: "Indonésie",
+  IE: "Irsko",
+  IL: "Izrael",
+  IN: "Indie",
+  IQ: "Irák",
+  IR: "Írán",
+  IS: "Island",
+  IT: "Itálie",
+  JM: "Jamajka",
+  JO: "Jordánsko",
+  JP: "Japonsko",
+  KE: "Keňa",
+  KG: "Kyrgyzstán",
+  KH: "Kambodža",
+  KI: "Kiribati",
+  KM: "Komory",
+  KN: "Svatý Kryštof a Nevis",
+  KP: "Severní Korea",
+  KR: "Jižní Korea",
+  KW: "Kuvajt",
+  KY: "Kajmanské ostrovy",
+  KZ: "Kazachstán",
+  LA: "Laos",
+  LB: "Libanon",
+  LC: "Svatá Lucie",
+  LI: "Lichtenštejnsko",
+  LK: "Srí Lanka",
+  LR: "Libérie",
+  LS: "Lesotho",
+  LT: "Litva",
+  LU: "Lucembursko",
+  LV: "Lotyšsko",
+  LY: "Libye",
+  MA: "Maroko",
+  MC: "Monako",
+  MD: "Moldavsko",
+  ME: "Černá Hora",
+  MG: "Madagaskar",
+  MH: "Marshallovy ostrovy",
+  MK: "Severní Makedonie",
+  ML: "Mali",
+  MM: "Myanmar (Barma)",
+  MN: "Mongolsko",
+  MO: "Macao – ZAO Číny",
+  MP: "Severní Mariany",
+  MQ: "Martinik",
+  MR: "Mauritánie",
+  MS: "Montserrat",
+  MT: "Malta",
+  MU: "Mauricius",
+  MV: "Maledivy",
+  MW: "Malawi",
+  MX: "Mexiko",
+  MY: "Malajsie",
+  MZ: "Mosambik",
+  NA: "Namibie",
+  NC: "Nová Kaledonie",
+  NE: "Niger",
+  NF: "Norfolk",
+  NG: "Nigérie",
+  NI: "Nikaragua",
+  NL: "Nizozemsko",
+  NO: "Norsko",
+  NP: "Nepál",
+  NR: "Nauru",
+  NU: "Niue",
+  NZ: "Nový Zéland",
+  OM: "Omán",
+  PA: "Panama",
+  PE: "Peru",
+  PF: "Francouzská Polynésie",
+  PG: "Papua-Nová Guinea",
+  PH: "Filipíny",
+  PK: "Pákistán",
+  PL: "Polsko",
+  PM: "Saint-Pierre a Miquelon",
+  PN: "Pitcairnovy ostrovy",
+  PR: "Portoriko",
+  PS: "Palestinská území",
+  PT: "Portugalsko",
+  PW: "Palau",
+  PY: "Paraguay",
+  QA: "Katar",
+  RE: "Réunion",
+  RO: "Rumunsko",
+  RS: "Srbsko",
+  RU: "Rusko",
+  RW: "Rwanda",
+  SA: "Saúdská Arábie",
+  SB: "Šalamounovy ostrovy",
+  SC: "Seychely",
+  SD: "Súdán",
+  SE: "Švédsko",
+  SG: "Singapur",
+  SH: "Svatá Helena",
+  SI: "Slovinsko",
+  SK: "Slovensko",
+  SL: "Sierra Leone",
+  SM: "San Marino",
+  SN: "Senegal",
+  SO: "Somálsko",
+  SR: "Surinam",
+  SS: "Jižní Súdán",
+  ST: "Svatý Tomáš a Princův ostrov",
+  SV: "Salvador",
+  SY: "Sýrie",
+  SZ: "Eswatini",
+  TC: "Turks a Caicos",
+  TD: "Čad",
+  TF: "Francouzská jižní území",
+  TG: "Togo",
+  TH: "Thajsko",
+  TJ: "Tádžikistán",
+  TK: "Tokelau",
+  TL: "Východní Timor",
+  TM: "Turkmenistán",
+  TN: "Tunisko",
+  TO: "Tonga",
+  TR: "Turecko",
+  TT: "Trinidad a Tobago",
+  TV: "Tuvalu",
+  TW: "Tchaj-wan",
+  TZ: "Tanzanie",
+  UA: "Ukrajina",
+  UG: "Uganda",
+  US: "Spojené státy",
+  UY: "Uruguay",
+  UZ: "Uzbekistán",
+  VA: "Vatikán",
+  VC: "Svatý Vincenc a Grenadiny",
+  VE: "Venezuela",
+  VG: "Britské Panenské ostrovy",
+  VI: "Americké Panenské ostrovy",
+  VN: "Vietnam",
+  VU: "Vanuatu",
+  WF: "Wallis a Futuna",
+  WS: "Samoa",
+  XK: "Kosovo",
+  YE: "Jemen",
+  YT: "Mayotte",
+  ZA: "Jihoafrická republika",
+  ZM: "Zambie",
+  ZW: "Zimbabwe",
+};
+
+/** A region with its `name` in `locale`; `nativeName` stays the country's own. */
+export function localizeRegion(region: RegionData, locale: Locale): RegionData {
+  if (locale === "en") return region;
+  const name = REGION_NAMES_CS[region.code];
+  return name ? { ...region, name } : region;
+}
+
+/**
  * Get all valid region codes
  */
 export function getAllRegionCodes(): string[] {
@@ -315,8 +565,12 @@ export function isValidRegionCode(code: string): boolean {
 /**
  * Get region data by code
  */
-export function getRegionDataByCode(code: string): RegionData | undefined {
-  return REGIONS_DATA.find((region) => region.code === code);
+export function getRegionDataByCode(
+  code: string,
+  locale: Locale = "en",
+): RegionData | undefined {
+  const region = REGIONS_DATA.find((entry) => entry.code === code);
+  return region && localizeRegion(region, locale);
 }
 
 /**
@@ -328,17 +582,20 @@ export function getRegionDataByCode(code: string): RegionData | undefined {
  * region `<select>` as a hydration mismatch. The app renders in English
  * (`<html lang="en">`), so "en" is the ordering both sides should produce.
  */
-export function getSortedRegions(): RegionData[] {
-  return [...REGIONS_DATA].sort((a, b) =>
-    (a.name || "").localeCompare(b.name || "", "en"),
+export function getSortedRegions(locale: Locale = "en"): RegionData[] {
+  // Czech sorts by its own alphabet – "Česko" after "Cyprus", not after "Ca".
+  return REGIONS_DATA.map((region) => localizeRegion(region, locale)).sort((a, b) =>
+    (a.name || "").localeCompare(b.name || "", locale),
   );
 }
 
 /**
  * Get popular/common regions to show at the top
  */
-export function getPopularRegions(): RegionData[] {
-  const popularCodes = [
+export function getPopularRegions(locale: Locale = "en"): RegionData[] {
+  // The Czech site's visitors are likeliest to want their own region and
+  // their neighbours', so those lead its list.
+  const popularCodes = locale === "cs" ? ["CZ", "SK", "DE", "AT", "PL", "GB", "US"] : [
     "US",
     "GB",
     "DE",
@@ -355,6 +612,6 @@ export function getPopularRegions(): RegionData[] {
     "CZ",
   ];
   return popularCodes
-    .map((code) => getRegionDataByCode(code))
+    .map((code) => getRegionDataByCode(code, locale))
     .filter((region): region is RegionData => region !== undefined);
 }

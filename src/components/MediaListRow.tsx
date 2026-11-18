@@ -2,7 +2,7 @@
 
 import React from "react";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { Star, Calendar, Play } from "lucide-react";
 import { MediaItem } from "@/types/tmdb";
 import { getImageUrl } from "@/lib/tmdb-image";
@@ -15,6 +15,8 @@ import { useVideoOverlay } from "@/hooks/useVideoOverlay";
 import { cn, createSlug } from "@/lib/utils";
 import { releaseYear } from "@/lib/dates";
 import { mediaHref } from "@/lib/routes";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatVoteAverage } from "./MediaCard";
 
 interface MediaListRowProps {
   item: MediaItem;
@@ -31,12 +33,15 @@ interface MediaListRowProps {
 export function MediaListRow({ item, className }: MediaListRowProps) {
   const { isOpen, video, isLoading, openVideo, closeVideo } = useVideoOverlay();
   const { isWatched } = useWatched();
+  const locale = useLocale();
+  const t = useT();
 
   // The thumbnail is 64–80px wide, so w185 covers a 2x screen; the full w500
   // poster this used to fetch is seven times the pixels, once per row.
   const imageUrl = getImageUrl(item.poster_path, "w185");
   const year = releaseYear(item.release_date);
   const watched = isWatched(item.id, item.media_type);
+  const rating = formatVoteAverage(item.vote_average, locale);
   const detailUrl = mediaHref(item.media_type, createSlug(item.title, item.id));
 
   const handlePlayClick = async (e: React.MouseEvent) => {
@@ -58,9 +63,9 @@ export function MediaListRow({ item, className }: MediaListRowProps) {
           href={detailUrl}
           prefetch={false}
           className="block rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-black"
-          aria-label={`View details for ${item.title}${
+          aria-label={`${t("View details for", "Podrobnosti:")} ${item.title}${
             year ? ` (${year})` : ""
-          }${watched ? " – watched" : ""}`}
+          }${watched ? t(" – watched", " – zhlédnuto") : ""}`}
         >
           <article
             className={cn(
@@ -72,7 +77,7 @@ export function MediaListRow({ item, className }: MediaListRowProps) {
             <div className="relative w-16 sm:w-20 shrink-0 aspect-2/3 overflow-hidden rounded-md bg-gray-800">
               <Image
                 src={imageUrl}
-                alt={`Poster for ${item.title}`}
+                alt={`${t("Poster for", "Plakát:")} ${item.title}`}
                 fill
                 className="object-cover"
                 sizes="80px"
@@ -85,7 +90,11 @@ export function MediaListRow({ item, className }: MediaListRowProps) {
               </h3>
 
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400">
-                <span>{item.media_type === "tv" ? "TV show" : "Movie"}</span>
+                <span>
+                  {item.media_type === "tv"
+                    ? t("TV show", "Seriál")
+                    : t("Movie", "Film")}
+                </span>
 
                 {year && (
                   <span className="flex items-center gap-1">
@@ -97,15 +106,16 @@ export function MediaListRow({ item, className }: MediaListRowProps) {
                 <span
                   className="flex items-center gap-1"
                   role="img"
-                  aria-label={`Rating: ${item.vote_average?.toFixed(
-                    1,
-                  )} out of 10 stars`}
+                  aria-label={t(
+                    `Rating: ${rating} out of 10 stars`,
+                    `Hodnocení: ${rating} z 10 hvězdiček`,
+                  )}
                 >
                   <Star
                     className="w-3 h-3 fill-yellow-400 text-yellow-400"
                     aria-hidden="true"
                   />
-                  {item.vote_average?.toFixed(1)}
+                  {rating}
                 </span>
               </div>
 
@@ -143,8 +153,8 @@ export function MediaListRow({ item, className }: MediaListRowProps) {
             onClick={handlePlayClick}
             disabled={isLoading}
             className="bg-black/70 backdrop-blur-sm rounded-full p-2 transition-all duration-300 hover:bg-black/80 hover:scale-110 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-transparent"
-            aria-label={`Play trailer for ${item.title}`}
-            title="Play trailer"
+            aria-label={`${t("Play trailer for", "Přehrát trailer:")} ${item.title}`}
+            title={t("Play trailer", "Přehrát trailer")}
           >
             <Play className="w-4 h-4 text-white" aria-hidden="true" />
           </button>

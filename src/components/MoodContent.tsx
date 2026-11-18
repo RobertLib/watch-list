@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, type ReactNode } from "react";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { MediaSection } from "@/components/MediaSection";
@@ -10,20 +10,25 @@ import { LoadFailureNotice } from "@/components/LoadFailureNotice";
 import { SnapshotRefreshNotice } from "@/components/SnapshotRefreshNotice";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { useSettingsKey } from "@/hooks/useSettings";
-import { MOODS, type Mood } from "@/lib/moods";
+import { MOODS, localizeMood, type Mood } from "@/lib/moods";
 import { MAX_MOOD_PAGE, loadMoodPicks, type MoodPicksPage } from "@/lib/mood-data";
 import {
   STREAMING_LANDING_PLATFORMS,
+  onPlatform,
   type StreamingPlatform,
 } from "@/lib/streaming-landing";
 import { moodHref } from "@/lib/routes";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 
 function parsePage(raw: string | null) {
   return Math.max(1, Math.min(parseInt(raw ?? "1", 10) || 1, MAX_MOOD_PAGE));
 }
 
 interface MoodContentProps {
-  /** Resolved by the page from `moods.ts`; the path names it. */
+  /**
+   * Resolved by the page from `moods.ts` (the path names it), and already in
+   * the page's language – see `localizeMood`.
+   */
   mood: Mood;
   /** Set on a platform landing – `/mood/christmas/netflix`. */
   platform?: StreamingPlatform;
@@ -72,6 +77,7 @@ function MoodSkeleton({
 }
 
 function MoodPicks({ mood, platform, snapshot }: MoodContentProps) {
+  const t = useT();
   const searchParams = useSearchParams();
   const router = useRouter();
   const settingsKey = useSettingsKey();
@@ -95,7 +101,12 @@ function MoodPicks({ mood, platform, snapshot }: MoodContentProps) {
   }, [correctionHref, router]);
 
   if (error) {
-    return <LoadFailureNotice title="Could not load this mood" onRetry={reload} />;
+    return (
+      <LoadFailureNotice
+        title={t("Could not load this mood", "Tuto náladu se nepodařilo načíst")}
+        onRetry={reload}
+      />
+    );
   }
 
   if (isLoading || !data || correctionHref) {
@@ -115,7 +126,10 @@ function MoodPicks({ mood, platform, snapshot }: MoodContentProps) {
           // services) are what did not arrive.
           <SnapshotRefreshNotice
             className="mb-8"
-            message="Showing saved picks – the ones for your region and services could not be loaded."
+            message={t(
+              "Showing saved picks – the ones for your region and services could not be loaded.",
+              "Zobrazujeme uložený výběr – tipy pro váš region a vaše služby se nepodařilo načíst.",
+            )}
             onRetry={reload}
             isRetrying={isRetrying}
           />
@@ -143,6 +157,8 @@ function MoodHeading({
   platform?: StreamingPlatform;
   page: number;
 }) {
+  const t = useT();
+  const locale = useLocale();
   return (
     <div className="mb-8">
       <Link
@@ -151,7 +167,9 @@ function MoodHeading({
         className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-white transition-colors mb-4"
       >
         <ArrowLeft className="w-4 h-4" aria-hidden="true" />
-        {platform ? `${mood.label}, on every service` : "All moods"}
+        {platform
+          ? t(`${mood.label}, on every service`, `${mood.label} – na všech službách`)
+          : t("All moods", "Všechny nálady")}
       </Link>
       <p className="text-sm font-semibold uppercase tracking-wide text-gray-400 mb-2">
         <span aria-hidden="true" className="mr-1.5">
@@ -161,16 +179,25 @@ function MoodHeading({
       </p>
       <h1 className="text-4xl font-bold text-white mb-3">
         {mood.title}
-        {platform && ` on ${platform.name}`}
+        {platform && ` ${onPlatform(platform, locale)}`}
       </h1>
       <p className="text-gray-400 text-lg max-w-2xl">
         {mood.description}
-        {page > 1 && ` – page ${page}`}
+        {page > 1 && t(` – page ${page}`, ` – strana ${page}`)}
       </p>
       {platform && (
         <p className="text-gray-500 text-sm mt-2 max-w-2xl">
-          Only what {platform.name} is streaming in your region right now,
-          best-rated first.
+          {locale === "cs" ? (
+            <>
+              Jen to, co je na službě {platform.name} ve vašem regionu právě
+              k dispozici, od nejlépe hodnocených.
+            </>
+          ) : (
+            <>
+              Only what {platform.name} is streaming in your region right now,
+              best-rated first.
+            </>
+          )}
         </p>
       )}
     </div>
@@ -194,17 +221,25 @@ function MoodPicksView({
   /** Shown under the heading: the snapshot's refresh failing, for one. */
   notice?: ReactNode;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const { movies, shows, moviesFailed, showsFailed, totalPages } = picks;
   const nothingHere = platform
-    ? `Nothing in this mood is streaming on ${platform.name} in your region right now.`
-    : "Nothing came back for this one. Try another mood.";
+    ? t(
+        `Nothing in this mood is streaming on ${platform.name} in your region right now.`,
+        `Na službě ${platform.name} teď ve vašem regionu z této nálady nic neběží.`,
+      )
+    : t(
+        "Nothing came back for this one. Try another mood.",
+        "Pro tuto náladu jsme nic nenašli. Zkuste jinou.",
+      );
 
   // The others in the same section of `/moods`, not all sixty: a list of
   // everything is a sitemap, and the neighbours are what someone who came for
   // heists might also be in the mood for.
   const neighbours = MOODS.filter(
     (other) => other.group === mood.group && other.slug !== mood.slug,
-  );
+  ).map((other) => localizeMood(other, locale));
 
   return (
     <div className="container mx-auto px-6 lg:px-8 py-8">
@@ -214,24 +249,36 @@ function MoodPicksView({
       {/* A half the mood does not have is not a half that came back empty. */}
       {mood.movie &&
         (moviesFailed ? (
-          <LoadFailureNotice title="Could not load films" onRetry={onRetry} compact />
+          <LoadFailureNotice
+            title={t("Could not load films", "Filmy se nepodařilo načíst")}
+            onRetry={onRetry}
+            compact
+          />
         ) : (
           <MediaSection
-            title={shows.length > 0 ? "Films" : ""}
+            title={shows.length > 0 ? t("Films", "Filmy") : ""}
             items={movies}
             size="medium"
             showViewToggle
-            emptyMessage={shows.length > 0 ? "No films on this page." : nothingHere}
+            emptyMessage={
+              shows.length > 0
+                ? t("No films on this page.", "Na této stránce nejsou žádné filmy.")
+                : nothingHere
+            }
           />
         ))}
 
       {showsFailed ? (
-        <LoadFailureNotice title="Could not load series" onRetry={onRetry} compact />
+        <LoadFailureNotice
+          title={t("Could not load series", "Seriály se nepodařilo načíst")}
+          onRetry={onRetry}
+          compact
+        />
       ) : mood.movie ? (
         shows.length > 0 && (
           <div className="mt-12">
             <MediaSection
-              title="Series"
+              title={t("Series", "Seriály")}
               items={shows}
               size="medium"
               emptyMessage=""
@@ -252,7 +299,7 @@ function MoodPicksView({
 
       {totalPages > 1 && (
         <nav
-          aria-label="Pagination"
+          aria-label={t("Pagination", "Stránkování")}
           className="flex items-center justify-center gap-4 mt-12"
         >
           {page > 1 && (
@@ -261,11 +308,11 @@ function MoodPicksView({
               prefetch={false}
               className="px-5 py-2 rounded-lg bg-gray-800 text-white hover:bg-gray-700 transition-colors"
             >
-              ← Previous
+              {t("← Previous", "← Předchozí")}
             </Link>
           )}
           <span className="text-gray-400 text-sm">
-            Page {page} of {totalPages}
+            {t(`Page ${page} of ${totalPages}`, `Strana ${page} z ${totalPages}`)}
           </span>
           {page < totalPages && (
             <Link
@@ -273,7 +320,7 @@ function MoodPicksView({
               prefetch={false}
               className="px-5 py-2 rounded-lg bg-gray-800 text-white hover:bg-gray-700 transition-colors"
             >
-              Next →
+              {t("Next →", "Další →")}
             </Link>
           )}
         </nav>
@@ -284,8 +331,11 @@ function MoodPicksView({
         <section className="mt-16 border-t border-gray-800 pt-8">
           <h2 className="text-xl font-semibold text-white mb-4">
             {platform
-              ? `${mood.title} on other platforms`
-              : `${mood.title} on your streaming service`}
+              ? t(`${mood.title} on other platforms`, `${mood.title} na jiných službách`)
+              : t(
+                  `${mood.title} on your streaming service`,
+                  `${mood.title} na vaší streamovací službě`,
+                )}
           </h2>
           <ul className="flex flex-wrap gap-2">
             {STREAMING_LANDING_PLATFORMS.filter(
@@ -311,7 +361,7 @@ function MoodPicksView({
         }
       >
         <h2 className="text-xl font-semibold text-white mb-4">
-          Another kind of evening
+          {t("Another kind of evening", "Jiný typ večera")}
         </h2>
         <ul className="flex flex-wrap gap-2">
           {neighbours.map((other) => (
@@ -332,7 +382,7 @@ function MoodPicksView({
               prefetch={false}
               className="inline-flex items-center px-4 py-2 rounded-full border border-white/10 hover:bg-white/10 text-sm text-gray-300 hover:text-white transition-colors"
             >
-              All moods →
+              {t("All moods →", "Všechny nálady →")}
             </Link>
           </li>
         </ul>

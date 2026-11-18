@@ -6,6 +6,8 @@ import { Play } from "lucide-react";
 import { VideoOverlay } from "@/components/VideoOverlay";
 import { isPlayableYouTubeVideo } from "@/lib/trailer";
 import type { Video } from "@/types/tmdb";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount } from "@/i18n/format";
 
 interface MediaVideosProps {
   videos: Video[];
@@ -29,6 +31,20 @@ const TYPE_BADGE_COLOR: Record<string, string> = {
   Bloopers: "bg-green-600",
 };
 
+/**
+ * TMDB's video types are English in every language, so the badge is
+ * translated here. A type not listed keeps TMDB's word.
+ */
+const TYPE_LABEL_CS: Record<string, string> = {
+  Trailer: "Trailer",
+  Teaser: "Teaser",
+  Clip: "Ukázka",
+  "Behind the Scenes": "Ze zákulisí",
+  Featurette: "Z natáčení",
+  Bloopers: "Přebrepty",
+  "Opening Credits": "Úvodní titulky",
+};
+
 function sortVideos(videos: Video[]): Video[] {
   return [...videos]
     // Only what the shared player can embed, and whose key is safe to put in
@@ -48,6 +64,8 @@ function sortVideos(videos: Video[]): Video[] {
 const INITIAL_COUNT = 6;
 
 export function MediaVideos({ videos }: MediaVideosProps) {
+  const locale = useLocale();
+  const t = useT();
   const [active, setActive] = useState<Video | null>(null);
   const [showAll, setShowAll] = useState(false);
 
@@ -62,7 +80,9 @@ export function MediaVideos({ videos }: MediaVideosProps) {
 
   return (
     <div className="mt-8">
-      <h2 className="text-2xl font-bold mb-4 text-white">Videos</h2>
+      <h2 className="text-2xl font-bold mb-4 text-white">
+        {t("Videos", "Videa")}
+      </h2>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {visible.map((video) => {
@@ -94,7 +114,9 @@ export function MediaVideos({ videos }: MediaVideosProps) {
                 <span
                   className={`absolute top-2 left-2 text-white text-xs font-medium px-2 py-0.5 rounded ${badgeColor}`}
                 >
-                  {video.type}
+                  {locale === "cs"
+                    ? (TYPE_LABEL_CS[video.type] ?? video.type)
+                    : video.type}
                 </span>
               </div>
               {/* Title */}
@@ -111,7 +133,15 @@ export function MediaVideos({ videos }: MediaVideosProps) {
           onClick={() => setShowAll((v) => !v)}
           className="mt-3 text-blue-400 text-sm hover:underline"
         >
-          {showAll ? "Show fewer" : `Show all ${sorted.length} videos`}
+          {showAll
+            ? t("Show fewer", "Zobrazit méně")
+            : locale === "cs"
+              ? // Only shown past INITIAL_COUNT, so always "všech" + genitive.
+                `Zobrazit všech ${formatCount(sorted.length, locale, {
+                  en: ["video", "videos"],
+                  cs: ["video", "videa", "videí"],
+                })}`
+              : `Show all ${sorted.length} videos`}
         </button>
       )}
 

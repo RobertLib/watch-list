@@ -4,14 +4,14 @@ import { LayoutGrid, List } from "lucide-react";
 import { useViewMode } from "@/hooks/useViewMode";
 import { cn } from "@/lib/utils";
 import type { ViewMode } from "@/lib/view-mode";
+import { useT } from "@/i18n/LocaleProvider";
 
 const OPTIONS: {
   mode: ViewMode;
-  label: string;
   icon: typeof LayoutGrid;
 }[] = [
-  { mode: "card", label: "Cards", icon: LayoutGrid },
-  { mode: "list", label: "List", icon: List },
+  { mode: "card", icon: LayoutGrid },
+  { mode: "list", icon: List },
 ];
 
 interface ViewModeToggleProps {
@@ -24,25 +24,32 @@ interface ViewModeToggleProps {
  */
 export function ViewModeToggle({ className }: ViewModeToggleProps) {
   const { viewMode, setViewMode } = useViewMode();
+  const t = useT();
 
   return (
     <div
       role="group"
-      aria-label="Layout"
+      aria-label={t("Layout", "Rozložení")}
       className={cn(
         "inline-flex items-center gap-1 rounded-lg bg-gray-800 p-1",
         className,
       )}
     >
-      {OPTIONS.map(({ mode, label, icon: Icon }) => {
+      {OPTIONS.map(({ mode, icon: Icon }) => {
         const isActive = mode === viewMode;
+        const label =
+          mode === "card" ? t("Cards", "Karty") : t("List", "Seznam");
+        const title =
+          mode === "card"
+            ? t("Cards view", "Zobrazit jako karty")
+            : t("List view", "Zobrazit jako seznam");
 
         return (
           <button
             key={mode}
             onClick={() => setViewMode(mode)}
             aria-pressed={isActive}
-            title={`${label} view`}
+            title={title}
             className={cn(
               "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
               isActive

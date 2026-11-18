@@ -16,6 +16,7 @@ import { throwIfAllRequestsFailed } from "./tmdb-results";
 import { todayLocal } from "./dates";
 import { knownReleaseDate, type TonightCandidate } from "./tonight";
 import type { AvailabilityRef } from "./watchlist-availability";
+import { currentLocale, t } from "@/i18n/locale";
 
 /**
  * Resolve saved titles into the facts a "what tonight" decision needs.
@@ -198,7 +199,9 @@ async function getTonightCandidatesBatch(
     if ((releaseDate && releaseDate > today) ||
         (!releaseDate &&
          ["Planned", "In Production"].includes(details.status))) return;
-    const title = details.name || `Series ${id}`;
+    // The fallback is only for a series TMDB has no name for, in the page's
+    // language like every other word on it.
+    const title = details.name || t(currentLocale(), `Series ${id}`, `Seriál ${id}`);
     const found = availability.byKey[mediaItemKey(id, "tv")];
 
     candidates.push({

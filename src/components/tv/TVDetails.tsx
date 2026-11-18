@@ -2,6 +2,9 @@ import Image from "next/image";
 import { tmdbApi } from "@/lib/tmdb";
 import { formatTmdbDate } from "@/lib/dates";
 import type { TVShowDetails } from "@/types/tmdb";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { getRegionDataByCode } from "@/lib/regions-data";
+import { languageLabel, mediaStatusLabel } from "@/lib/media-converters";
 
 interface TVDetailsProps {
   details: TVShowDetails;
@@ -9,8 +12,9 @@ interface TVDetailsProps {
   certificationRegion?: string;
 }
 
-// The short "4/17/2011" form these two rows have always used – spelled out
-// because `formatTmdbDate` defaults to the long one the detail pages want.
+// The short "4/17/2011" form these two rows have always used ("17. 4. 2011"
+// in Czech) – spelled out because `formatTmdbDate` defaults to the long one the
+// detail pages want.
 const NUMERIC_DATE: Intl.DateTimeFormatOptions = {
   year: "numeric",
   month: "numeric",
@@ -22,31 +26,57 @@ function TVDetailsContent({
   certification,
   certificationRegion,
 }: TVDetailsProps) {
+  const locale = useLocale();
+  const t = useT();
   const imdbId = details.external_ids?.imdb_id;
+
+  // TMDB names languages and countries in English, or in the language's own
+  // name, whatever it is asked in; a Czech page looks them up by code.
+  const languages = (details.spoken_languages ?? [])
+    .map((lang) => languageLabel(lang.iso_639_1, lang.name, locale))
+    .join(", ");
+  const countries = (details.production_countries ?? [])
+    .map((c) =>
+      locale === "en"
+        ? c.name
+        : (getRegionDataByCode(c.iso_3166_1, locale)?.name ?? c.name),
+    )
+    .join(", ");
 
   return (
     <div className="bg-gray-900 rounded-lg p-6 shadow border border-gray-800">
-      <h3 className="text-xl font-bold mb-4 text-white">TV Show Facts</h3>
+      <h3 className="text-xl font-bold mb-4 text-white">
+        {t("TV Show Facts", "O seriálu")}
+      </h3>
       <div className="space-y-3">
         <div>
-          <span className="font-semibold text-gray-300">Original Name:</span>
+          <span className="font-semibold text-gray-300">
+            {t("Original Name:", "Původní název:")}
+          </span>
           <p className="text-white">{details.original_name}</p>
         </div>
 
         <div>
-          <span className="font-semibold text-gray-300">Status:</span>
-          <p className="text-white">{details.status}</p>
+          <span className="font-semibold text-gray-300">
+            {t("Status:", "Stav:")}
+          </span>
+          <p className="text-white">{mediaStatusLabel(details.status, locale)}</p>
         </div>
 
         <div>
-          <span className="font-semibold text-gray-300">In Production:</span>
-          <p className="text-white">{details.in_production ? "Yes" : "No"}</p>
+          <span className="font-semibold text-gray-300">
+            {t("In Production:", "Ve výrobě:")}
+          </span>
+          <p className="text-white">
+            {details.in_production ? t("Yes", "Ano") : t("No", "Ne")}
+          </p>
         </div>
 
         {certification && (
           <div>
             <span className="font-semibold text-gray-300">
-              Age Rating{certificationRegion ? ` (${certificationRegion})` : ""}:
+              {t("Age Rating", "Přístupnost")}
+              {certificationRegion ? ` (${certificationRegion})` : ""}:
             </span>
             <p className="text-white">
               <span className="inline-block border border-gray-400 text-gray-200 text-sm px-2 py-0.5 rounded mt-1">
@@ -57,10 +87,15 @@ function TVDetailsContent({
         )}
 
         <div>
-          <span className="font-semibold text-gray-300">Language:</span>
+          <span className="font-semibold text-gray-300">
+            {t("Language:", "Jazyk:")}
+          </span>
           <p className="text-white">
-            {details.spoken_languages?.map((lang) => lang.name).join(", ") ||
-              "N/A"}
+            {languages
+              ? locale === "cs"
+                ? capitalize(languages)
+                : languages
+              : t("N/A", "Neuvedeno")}
           </p>
         </div>
 
@@ -68,33 +103,37 @@ function TVDetailsContent({
           details.production_countries.length > 0 && (
             <div>
               <span className="font-semibold text-gray-300">
-                Country of Origin:
+                {t("Country of Origin:", "Země původu:")}
               </span>
-              <p className="text-white">
-                {details.production_countries.map((c) => c.name).join(", ")}
-              </p>
+              <p className="text-white">{countries}</p>
             </div>
           )}
 
         <div>
-          <span className="font-semibold text-gray-300">First Episode:</span>
+          <span className="font-semibold text-gray-300">
+            {t("First Episode:", "První epizoda:")}
+          </span>
           <p className="text-white">
-            {formatTmdbDate(details.first_air_date, NUMERIC_DATE)}
+            {formatTmdbDate(details.first_air_date, NUMERIC_DATE, locale)}
           </p>
         </div>
 
         {details.last_air_date && (
           <div>
-            <span className="font-semibold text-gray-300">Last Episode:</span>
+            <span className="font-semibold text-gray-300">
+              {t("Last Episode:", "Poslední epizoda:")}
+            </span>
             <p className="text-white">
-              {formatTmdbDate(details.last_air_date, NUMERIC_DATE)}
+              {formatTmdbDate(details.last_air_date, NUMERIC_DATE, locale)}
             </p>
           </div>
         )}
 
         {details.networks && details.networks.length > 0 && (
           <div>
-            <span className="font-semibold text-gray-300">Networks:</span>
+            <span className="font-semibold text-gray-300">
+              {t("Networks:", "Stanice a platformy:")}
+            </span>
             <div className="mt-2 flex flex-wrap gap-3">
               {details.networks.map((network) => (
                 <div key={network.id} className="flex items-center gap-2">
@@ -121,7 +160,7 @@ function TVDetailsContent({
           details.production_companies.length > 0 && (
             <div>
               <span className="font-semibold text-gray-300">
-                Production Companies:
+                {t("Production Companies:", "Produkční společnosti:")}
               </span>
               <div className="mt-2 space-y-2">
                 {details.production_companies.map((company) => (
@@ -152,7 +191,7 @@ function TVDetailsContent({
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300"
             >
-              Official Website
+              {t("Official Website", "Oficiální web")}
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7zm-2 16H5V12H3v7c0 1.1.9 2 2 2h7v-2z" />
               </svg>
@@ -165,7 +204,7 @@ function TVDetailsContent({
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 text-yellow-400 hover:text-yellow-300"
             >
-              View on IMDb
+              {t("View on IMDb", "Zobrazit na IMDb")}
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7zm-2 16H5V12H3v7c0 1.1.9 2 2 2h7v-2z" />
               </svg>
@@ -175,6 +214,11 @@ function TVDetailsContent({
       </div>
     </div>
   );
+}
+
+/** "angličtina, francouzština" opens a line as "Angličtina, francouzština". */
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 export function TVDetails(props: TVDetailsProps) {

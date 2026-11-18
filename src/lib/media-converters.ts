@@ -7,6 +7,7 @@ import {
   WatchProvidersResponse,
 } from "@/types/tmdb";
 import { streamingProvidersFor } from "./watch-provider-availability";
+import type { Locale } from "@/i18n/locale";
 
 /**
  * A title's cast with one entry per person, in billing order.
@@ -128,3 +129,139 @@ export const convertTrendingToMediaItem = (item: TrendingItem): MediaItem => {
   // This should never happen, but provide fallback
   throw new Error("Unable to determine media type for trending item");
 };
+
+/**
+ * TMDB's production status of a film or a series, in Czech. TMDB sends it in
+ * English whatever language it is asked in. Neuter forms throughout ("Zrušeno",
+ * not "zrušen"), because the status stands on its own in a fact list and agrees
+ * with nothing; a status TMDB adds later is shown as it sends it.
+ */
+const STATUS_NAMES_CS: Record<string, string> = {
+  Rumored: "Zatím jen spekulace",
+  Planned: "Plánováno",
+  "In Production": "Ve výrobě",
+  "Post Production": "V postprodukci",
+  Released: "Vydáno",
+  Canceled: "Zrušeno",
+  "Returning Series": "Pokračuje",
+  Ended: "Ukončeno",
+  Pilot: "Pilotní díl",
+};
+
+export function mediaStatusLabel(status: string, locale: Locale = "en"): string {
+  return locale === "cs" ? (STATUS_NAMES_CS[status] ?? status) : status;
+}
+
+/**
+ * Languages in Czech, by ISO 639-1 code – CLDR's names, written out once for
+ * the same reason the region names are (`regions-data.ts`): `Intl.DisplayNames`
+ * answers from whichever CLDR the runtime carries, and a name that differs
+ * between the build's prerender and the browser's hydration is a mismatch.
+ * TMDB's own oddities are kept: `cn` is its code for Cantonese, `xx` for a
+ * title with no spoken language.
+ */
+const LANGUAGE_NAMES_CS: Record<string, string> = {
+  af: "afrikánština",
+  am: "amharština",
+  ar: "arabština",
+  az: "ázerbájdžánština",
+  be: "běloruština",
+  bg: "bulharština",
+  bn: "bengálština",
+  bo: "tibetština",
+  bs: "bosenština",
+  ca: "katalánština",
+  cn: "kantonština",
+  cs: "čeština",
+  cy: "velština",
+  da: "dánština",
+  de: "němčina",
+  el: "řečtina",
+  en: "angličtina",
+  eo: "esperanto",
+  es: "španělština",
+  et: "estonština",
+  eu: "baskičtina",
+  fa: "perština",
+  fi: "finština",
+  fr: "francouzština",
+  ga: "irština",
+  gl: "galicijština",
+  gu: "gudžarátština",
+  he: "hebrejština",
+  hi: "hindština",
+  hr: "chorvatština",
+  hu: "maďarština",
+  hy: "arménština",
+  id: "indonéština",
+  is: "islandština",
+  it: "italština",
+  ja: "japonština",
+  ka: "gruzínština",
+  kk: "kazaština",
+  km: "khmerština",
+  kn: "kannadština",
+  ko: "korejština",
+  ku: "kurdština",
+  ky: "kyrgyzština",
+  la: "latina",
+  lb: "lucemburština",
+  lo: "laoština",
+  lt: "litevština",
+  lv: "lotyština",
+  mk: "makedonština",
+  ml: "malajálamština",
+  mn: "mongolština",
+  mr: "maráthština",
+  ms: "malajština",
+  mt: "maltština",
+  my: "barmština",
+  nb: "norština (bokmål)",
+  ne: "nepálština",
+  nl: "nizozemština",
+  nn: "norština (nynorsk)",
+  no: "norština",
+  pa: "paňdžábština",
+  pl: "polština",
+  ps: "paštština",
+  pt: "portugalština",
+  ro: "rumunština",
+  ru: "ruština",
+  si: "sinhálština",
+  sk: "slovenština",
+  sl: "slovinština",
+  so: "somálština",
+  sq: "albánština",
+  sr: "srbština",
+  sv: "švédština",
+  sw: "svahilština",
+  ta: "tamilština",
+  te: "telugština",
+  tg: "tádžičtina",
+  th: "thajština",
+  tl: "tagalog",
+  tr: "turečtina",
+  uk: "ukrajinština",
+  ur: "urdština",
+  uz: "uzbečtina",
+  vi: "vietnamština",
+  xh: "xhoština",
+  xx: "bez jazyka",
+  yi: "jidiš",
+  yo: "jorubština",
+  zh: "čínština",
+  zu: "zuluština",
+};
+
+/**
+ * A language's name in the page's language. English keeps the name TMDB sent
+ * (`fallback`), as it always has; Czech looks the code up and falls back to
+ * that name only for a language the table above does not have.
+ */
+export function languageLabel(
+  code: string,
+  fallback: string,
+  locale: Locale = "en",
+): string {
+  return locale === "cs" ? (LANGUAGE_NAMES_CS[code] ?? fallback) : fallback;
+}

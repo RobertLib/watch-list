@@ -6,6 +6,7 @@ import { LoadFailureNotice } from "@/components/LoadFailureNotice";
 import { LoadMoreButton } from "@/components/LoadMoreButton";
 import { SnapshotRefreshNotice } from "@/components/SnapshotRefreshNotice";
 import { useAsyncData } from "@/hooks/useAsyncData";
+import { useT } from "@/i18n/LocaleProvider";
 
 interface DiscoveryPage<T> {
   results: T[];
@@ -54,6 +55,7 @@ export function AsyncDiscoverySection<T>({
     [loadKey],
     placeholder,
   );
+  const t = useT();
 
   if (isLoading) return <LoadingSection title={title} count={12} />;
 
@@ -62,8 +64,17 @@ export function AsyncDiscoverySection<T>({
       <section className="mb-12">
         <h2 className="text-2xl font-bold text-white mb-6">{title}</h2>
         <LoadFailureNotice
-          title={`Could not load ${title.toLowerCase()}`}
-          description="TMDB did not answer. Check your connection and try again. The other listings are still available."
+          // Czech cannot lower-case a title into a sentence the way English
+          // can – "Nejlépe hodnocené filmy" would need its own case – so the
+          // section is named as it is headed.
+          title={t(
+            `Could not load ${title.toLowerCase()}`,
+            `Sekci „${title}“ se nepodařilo načíst`,
+          )}
+          description={t(
+            "TMDB did not answer. Check your connection and try again. The other listings are still available.",
+            "TMDB neodpovídá. Zkontrolujte připojení a zkuste to znovu. Ostatní přehledy fungují dál.",
+          )}
           onRetry={reload}
           compact
         />
@@ -104,11 +115,16 @@ export function SnapshotAwareLoadMore({
   onLoadMore: () => Promise<void>;
   children: ReactNode;
 }) {
+  const t = useT();
+
   if (snapshot?.refreshFailed) {
     return (
       <SnapshotRefreshNotice
         className="mt-8 mb-12 mx-auto w-fit"
-        message="Showing a saved list – the one for your region could not be loaded."
+        message={t(
+          "Showing a saved list – the one for your region could not be loaded.",
+          "Zobrazujeme uložený výběr – ten pro váš region se nepodařilo načíst.",
+        )}
         onRetry={snapshot.retry}
         isRetrying={snapshot.isRetrying}
       />

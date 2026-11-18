@@ -1,22 +1,24 @@
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { ChevronRight } from "lucide-react";
 import { tmdbApi } from "@/lib/tmdb";
 import { createSlug } from "@/lib/utils";
 import type { MovieCollection as MovieCollectionType } from "@/types/tmdb";
 import { collectionHref } from "@/lib/routes";
+import { useT } from "@/i18n/LocaleProvider";
 
 interface MovieCollectionProps {
   collection: MovieCollectionType;
 }
 
 export function MovieCollection({ collection }: MovieCollectionProps) {
+  const t = useT();
   const href = collectionHref(createSlug(collection.name, collection.id));
 
   return (
     <div className="mt-8">
       <h2 className="text-2xl font-bold mb-4 text-white">
-        Part of a Collection
+        {t("Part of a Collection", "Součást kolekce")}
       </h2>
       <Link href={href} prefetch={false} className="block group">
         <div className="relative rounded-xl overflow-hidden">
@@ -47,13 +49,13 @@ export function MovieCollection({ collection }: MovieCollectionProps) {
             )}
             <div className="flex-1">
               <p className="text-gray-300 text-sm uppercase tracking-wider mb-1">
-                Collection
+                {t("Collection", "Kolekce")}
               </p>
               <h3 className="text-white text-xl sm:text-2xl font-bold">
                 {collection.name}
               </h3>
               <p className="text-blue-400 text-sm mt-2 flex items-center gap-1 group-hover:underline">
-                View all films
+                {t("View all films", "Zobrazit všechny filmy")}
                 <ChevronRight className="w-4 h-4" />
               </p>
             </div>

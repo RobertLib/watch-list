@@ -1,10 +1,11 @@
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { tmdbApi } from "@/lib/tmdb";
 import { formatTmdbDate } from "@/lib/dates";
 import { getProviderSearchUrl } from "@/lib/provider-urls";
 import { whereToWatchSummary } from "@/lib/where-to-watch";
 import type { RegionWatchProviders, WatchProvider } from "@/types/tmdb";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 
 interface WhereToWatchProps {
   /**
@@ -95,29 +96,39 @@ export function WhereToWatch({
   regionName,
   checkedOn,
 }: WhereToWatchProps) {
+  const locale = useLocale();
+  const t = useT();
   const sections = providers
     ? [
-        { label: "Streaming", items: providers.streaming },
-        { label: "Rent", items: providers.rent },
-        { label: "Buy", items: providers.buy },
+        { label: t("Streaming", "Streamování"), items: providers.streaming },
+        { label: t("Rent", "Půjčit"), items: providers.rent },
+        { label: t("Buy", "Koupit"), items: providers.buy },
       ].filter((section) => section.items.length > 0)
     : [];
 
-  const checked = providers ? formatTmdbDate(checkedOn) : null;
+  const checked = providers ? formatTmdbDate(checkedOn, undefined, locale) : null;
 
   return (
     <section className="bg-gray-800 rounded-lg p-6 shadow mb-8">
       <h2 className="text-2xl font-bold mb-3 text-white">
-        Where to watch {title}
+        {t(`Where to watch ${title}`, `Kde sledovat ${title}`)}
       </h2>
       <p className="text-gray-200 leading-relaxed">
         {providers
-          ? whereToWatchSummary(title, providers)
-          : "Checking where it is available in your region…"}
+          ? whereToWatchSummary(title, providers, locale)
+          : t(
+              "Checking where it is available in your region…",
+              "Zjišťujeme, kde je k dispozici ve vašem regionu…",
+            )}
       </p>
       <p className="text-sm text-gray-400 mt-1">
-        Region: {regionName}
-        {checked && <> · Checked {checked}</>}
+        {t("Region:", "Region:")} {regionName}
+        {checked && (
+          <>
+            {" "}
+            · {t("Checked", "Ověřeno")} {checked}
+          </>
+        )}
       </p>
       {sections.length > 0 && (
         <div className="space-y-4 mt-5">

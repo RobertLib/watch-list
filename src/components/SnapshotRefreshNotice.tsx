@@ -2,6 +2,7 @@
 
 import { RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/LocaleProvider";
 
 /**
  * "This is the saved copy; the live one did not arrive" – said beside content,
@@ -19,7 +20,7 @@ import { cn } from "@/lib/utils";
  * keyboard user who just pressed it.
  */
 export function SnapshotRefreshNotice({
-  message = "Showing a saved copy – the latest version could not be loaded.",
+  message,
   onRetry,
   isRetrying = false,
   className,
@@ -29,6 +30,7 @@ export function SnapshotRefreshNotice({
   isRetrying?: boolean;
   className?: string;
 }) {
+  const t = useT();
   return (
     <div
       role="status"
@@ -37,7 +39,13 @@ export function SnapshotRefreshNotice({
         className,
       )}
     >
-      <span>{message}</span>
+      <span>
+        {message ??
+          t(
+            "Showing a saved copy – the latest version could not be loaded.",
+            "Zobrazujeme uloženou kopii – nejnovější verzi se nepodařilo načíst.",
+          )}
+      </span>
       <button
         type="button"
         onClick={() => {
@@ -50,7 +58,9 @@ export function SnapshotRefreshNotice({
           className={cn("h-4 w-4", isRetrying && "animate-spin")}
           aria-hidden="true"
         />
-        {isRetrying ? "Retrying…" : "Try again"}
+        {isRetrying
+          ? t("Retrying…", "Zkoušíme znovu…")
+          : t("Try again", "Zkusit znovu")}
       </button>
     </div>
   );

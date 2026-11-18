@@ -90,7 +90,7 @@ describe("LikeTitlesPage", () => {
 
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Movies like Interstellar");
     expect(screen.getByText(/^1 films to watch after Interstellar \(2014\)/)).toBeDefined();
-    expect(snapshots.movie).toHaveBeenCalledWith(157336);
+    expect(snapshots.movie).toHaveBeenCalledWith(157336, "en");
   });
 
   it("lists each title with what it shares and a way to its own page", async () => {
@@ -180,7 +180,7 @@ describe("LikeTitlesPage", () => {
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Shows like Breaking Bad");
     expect(screen.getByRole("link", { name: "Where to watch" }).getAttribute("href"))
       .toBe("/tv?id=better-call-saul-60059");
-    expect(snapshots.tv).toHaveBeenCalledWith(1396);
+    expect(snapshots.tv).toHaveBeenCalledWith(1396, "en");
     expect(snapshots.movie).not.toHaveBeenCalled();
   });
 });

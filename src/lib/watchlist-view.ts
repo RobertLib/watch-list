@@ -2,6 +2,7 @@
 
 import { mediaItemKey } from "./utils";
 import type { MediaType } from "@/types/tmdb";
+import { t, type Locale, type Localized } from "@/i18n/locale";
 
 /**
  * Sorting, filtering and grouping for the watchlist page.
@@ -57,12 +58,12 @@ export const DEFAULT_PREFERENCES: WatchlistPreferences = {
   ratedOnly: false,
 };
 
-export const SORT_LABELS: Record<WatchlistSort, string> = {
-  added: "Recently added",
-  title: "Title A–Z",
-  rating: "Highest rated",
-  release: "Newest release",
-  "my-rating": "My rating",
+export const SORT_LABELS: Record<WatchlistSort, Localized> = {
+  added: { en: "Recently added", cs: "Naposledy přidané" },
+  title: { en: "Title A–Z", cs: "Název A–Z" },
+  rating: { en: "Highest rated", cs: "Nejlépe hodnocené" },
+  release: { en: "Newest release", cs: "Nejnovější" },
+  "my-rating": { en: "My rating", cs: "Moje hodnocení" },
 };
 
 // Re-exported so the page has one place to import its view helpers from, while
@@ -317,29 +318,44 @@ function groupLabel(
   status: AvailabilityStatus,
   hasSelectedProviders: boolean,
   region: string,
+  locale: Locale,
 ): { label: string; hint?: string } {
   switch (status) {
     case "mine":
-      return { label: "Ready to watch on your platforms" };
+      return {
+        label: t(
+          locale,
+          "Ready to watch on your platforms",
+          "Ke zhlédnutí na vašich službách",
+        ),
+      };
     case "streaming":
       return {
         label: hasSelectedProviders
-          ? "Streaming, but not on your platforms"
-          : "Streaming now",
+          ? t(
+              locale,
+              "Streaming, but not on your platforms",
+              "Ke streamování, ale ne na vašich službách",
+            )
+          : t(locale, "Streaming now", "Právě ke streamování"),
       };
     case "rent":
-      return { label: "Rent or buy only" };
+      return { label: t(locale, "Rent or buy only", "Jen k půjčení nebo koupi") };
     case "none":
       return {
         label: region
-          ? `Not streaming in ${region}`
-          : "Not streaming in your region",
+          ? t(locale, `Not streaming in ${region}`, `Nestreamuje se v regionu ${region}`)
+          : t(locale, "Not streaming in your region", "Ve vašem regionu se nestreamuje"),
       };
     case "unknown":
     default:
       return {
-        label: "Not checked",
-        hint: "Streaming availability is not confirmed for these titles.",
+        label: t(locale, "Not checked", "Nezkontrolováno"),
+        hint: t(
+          locale,
+          "Streaming availability is not confirmed for these titles.",
+          "U těchto titulů není dostupnost na streamovacích službách ověřená.",
+        ),
       };
   }
 }
@@ -354,6 +370,7 @@ export function groupByAvailability(
   items: WatchlistViewItem[],
   byKey: Record<string, TitleAvailability>,
   { hasSelectedProviders, region }: { hasSelectedProviders: boolean; region: string },
+  locale: Locale = "en",
 ): AvailabilityGroup[] {
   const buckets = new Map<AvailabilityStatus, WatchlistViewItem[]>();
 
@@ -370,7 +387,7 @@ export function groupByAvailability(
     const bucketItems = buckets.get(status);
     if (!bucketItems || bucketItems.length === 0) return [];
 
-    const { label, hint } = groupLabel(status, hasSelectedProviders, region);
+    const { label, hint } = groupLabel(status, hasSelectedProviders, region, locale);
     return [{ id: status, label, hint, items: bucketItems }];
   });
 }

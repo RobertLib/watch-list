@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from "react";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { Download, Upload, AlertTriangle, ShieldCheck } from "lucide-react";
 import { useWatchlist } from "@/contexts/WatchlistContext";
 import { useWatched } from "@/contexts/WatchedContext";
@@ -42,6 +42,9 @@ import {
   type PortableStores,
   type UnreadableData,
 } from "@/lib/portable-data";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatNumber, pluralForm, type PluralForms } from "@/i18n/format";
+import { INTL_LOCALE, t as translate, type Locale } from "@/i18n/locale";
 
 /** Read the active profile's live keys when the backup is requested. */
 function liveStores(): PortableStores {
@@ -76,22 +79,67 @@ interface PendingRestore {
   profileId: string;
 }
 
-function checkRestoreProfile(profileId: string): boolean {
+function checkRestoreProfile(profileId: string, locale: Locale): boolean {
   try {
     if (getActiveProfileId({ strict: true }) === profileId) return true;
   } catch {
     toast.showToast(
-      "Could not check your active profile. Reload the page and try again.",
+      translate(
+        locale,
+        "Could not check your active profile. Reload the page and try again.",
+        "Nepodařilo se ověřit aktivní profil. Načtěte stránku znovu a zkuste to ještě jednou.",
+      ),
       "error",
     );
     return false;
   }
 
   toast.showToast(
-    "Your active profile changed. Choose the backup file again for the current profile.",
+    translate(
+      locale,
+      "Your active profile changed. Choose the backup file again for the current profile.",
+      "Aktivní profil se změnil. Vyberte soubor se zálohou znovu, tentokrát pro aktuální profil.",
+    ),
     "info",
   );
   return false;
+}
+
+/** A Czech count's noun: one, two to four, or five and up (`pluralForm`). */
+function formCs(count: number, forms: PluralForms["cs"]): string {
+  return pluralForm(count, "cs", { en: [forms[0], forms[2]], cs: forms });
+}
+
+/** "3 rozkoukané seriály" – a Czech count and its noun. */
+function countCs(count: number, forms: PluralForms["cs"]): string {
+  return `${formatNumber(count, "cs")} ${formCs(count, forms)}`;
+}
+
+const SHOWS_IN_PROGRESS_CS: PluralForms["cs"] = [
+  "rozkoukaný seriál",
+  "rozkoukané seriály",
+  "rozkoukaných seriálů",
+];
+const TICKED_EPISODES_CS: PluralForms["cs"] = [
+  "odškrtnutá epizoda",
+  "odškrtnuté epizody",
+  "odškrtnutých epizod",
+];
+const LISTS_CS: PluralForms["cs"] = ["vlastní seznam", "vlastní seznamy", "vlastních seznamů"];
+const OTHER_PROFILES_CS: PluralForms["cs"] = ["další profil", "další profily", "dalších profilů"];
+
+/**
+ * The day a backup was exported. English has always printed the ISO date; in
+ * Czech it is the usual "1. 8. 2026". The day is the file's own, in UTC, so it
+ * is the same day wherever the file is read.
+ */
+function exportedDay(exportedAt: string, locale: Locale): string {
+  const day = exportedAt.slice(0, 10);
+  if (locale === "en") return day;
+  const date = new Date(`${day}T00:00:00Z`);
+  return Number.isNaN(date.getTime())
+    ? day
+    : date.toLocaleDateString(INTL_LOCALE[locale], { timeZone: "UTC" });
 }
 
 /**
@@ -132,6 +180,8 @@ export function DataPortability() {
   const [exportGaps, setExportGaps] = useState<UnreadableData[]>([]);
   const restoring = useRef(false);
   const exporting = useRef(false);
+  const locale = useLocale();
+  const t = useT();
 
   async function handleExport() {
     if (exporting.current || restoring.current) return;
@@ -165,17 +215,21 @@ export function DataPortability() {
       const gaps = backup.unreadable ?? [];
       setExportGaps(gaps);
       if (gaps.length > 0) {
+        const described = gaps.map((gap) => describeUnreadable(gap, locale)).join("; ");
         toast.showToast(
-          `Backup downloaded, but some data could not be read: ${gaps.map(describeUnreadable).join("; ")}.`,
+          t(
+            `Backup downloaded, but some data could not be read: ${described}.`,
+            `Záloha je stažená, ale některá data se nepodařilo přečíst: ${described}.`,
+          ),
           "error",
           10000,
         );
       } else {
-        toast.showToast("Backup downloaded", "success");
+        toast.showToast(t("Backup downloaded", "Záloha je stažená"), "success");
       }
     } catch (error) {
       console.error("Error exporting data:", error);
-      toast.showToast("Could not build the backup", "error");
+      toast.showToast(t("Could not build the backup", "Zálohu se nepodařilo vytvořit"), "error");
     } finally {
       exporting.current = false;
       setIsExporting(false);
@@ -201,7 +255,10 @@ export function DataPortability() {
       // used to freeze the tab instead of being told it is the wrong file.
       if (file.size > MAX_BACKUP_FILE_BYTES) {
         toast.showToast(
-          `That file is too large to be a WatchList backup – backups stay under ${MAX_BACKUP_FILE_MEGABYTES} MB`,
+          t(
+            `That file is too large to be a WatchList backup – backups stay under ${MAX_BACKUP_FILE_MEGABYTES} MB`,
+            `Tento soubor je na zálohu WatchListu příliš velký – zálohy mají méně než ${formatNumber(MAX_BACKUP_FILE_MEGABYTES, locale)} MB`,
+          ),
           "error",
         );
         return;
@@ -211,11 +268,14 @@ export function DataPortability() {
       const parsed = parseBackup(JSON.parse(text));
 
       if (!parsed) {
-        toast.showToast("That is not a WatchList backup file", "error");
+        toast.showToast(
+          t("That is not a WatchList backup file", "Tohle není soubor se zálohou WatchListu"),
+          "error",
+        );
         return;
       }
 
-      if (!parsed.activeProfile && !checkRestoreProfile(profileId)) {
+      if (!parsed.activeProfile && !checkRestoreProfile(profileId, locale)) {
         setPending(null);
         return;
       }
@@ -226,7 +286,7 @@ export function DataPortability() {
     } catch (error) {
       if (!isCurrent()) return;
       console.error("Error reading backup:", error);
-      toast.showToast("Could not read that file", "error");
+      toast.showToast(t("Could not read that file", "Soubor se nepodařilo přečíst"), "error");
     } finally {
       if (selection === fileReadGeneration.current) {
         setReadingFilename(null);
@@ -239,7 +299,7 @@ export function DataPortability() {
 
   async function confirmRestore() {
     if (!pending || restoring.current || pending.selection !== fileReadGeneration.current) return;
-    if (!pending.data.activeProfile && !checkRestoreProfile(pending.profileId)) {
+    if (!pending.data.activeProfile && !checkRestoreProfile(pending.profileId, locale)) {
       setPending(null);
       return;
     }
@@ -267,13 +327,19 @@ export function DataPortability() {
             ...pending.data.otherProfiles,
             ...currentProfiles,
           ],
-        });
+        }, locale);
         toast.showToast(
-          `Could not restore ${label} — your browser refused the write. ${
-            result.rolledBack
-              ? "Your existing data is unchanged; free up space and try again."
-              : "Your browser also refused to restore the previous data. Keep your backup file and try again."
-          }`,
+          locale === "cs"
+            ? `Nepodařilo se obnovit ${label} – prohlížeč odmítl zápis. ${
+                result.rolledBack
+                  ? "Vaše dosavadní data zůstala beze změny; uvolněte místo a zkuste to znovu."
+                  : "Prohlížeč odmítl vrátit i předchozí data. Soubor se zálohou si ponechte a zkuste to znovu."
+              }`
+            : `Could not restore ${label} — your browser refused the write. ${
+                result.rolledBack
+                  ? "Your existing data is unchanged; free up space and try again."
+                  : "Your browser also refused to restore the previous data. Keep your backup file and try again."
+              }`,
           "error",
           10000,
         );
@@ -290,10 +356,10 @@ export function DataPortability() {
       refreshProgress();
 
       setPending(null);
-      toast.showToast("Backup restored", "success");
+      toast.showToast(t("Backup restored", "Záloha je obnovená"), "success");
     } catch (error) {
       console.error("Error restoring backup:", error);
-      toast.showToast("Could not restore that backup", "error");
+      toast.showToast(t("Could not restore that backup", "Zálohu se nepodařilo obnovit"), "error");
     } finally {
       restoring.current = false;
       setIsRestoring(false);
@@ -342,25 +408,42 @@ export function DataPortability() {
           className="text-lg font-semibold text-white flex items-center gap-2"
         >
           <ShieldCheck className="w-5 h-5 text-blue-400" aria-hidden="true" />
-          Backup &amp; transfer
+          {t("Backup & transfer", "Záloha a přenos")}
         </h2>
         <p className="text-sm text-gray-400 mt-1 leading-relaxed">
-          WatchList keeps no account, so everything you save lives in this
-          browser only. Download a backup to keep it safe – or to move it to
-          another device.
+          {t(
+            "WatchList keeps no account, so everything you save lives in this browser only. Download a backup to keep it safe – or to move it to another device.",
+            "WatchList nemá účty, takže vše, co si uložíte, je jen v tomto prohlížeči. Stáhněte si zálohu, ať o nic nepřijdete – nebo ať můžete data přenést do jiného zařízení.",
+          )}
         </p>
         {/* A backup is this app's own file. A list kept somewhere else is a
             different thing, and has its own page. */}
         <p className="text-sm text-gray-400 mt-2 leading-relaxed">
-          Coming from Letterboxd, IMDb, Trakt or TV Time?{" "}
-          <Link
-            href="/import"
-            prefetch={false}
-            className="text-blue-400 hover:text-blue-300 transition-colors"
-          >
-            Import your lists
-          </Link>{" "}
-          instead.
+          {locale === "cs" ? (
+            <>
+              Přecházíte z Letterboxd, IMDb, Trakt nebo TV Time? Pak raději{" "}
+              <Link
+                href="/import"
+                prefetch={false}
+                className="text-blue-400 hover:text-blue-300 transition-colors"
+              >
+                importujte své seznamy
+              </Link>
+              .
+            </>
+          ) : (
+            <>
+              Coming from Letterboxd, IMDb, Trakt or TV Time?{" "}
+              <Link
+                href="/import"
+                prefetch={false}
+                className="text-blue-400 hover:text-blue-300 transition-colors"
+              >
+                Import your lists
+              </Link>{" "}
+              instead.
+            </>
+          )}
         </p>
       </div>
 
@@ -370,6 +453,18 @@ export function DataPortability() {
       <p className="text-sm text-gray-500">
         {isReadingStorage ? (
           <span className="inline-block h-4 w-72 max-w-full bg-gray-800 rounded animate-pulse align-middle" />
+        ) : locale === "cs" ? (
+          <>
+            V tomto prohlížeči: ke zhlédnutí {formatNumber(current.watchlist, locale)},
+            zhlédnuto {formatNumber(current.watched, locale)},{" "}
+            {countCs(current.showsInProgress, SHOWS_IN_PROGRESS_CS)} (
+            {countCs(current.episodes, TICKED_EPISODES_CS)}), ohodnoceno{" "}
+            {formatNumber(current.ratings, locale)}
+            {current.collections > 0 && `, ${countCs(current.collections, LISTS_CS)}`}
+            .
+            {otherProfileCount > 0 &&
+              ` Záloha zahrne i ${countCs(otherProfileCount, OTHER_PROFILES_CS)}.`}
+          </>
         ) : (
           <>
             In this browser: {current.watchlist} to watch, {current.watched}{" "}
@@ -397,7 +492,7 @@ export function DataPortability() {
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 aria-disabled:opacity-60 aria-disabled:cursor-wait text-sm font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
         >
           <Download className="w-4 h-4" aria-hidden="true" />
-          {isExporting ? "Preparing…" : "Download backup"}
+          {isExporting ? t("Preparing…", "Připravuje se…") : t("Download backup", "Stáhnout zálohu")}
         </button>
 
         <button
@@ -410,7 +505,7 @@ export function DataPortability() {
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         >
           <Upload className="w-4 h-4" aria-hidden="true" />
-          Restore from file
+          {t("Restore from file", "Obnovit ze souboru")}
         </button>
 
         {/* Reached only through the button above. As a Tab stop of its own it
@@ -424,7 +519,7 @@ export function DataPortability() {
           tabIndex={-1}
           aria-hidden="true"
           className="sr-only"
-          aria-label="Choose a backup file"
+          aria-label={t("Choose a backup file", "Vybrat soubor se zálohou")}
           onChange={(event) => {
             const file = event.target.files?.[0];
             if (file) handleFile(file);
@@ -434,7 +529,7 @@ export function DataPortability() {
 
       {readingFilename !== null && (
         <p role="status" className="text-sm text-gray-400 break-all">
-          Reading {readingFilename}…
+          {t("Reading", "Načítá se")} {readingFilename}…
         </p>
       )}
 
@@ -442,19 +537,24 @@ export function DataPortability() {
         <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-4 space-y-2">
           <h3 className="font-semibold text-red-200 flex items-center gap-2">
             <AlertTriangle className="w-4 h-4" aria-hidden="true" />
-            Not in your last backup
+            {t("Not in your last backup", "Chybí ve vaší poslední záloze")}
           </h3>
           <p className="text-sm text-red-100/80 leading-relaxed">
-            This browser could not read the following, so restoring that file
-            will not bring them back:
+            {t(
+              "This browser could not read the following, so restoring that file will not bring them back:",
+              "Následující data se v tomto prohlížeči nepodařilo přečíst, takže je obnovení z tohoto souboru nevrátí:",
+            )}
           </p>
           <ul className="list-disc pl-5 text-sm text-red-100/80 space-y-1">
             {exportGaps.map((gap, index) => (
               <li key={index}>
-                {describeUnreadable(gap)}
+                {describeUnreadable(gap, locale)}
                 {gap.raw === null
-                  ? " – the browser refused to read it"
-                  : " – the stored text is kept in the file as it was found"}
+                  ? t(" – the browser refused to read it", " – prohlížeč odmítl data přečíst")
+                  : t(
+                      " – the stored text is kept in the file as it was found",
+                      " – uložený text je v souboru zachovaný tak, jak byl nalezen",
+                    )}
               </li>
             ))}
           </ul>
@@ -499,6 +599,8 @@ function RestoreConfirmation({
   onCancel: () => void;
 }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const locale = useLocale();
+  const t = useT();
 
   // An alertdialog is announced when focus moves into it; one that appears
   // beside a file picker and is never focused is silent, and a keyboard user
@@ -530,41 +632,76 @@ function RestoreConfirmation({
         className="font-semibold text-amber-200 flex items-center gap-2"
       >
         <AlertTriangle className="w-4 h-4" aria-hidden="true" />
-        Replace what is in this browser?
+        {t("Replace what is in this browser?", "Nahradit obsah tohoto prohlížeče?")}
       </h3>
 
       <p className="text-sm text-amber-100/80 break-all">
-        File: <strong>{filename}</strong>
+        {t("File:", "Soubor:")} <strong>{filename}</strong>
       </p>
 
       <p id="restore-contents" className="text-sm text-amber-100/80 leading-relaxed">
-        This backup holds <strong>{summary.watchlist}</strong> to watch,{" "}
-        <strong>{summary.watched}</strong> watched and{" "}
-        <strong>{summary.showsInProgress}</strong> series in progress (
-        {summary.episodes} episode{summary.episodes === 1 ? "" : "s"} ticked) and{" "}
-        <strong>{summary.ratings}</strong> rated
-        {summary.collections > 0 &&
-          `, ${summary.collections} named list${summary.collections === 1 ? "" : "s"}`}
-        {summary.hasSettings && ", plus your region and platform settings"}.
-        {exportedAt && ` Exported ${exportedAt.slice(0, 10)}.`}
+        {locale === "cs" ? (
+          <>
+            V této záloze je: ke zhlédnutí{" "}
+            <strong>{formatNumber(summary.watchlist, locale)}</strong>, zhlédnuto{" "}
+            <strong>{formatNumber(summary.watched, locale)}</strong>,{" "}
+            <strong>{formatNumber(summary.showsInProgress, locale)}</strong>{" "}
+            {formCs(summary.showsInProgress, SHOWS_IN_PROGRESS_CS)} (
+            {countCs(summary.episodes, TICKED_EPISODES_CS)}), ohodnoceno{" "}
+            <strong>{formatNumber(summary.ratings, locale)}</strong>
+            {summary.collections > 0 && `, ${countCs(summary.collections, LISTS_CS)}`}
+            {summary.hasSettings && " a k tomu vaše nastavení regionu a streamovacích služeb"}.
+            {exportedAt && ` Exportováno ${exportedDay(exportedAt, locale)}.`}
+          </>
+        ) : (
+          <>
+            This backup holds <strong>{summary.watchlist}</strong> to watch,{" "}
+            <strong>{summary.watched}</strong> watched and{" "}
+            <strong>{summary.showsInProgress}</strong> series in progress (
+            {summary.episodes} episode{summary.episodes === 1 ? "" : "s"} ticked) and{" "}
+            <strong>{summary.ratings}</strong> rated
+            {summary.collections > 0 &&
+              `, ${summary.collections} named list${summary.collections === 1 ? "" : "s"}`}
+            {summary.hasSettings && ", plus your region and platform settings"}.
+            {exportedAt && ` Exported ${exportedDay(exportedAt, locale)}.`}
+          </>
+        )}
       </p>
 
       {replacesProfiles && (
         <p id="restore-replaces" className="text-sm text-amber-100/80 leading-relaxed">
-          This will replace all profiles in this browser. Profiles absent from
-          the backup and all their data will be deleted.
-          {summary.otherProfiles > 0 && (
+          {locale === "cs" ? (
             <>
-              {" "}The backup also holds <strong>{summary.otherProfiles}</strong>{" "}
-              other profile{summary.otherProfiles === 1 ? "" : "s"}.
+              Tím se nahradí všechny profily v tomto prohlížeči. Profily, které
+              v záloze nejsou, se smažou i se všemi svými daty.
+              {summary.otherProfiles > 0 && (
+                <>
+                  {" "}Záloha obsahuje také{" "}
+                  <strong>{formatNumber(summary.otherProfiles, locale)}</strong>{" "}
+                  {formCs(summary.otherProfiles, OTHER_PROFILES_CS)}.
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              This will replace all profiles in this browser. Profiles absent from
+              the backup and all their data will be deleted.
+              {summary.otherProfiles > 0 && (
+                <>
+                  {" "}The backup also holds <strong>{summary.otherProfiles}</strong>{" "}
+                  other profile{summary.otherProfiles === 1 ? "" : "s"}.
+                </>
+              )}
             </>
           )}
         </p>
       )}
 
       <p id="restore-warning" className="text-sm text-amber-100/80">
-        Restoring replaces the lists in this browser. It cannot be undone – if
-        you have anything here worth keeping, download a backup first.
+        {t(
+          "Restoring replaces the lists in this browser. It cannot be undone – if you have anything here worth keeping, download a backup first.",
+          "Obnovení nahradí seznamy v tomto prohlížeči a nejde vrátit zpět – pokud tu máte něco, o co nechcete přijít, nejdřív si stáhněte zálohu.",
+        )}
       </p>
 
       {/* aria-disabled rather than disabled while restoring: native disabled
@@ -576,7 +713,7 @@ function RestoreConfirmation({
           aria-disabled={isRestoring || undefined}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 aria-disabled:opacity-60 aria-disabled:cursor-wait text-sm font-semibold text-black transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
         >
-          {isRestoring ? "Restoring…" : "Replace and restore"}
+          {isRestoring ? t("Restoring…", "Obnovuje se…") : t("Replace and restore", "Nahradit a obnovit")}
         </button>
         <button
           ref={cancelRef}
@@ -584,7 +721,7 @@ function RestoreConfirmation({
           aria-disabled={isRestoring || undefined}
           className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 aria-disabled:opacity-60 aria-disabled:cursor-wait text-sm font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         >
-          Cancel
+          {t("Cancel", "Zrušit")}
         </button>
       </div>
     </div>

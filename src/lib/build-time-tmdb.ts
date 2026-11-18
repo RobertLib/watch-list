@@ -22,7 +22,9 @@
  * that is exactly the view a first-time visitor gets.
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { cache } from "react";
+import { setServerLocaleGetter, type Locale } from "@/i18n/locale";
 import {
   loadGenreListing,
   type GenreListingPage,
@@ -89,6 +91,19 @@ const LOADS_PER_WORKER = 3;
  */
 const ATTEMPTS = 5;
 
+/**
+ * The language of the load running now.
+ *
+ * Both trees prerender in the same build process, so the language cannot be a
+ * module variable: an English page and a Czech one load at once, interleaved
+ * at every `await`. Each load runs inside its own store instead, and
+ * `currentLocale()` reads it – which is how the TMDB client deep inside a
+ * genre listing or a mood's picks asks for Czech (and the Czech region)
+ * without a locale threaded through every function between.
+ */
+const loadLocale = new AsyncLocalStorage<Locale>();
+setServerLocaleGetter(() => loadLocale.getStore());
+
 let running = 0;
 const queue: (() => void)[] = [];
 
@@ -120,9 +135,22 @@ function isNotFound(error: unknown): boolean {
 async function buildTimeLoad<T>(
   what: string,
   load: () => Promise<T>,
-  { missingIsNull = false }: { missingIsNull?: boolean } = {},
+  {
+    missingIsNull = false,
+    locale = "en",
+  }: { missingIsNull?: boolean; locale?: Locale } = {},
 ): Promise<T | null> {
   if (!buildTimeTmdbAvailable()) return null;
+  return loadLocale.run(locale, () =>
+    runLoad(locale === "en" ? what : `${what} (${locale})`, load, missingIsNull),
+  );
+}
+
+async function runLoad<T>(
+  what: string,
+  load: () => Promise<T>,
+  missingIsNull: boolean,
+): Promise<T | null> {
 
   let lastError: unknown;
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
@@ -169,6 +197,7 @@ export const getGenreSnapshot = cache(
     mediaType: MediaType,
     genreId: number,
     platformSlug?: string,
+    locale: Locale = "en",
   ): Promise<GenreListingPage | null> => {
     const platform = platformSlug
       ? findStreamingPlatform(platformSlug)
@@ -188,6 +217,7 @@ export const getGenreSnapshot = cache(
             "with_genre",
           ),
         }),
+      { locale },
     );
   },
 );
@@ -198,7 +228,11 @@ export const getGenreSnapshot = cache(
  * it too: one with too few titles is `noindex`.
  */
 export const getMoodSnapshot = cache(
-  (slug: string, platformSlug?: string): Promise<MoodPicksPage | null> => {
+  (
+    slug: string,
+    platformSlug?: string,
+    locale: Locale = "en",
+  ): Promise<MoodPicksPage | null> => {
     const mood = findMood(slug);
     if (!mood) return Promise.resolve(null);
     const platform = platformSlug
@@ -216,18 +250,25 @@ export const getMoodSnapshot = cache(
         }
         return picks;
       },
+      { locale },
     );
   },
 );
 
 /** Page one of every row on the home page, keyed by row. */
-export async function getHomeSnapshot(): Promise<Record<HomeRow, MediaItem[]> | null> {
-  return buildTimeLoad("the home page rows", async () => {
-    const rows = await Promise.all(
-      HOME_ROWS.map(async (row) => [row, await loadHomeRow(row)] as const),
-    );
-    return Object.fromEntries(rows) as Record<HomeRow, MediaItem[]>;
-  });
+export async function getHomeSnapshot(
+  locale: Locale = "en",
+): Promise<Record<HomeRow, MediaItem[]> | null> {
+  return buildTimeLoad(
+    "the home page rows",
+    async () => {
+      const rows = await Promise.all(
+        HOME_ROWS.map(async (row) => [row, await loadHomeRow(row)] as const),
+      );
+      return Object.fromEntries(rows) as Record<HomeRow, MediaItem[]>;
+    },
+    { locale },
+  );
 }
 
 /**
@@ -248,26 +289,26 @@ function snapshotDate(): string {
  * for (see `buildTimeLoad`).
  */
 export const getMovieSnapshot = cache(
-  (id: number): Promise<MovieDetails | null> =>
+  (id: number, locale: Locale = "en"): Promise<MovieDetails | null> =>
     buildTimeLoad(
       `film ${id}`,
       async () => ({
         ...movieSnapshot(await tmdbApi.getMovieDetails(id, MOVIE_APPENDED_SECTIONS)),
         snapshot_date: snapshotDate(),
       }),
-      { missingIsNull: true },
+      { missingIsNull: true, locale },
     ),
 );
 
 export const getTVSnapshot = cache(
-  (id: number): Promise<TVShowDetails | null> =>
+  (id: number, locale: Locale = "en"): Promise<TVShowDetails | null> =>
     buildTimeLoad(
       `series ${id}`,
       async () => ({
         ...tvSnapshot(await tmdbApi.getTVShowDetails(id, TV_APPENDED_SECTIONS)),
         snapshot_date: snapshotDate(),
       }),
-      { missingIsNull: true },
+      { missingIsNull: true, locale },
     ),
 );
 
@@ -277,31 +318,31 @@ export const getTVSnapshot = cache(
  * answers the second of the two – with a different cut taken from it.
  */
 export const getMovieLikeSnapshot = cache(
-  (id: number): Promise<LikePageData | null> =>
+  (id: number, locale: Locale = "en"): Promise<LikePageData | null> =>
     buildTimeLoad(
       `titles like film ${id}`,
       async () =>
         movieLikePage(await tmdbApi.getMovieDetails(id, MOVIE_APPENDED_SECTIONS)),
-      { missingIsNull: true },
+      { missingIsNull: true, locale },
     ),
 );
 
 export const getTVLikeSnapshot = cache(
-  (id: number): Promise<LikePageData | null> =>
+  (id: number, locale: Locale = "en"): Promise<LikePageData | null> =>
     buildTimeLoad(
       `titles like series ${id}`,
       async () =>
         tvLikePage(await tmdbApi.getTVShowDetails(id, TV_APPENDED_SECTIONS)),
-      { missingIsNull: true },
+      { missingIsNull: true, locale },
     ),
 );
 
 export const getPersonSnapshot = cache(
-  (id: number): Promise<PersonPageData | null> =>
+  (id: number, locale: Locale = "en"): Promise<PersonPageData | null> =>
     buildTimeLoad(
       `person ${id}`,
       async () => personSnapshot(await loadPersonPage(id)),
-      { missingIsNull: true },
+      { missingIsNull: true, locale },
     ),
 );
 
@@ -309,30 +350,43 @@ export const getPersonSnapshot = cache(
 async function loadSections<K extends string, T>(
   what: string,
   sections: Record<K, () => Promise<T>>,
+  locale: Locale,
 ): Promise<Record<K, T> | null> {
-  return buildTimeLoad(what, async () => {
-    const entries = await Promise.all(
-      (Object.keys(sections) as K[]).map(async (key) => [key, await sections[key]()] as const),
-    );
-    return Object.fromEntries(entries) as Record<K, T>;
-  });
+  return buildTimeLoad(
+    what,
+    async () => {
+      const entries = await Promise.all(
+        (Object.keys(sections) as K[]).map(async (key) => [key, await sections[key]()] as const),
+      );
+      return Object.fromEntries(entries) as Record<K, T>;
+    },
+    { locale },
+  );
 }
 
 /** The fixed sections of `/movies`: everything but the filterable grid. */
-export function getMovieSectionsSnapshot(): Promise<MovieSectionsSnapshot | null> {
-  return loadSections("the /movies sections", MOVIE_SECTIONS);
+export function getMovieSectionsSnapshot(
+  locale: Locale = "en",
+): Promise<MovieSectionsSnapshot | null> {
+  return loadSections("the /movies sections", MOVIE_SECTIONS, locale);
 }
 
 /** The fixed sections of `/tv-shows`. */
-export function getTVSectionsSnapshot(): Promise<TVSectionsSnapshot | null> {
-  return loadSections("the /tv-shows sections", TV_SECTIONS);
+export function getTVSectionsSnapshot(
+  locale: Locale = "en",
+): Promise<TVSectionsSnapshot | null> {
+  return loadSections("the /tv-shows sections", TV_SECTIONS, locale);
 }
 
 /** The list on `/people`. Neither page answering fails the build. */
-export function getPeopleSnapshot(): Promise<Person[] | null> {
-  return buildTimeLoad("the /people list", async () => {
-    const people = await loadPopularPeople();
-    if (!people) throw new Error("neither page of popular people answered");
-    return people;
-  });
+export function getPeopleSnapshot(locale: Locale = "en"): Promise<Person[] | null> {
+  return buildTimeLoad(
+    "the /people list",
+    async () => {
+      const people = await loadPopularPeople();
+      if (!people) throw new Error("neither page of popular people answered");
+      return people;
+    },
+    { locale },
+  );
 }

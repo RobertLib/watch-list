@@ -13,6 +13,7 @@ import {
   type Settings,
 } from "@/lib/settings";
 import { withProfileRosterLock } from "@/lib/profile-roster-lock";
+import { useLocale } from "@/i18n/LocaleProvider";
 import type { WatchProviderFilter } from "@/lib/watch-provider-settings";
 
 /**
@@ -25,7 +26,10 @@ import type { WatchProviderFilter } from "@/lib/watch-provider-settings";
  * on the pass after hydration.
  */
 export function useSettings(): Settings {
-  return useSyncExternalStore(subscribeSettings, getSettings, getServerSettings);
+  const locale = useLocale();
+  return useSyncExternalStore(subscribeSettings, getSettings, () =>
+    getServerSettings(locale),
+  );
 }
 
 /**

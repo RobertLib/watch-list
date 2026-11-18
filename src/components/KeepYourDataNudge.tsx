@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { Download, Share, Smartphone, X } from "lucide-react";
 import { useWatchlist } from "@/contexts/WatchlistContext";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount } from "@/i18n/format";
 
 const DISMISSED_KEY = "keep-data-nudge-dismissed";
 
@@ -24,6 +26,8 @@ const NUDGE_AFTER_TITLES = 10;
 
 export function KeepYourDataNudge() {
   const { watchlist, isLoading } = useWatchlist();
+  const locale = useLocale();
+  const t = useT();
   const [dismissed, setDismissed] = useState(true);
   const [isIOS, setIsIOS] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
@@ -67,13 +71,29 @@ export function KeepYourDataNudge() {
             className="font-semibold text-white flex items-center gap-2"
           >
             <Download className="w-5 h-5 text-amber-400" aria-hidden="true" />
-            {watchlist.length} titles, and only one copy
+            {locale === "cs"
+              ? `${formatCount(watchlist.length, locale, {
+                  en: ["title", "titles"],
+                  cs: ["titul", "tituly", "titulů"],
+                })} a jen jedna kopie`
+              : `${watchlist.length} titles, and only one copy`}
           </h2>
           <p className="text-sm text-gray-300 leading-relaxed max-w-2xl">
-            There is no account here, which is the point – but it also means this
-            list lives in this browser and nowhere else. Clearing site data or
-            moving to a new phone would take it. A backup file is the fix, and it
-            restores anywhere.
+            {locale === "cs" ? (
+              <>
+                Účet tu nemáte, a právě o to jde – jenže to také znamená, že
+                seznam žije jen v tomto prohlížeči a nikde jinde. Vymazáním dat webu
+                nebo přechodem na nový telefon o něj přijdete. Pomůže záložní
+                soubor, který obnovíte kdekoli.
+              </>
+            ) : (
+              <>
+                There is no account here, which is the point – but it also means this
+                list lives in this browser and nowhere else. Clearing site data or
+                moving to a new phone would take it. A backup file is the fix, and it
+                restores anywhere.
+              </>
+            )}
           </p>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -83,7 +103,7 @@ export function KeepYourDataNudge() {
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-sm font-semibold text-amber-100 transition-colors"
             >
               <Download className="w-4 h-4" aria-hidden="true" />
-              Back it up
+              {t("Back it up", "Zálohovat")}
             </Link>
 
             {!isInstalled && (
@@ -91,13 +111,18 @@ export function KeepYourDataNudge() {
                 {isIOS ? (
                   <>
                     <Share className="w-4 h-4" aria-hidden="true" />
-                    Or add to your home screen from the share menu
+                    {t(
+                      "Or add to your home screen from the share menu",
+                      "Nebo si aplikaci přidejte na plochu přes nabídku Sdílet",
+                    )}
                   </>
                 ) : (
                   <>
                     <Smartphone className="w-4 h-4" aria-hidden="true" />
-                    Or install the app from your browser menu – storage survives
-                    longer that way
+                    {t(
+                      "Or install the app from your browser menu – storage survives longer that way",
+                      "Nebo si aplikaci nainstalujte z nabídky prohlížeče – data tak vydrží déle",
+                    )}
                   </>
                 )}
               </span>
@@ -107,7 +132,7 @@ export function KeepYourDataNudge() {
 
         <button
           onClick={dismiss}
-          aria-label="Dismiss"
+          aria-label={t("Dismiss", "Zavřít")}
           className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors shrink-0"
         >
           <X className="w-4 h-4" aria-hidden="true" />

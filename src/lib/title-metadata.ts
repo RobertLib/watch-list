@@ -11,6 +11,9 @@
 
 import type { Metadata } from "next";
 import { pageMetadata } from "./page-metadata";
+import { t, type Locale } from "@/i18n/locale";
+import { prerenderedSlug } from "./prerendered-titles-server";
+import type { PrerenderedKind } from "./prerendered-titles";
 import { getImageUrlOrNull } from "./tmdb-image";
 import {
   moviePageTitle,
@@ -52,47 +55,120 @@ function cardImage(
   return undefined;
 }
 
-const NOT_PRERENDERED = {
-  description:
-    "Cast, crew, trailers, reviews and where to stream it, with one click to add it to your watchlist.",
-  noindex: true,
-} as const;
+function notPrerendered(locale: Locale) {
+  return {
+    description: t(
+      locale,
+      "Cast, crew, trailers, reviews and where to stream it, with one click to add it to your watchlist.",
+      "Obsazení, tvůrci, trailery, recenze a kde to streamovat – a jedním kliknutím na váš seznam.",
+    ),
+    noindex: true,
+  } as const;
+}
 
-export function movieMetadata(path: string, movie: MovieDetails | null): Metadata {
-  if (!movie) return pageMetadata({ title: "Movie Details", path, ...NOT_PRERENDERED });
+/**
+ * A title's page in each tree, for `hreflang`. The two trees prerender
+ * different sets under different slugs – `fight-club-550` and
+ * `klub-rvacu-550` – so the counterpart is looked up by id, and a tree with no
+ * page for the title is left out.
+ */
+function titleLanguages(kind: PrerenderedKind, id: number) {
+  const en = prerenderedSlug(kind, id, "en");
+  const cs = prerenderedSlug(kind, id, "cs");
+  return {
+    en: en ? `/${kind}/${en}` : null,
+    cs: cs ? `/cs/${kind}/${cs}` : null,
+  };
+}
+
+export function movieMetadata(
+  path: string,
+  movie: MovieDetails | null,
+  locale: Locale = "en",
+): Metadata {
+  if (!movie) {
+    return pageMetadata({
+      title: t(locale, "Movie Details", "Detail filmu"),
+      path,
+      locale,
+      ...notPrerendered(locale),
+    });
+  }
 
   return pageMetadata({
-    title: moviePageTitle(movie),
-    description: describe(movie.overview, "Where to stream it, cast and trailer."),
+    title: moviePageTitle(movie, locale),
+    description: describe(
+      movie.overview,
+      t(locale, "Where to stream it, cast and trailer.", "Kde ho streamovat, obsazení a trailer."),
+    ),
     path,
+    locale,
+    languages: titleLanguages("movie", movie.id),
     type: "video.movie",
     image: cardImage(movie.backdrop_path, movie.poster_path, movie.title),
   });
 }
 
-export function tvMetadata(path: string, show: TVShowDetails | null): Metadata {
-  if (!show) return pageMetadata({ title: "TV Show Details", path, ...NOT_PRERENDERED });
+export function tvMetadata(
+  path: string,
+  show: TVShowDetails | null,
+  locale: Locale = "en",
+): Metadata {
+  if (!show) {
+    return pageMetadata({
+      title: t(locale, "TV Show Details", "Detail seriálu"),
+      path,
+      locale,
+      ...notPrerendered(locale),
+    });
+  }
 
   return pageMetadata({
-    title: tvPageTitle(show),
-    description: describe(show.overview, "Where to stream it, seasons, cast and trailer."),
+    title: tvPageTitle(show, locale),
+    description: describe(
+      show.overview,
+      t(
+        locale,
+        "Where to stream it, seasons, cast and trailer.",
+        "Kde ho streamovat, řady, obsazení a trailer.",
+      ),
+    ),
     path,
+    locale,
+    languages: titleLanguages("tv", show.id),
     type: "video.tv_show",
     image: cardImage(show.backdrop_path, show.poster_path, show.name),
   });
 }
 
-export function personMetadata(path: string, person: PersonPageData | null): Metadata {
-  if (!person) return pageMetadata({ title: "Person", path, ...NOT_PRERENDERED });
+export function personMetadata(
+  path: string,
+  person: PersonPageData | null,
+  locale: Locale = "en",
+): Metadata {
+  if (!person) {
+    return pageMetadata({
+      title: t(locale, "Person", "Osobnost"),
+      path,
+      locale,
+      ...notPrerendered(locale),
+    });
+  }
 
   const { details } = person;
   return pageMetadata({
-    title: personPageTitle(details),
+    title: personPageTitle(details, locale),
     description: describe(
       details.biography,
-      `${details.name}'s films and series, and where to stream them.`,
+      t(
+        locale,
+        `${details.name}'s films and series, and where to stream them.`,
+        `Filmy a seriály, ve kterých hraje či které tvoří ${details.name}, a kde je streamovat.`,
+      ),
     ),
     path,
+    locale,
+    languages: titleLanguages("person", details.id),
     type: "profile",
     image: (() => {
       const portrait = getImageUrlOrNull(details.profile_path, "h632");

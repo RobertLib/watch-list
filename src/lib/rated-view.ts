@@ -1,4 +1,5 @@
 import type { MediaType } from "@/types/tmdb";
+import type { Localized } from "@/i18n/locale";
 import type { Ratings } from "./ratings";
 
 /**
@@ -25,10 +26,10 @@ export interface RatedRef {
 
 export type RatedSort = "score" | "recent" | "lowest";
 
-export const RATED_SORT_LABELS: Record<RatedSort, string> = {
-  score: "Highest score",
-  lowest: "Lowest score",
-  recent: "Recently rated",
+export const RATED_SORT_LABELS: Record<RatedSort, Localized> = {
+  score: { en: "Highest score", cs: "Nejvyšší hodnocení" },
+  lowest: { en: "Lowest score", cs: "Nejnižší hodnocení" },
+  recent: { en: "Recently rated", cs: "Naposledy hodnocené" },
 };
 
 /** Each entry costs one cached TMDB read, so the page resolves a bounded slice. */

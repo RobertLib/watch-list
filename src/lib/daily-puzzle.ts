@@ -16,7 +16,8 @@
  * coming with it, and tested on its own.
  */
 
-import { shiftDate } from "./dates";
+import type { Locale } from "@/i18n/locale";
+import { formatTmdbDate, shiftDate } from "./dates";
 import type { ImageSize } from "./tmdb-image";
 
 /** Day one. Puzzle numbers count from here, so #1 is this date. */
@@ -44,6 +45,25 @@ export function daysBetween(from: string, to: string): number {
   return Math.round(
     (Date.parse(`${to}T00:00:00.000Z`) - Date.parse(`${from}T00:00:00.000Z`)) /
       MS_PER_DAY,
+  );
+}
+
+/**
+ * A puzzle's day as the player reads it.
+ *
+ * English keeps the bare `YYYY-MM-DD` it has always shown – the same string the
+ * archive links carry. Czech readers do not write dates that way, so a Czech
+ * page gets "18. 11. 2026", read as the UTC day it names (the schedule's own
+ * calendar), whatever the visitor's zone.
+ */
+export function formatPuzzleDay(day: string, locale: Locale = "en"): string {
+  if (locale === "en") return day;
+  return (
+    formatTmdbDate(
+      day,
+      { day: "numeric", month: "numeric", year: "numeric" },
+      locale,
+    ) ?? day
   );
 }
 

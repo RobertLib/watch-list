@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { encodeLikePageIds, encodePrerenderedTitles } from "./prerendered-titles";
 import {
   SITE_URL,
+  absoluteLocalizedUrl,
   absoluteMediaUrl,
   absoluteUrl,
   collectionHref,
@@ -9,12 +10,15 @@ import {
   genreHref,
   likeHref,
   likePath,
+  localizeHref,
   matchHref,
   mediaHref,
   moodHref,
   movieHref,
   personHref,
+  prefixLocale,
   sharedListHref,
+  switchLocaleHref,
   titleQueryHref,
   tvHref,
 } from "./routes";
@@ -282,5 +286,105 @@ describe("mood links", () => {
     expect(moodHref("christmas", 3)).toBe("/mood/christmas?page=3");
     expect(moodHref("christmas", 1, "netflix")).toBe("/mood/christmas/netflix");
     expect(moodHref("christmas", 2, "netflix")).toBe("/mood/christmas/netflix?page=2");
+  });
+});
+
+describe("the Czech tree", () => {
+  const prerender = () => {
+    vi.stubEnv(
+      "PRERENDERED_TITLE_IDS",
+      encodePrerenderedTitles({
+        movie: [{ id: 550, slug: "fight-club-550" }],
+        tv: [{ id: 1396, slug: "breaking-bad-1396" }],
+        person: [{ id: 31, slug: "tom-hanks-31" }],
+      }),
+    );
+    // Czech prerenders fewer titles, under the slugs of their Czech names.
+    vi.stubEnv(
+      "PRERENDERED_TITLE_IDS_CS",
+      encodePrerenderedTitles({
+        movie: [{ id: 550, slug: "klub-rvacu-550" }],
+        tv: [],
+        person: [],
+      }),
+    );
+  };
+
+  it("prefixes an ordinary path, the home page and a query", () => {
+    expect(localizeHref("/movies", "cs")).toBe("/cs/movies");
+    expect(localizeHref("/", "cs")).toBe("/cs");
+    expect(localizeHref("/?tab=x", "cs")).toBe("/cs?tab=x");
+    expect(localizeHref("/genres/movie/action-28?year=2020", "cs")).toBe(
+      "/cs/genres/movie/action-28?year=2020",
+    );
+  });
+
+  it("leaves English, absolute, fragment and already-Czech hrefs alone", () => {
+    expect(localizeHref("/movies", "en")).toBe("/movies");
+    expect(localizeHref("https://www.themoviedb.org/", "cs")).toBe(
+      "https://www.themoviedb.org/",
+    );
+    expect(localizeHref("//example.com/x", "cs")).toBe("//example.com/x");
+    expect(localizeHref("#main-content", "cs")).toBe("#main-content");
+    expect(localizeHref("/cs/movies", "cs")).toBe("/cs/movies");
+    expect(localizeHref("/cs", "cs")).toBe("/cs");
+  });
+
+  it("does not mistake a section for a title", () => {
+    expect(localizeHref("/movies-like", "cs")).toBe("/cs/movies-like");
+    expect(localizeHref("/tv-shows", "cs")).toBe("/cs/tv-shows");
+    expect(localizeHref("/people", "cs")).toBe("/cs/people");
+  });
+
+  it("looks a title up again in the Czech list, from either form", () => {
+    prerender();
+    expect(localizeHref("/movie?id=klub-rvacu-550", "cs")).toBe("/cs/movie/klub-rvacu-550");
+    // The English slug names no Czech file, so the query page it is.
+    expect(localizeHref("/movie/fight-club-550", "cs")).toBe("/cs/movie?id=fight-club-550");
+    expect(localizeHref("/tv/breaking-bad-1396", "cs")).toBe("/cs/tv?id=breaking-bad-1396");
+    expect(localizeHref("/person", "cs")).toBe("/cs/person");
+    expect(localizeHref("/tv?id=dexter-1405&season=2", "cs")).toBe(
+      "/cs/tv?id=dexter-1405&season=2",
+    );
+  });
+
+  it("builds titles in the Czech tree directly and absolutely", () => {
+    prerender();
+    expect(absoluteMediaUrl("movie", "klub-rvacu-550", "cs")).toBe(
+      `${SITE_URL}/cs/movie/klub-rvacu-550`,
+    );
+    expect(absoluteLocalizedUrl("/moods", "cs")).toBe(`${SITE_URL}/cs/moods`);
+  });
+
+  it("sends a like page Czech does not have to the title instead of a 404", () => {
+    prerender();
+    vi.stubEnv("LIKE_PAGE_TITLE_IDS", encodeLikePageIds({ movie: [550], tv: [] }));
+    expect(likeHref("movie", "klub-rvacu-550", "cs")).toBeNull();
+    expect(localizeHref("/movies-like/klub-rvacu-550", "cs")).toBe("/cs/movie/klub-rvacu-550");
+
+    vi.stubEnv("LIKE_PAGE_TITLE_IDS_CS", encodeLikePageIds({ movie: [550], tv: [] }));
+    expect(likeHref("movie", "klub-rvacu-550", "cs")).toBe("/cs/movies-like/klub-rvacu-550");
+  });
+
+  it("only prefixes, without a lookup, when asked to", () => {
+    prerender();
+    expect(prefixLocale("/movie?id=klub-rvacu-550", "cs")).toBe("/cs/movie?id=klub-rvacu-550");
+    expect(prefixLocale("/", "cs")).toBe("/cs");
+    expect(prefixLocale("/movies", "en")).toBe("/movies");
+  });
+
+  it("switches a page to its twin in the other language", () => {
+    prerender();
+    expect(switchLocaleHref("/movies", "cs")).toBe("/cs/movies");
+    expect(switchLocaleHref("/cs/movies", "en")).toBe("/movies");
+    expect(switchLocaleHref("/cs", "en")).toBe("/");
+    expect(switchLocaleHref("/", "cs")).toBe("/cs");
+    // A title's two pages have different slugs; the query page bridges them.
+    expect(switchLocaleHref("/cs/movie/klub-rvacu-550", "en")).toBe("/movie?id=klub-rvacu-550");
+    expect(switchLocaleHref("/movie/fight-club-550", "cs")).toBe("/cs/movie?id=fight-club-550");
+    expect(switchLocaleHref("/cs/movie?id=fight-club-550", "en")).toBe("/movie/fight-club-550");
+    expect(switchLocaleHref("/genres/movie/action-28?year=2020", "cs")).toBe(
+      "/cs/genres/movie/action-28?year=2020",
+    );
   });
 });

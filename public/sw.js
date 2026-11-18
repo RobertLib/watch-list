@@ -106,8 +106,19 @@ function getPreviousStaticCache() {
   return previousStaticCachePromise;
 }
 
-/** The page shown when navigation fails and nothing is cached for it. */
+/**
+ * The page shown when navigation fails and nothing is cached for it – one per
+ * language, since the Czech tree under `/cs` has its own. A navigation gets its
+ * tree's page, or the English one when that is all there is.
+ */
 const OFFLINE_URL = "/offline";
+const OFFLINE_URLS = [OFFLINE_URL, "/cs/offline"];
+
+function offlineUrlFor(url) {
+  return url.pathname === "/cs" || url.pathname.startsWith("/cs/")
+    ? "/cs/offline"
+    : OFFLINE_URL;
+}
 
 // Posters accumulate quickly on a browsing session; the cache is trimmed to a
 // bound rather than allowed to grow until the browser evicts the whole origin.
@@ -233,14 +244,21 @@ let offlinePageRefreshedAt = 0;
  * instead of whatever the HTTP cache is still holding.
  */
 async function cacheOfflinePage(cache) {
-  for (const url of [OFFLINE_URL, `${OFFLINE_URL}.html`]) {
+  const stored = await Promise.all(
+    OFFLINE_URLS.map((offlineUrl) => cacheOneOfflinePage(cache, offlineUrl)),
+  );
+  return stored.some(Boolean);
+}
+
+async function cacheOneOfflinePage(cache, offlineUrl) {
+  for (const url of [offlineUrl, `${offlineUrl}.html`]) {
     try {
       const response = await fetch(url, { cache: "reload" });
       // A host that answers 200 for everything would otherwise park its own
       // "not found" page here as the offline experience.
       if (!response.ok) continue;
 
-      await cache.put(OFFLINE_URL, response.clone());
+      await cache.put(offlineUrl, response.clone());
       forgetPinnedAssets();
       await cachePageAssets(response);
       return true;
@@ -249,7 +267,6 @@ async function cacheOfflinePage(cache) {
       // everything this worker provides is an enhancement.
     }
   }
-
   return false;
 }
 
@@ -937,7 +954,9 @@ async function handleNavigation(request, event) {
   try {
     return await network;
   } catch {
-    const offline = await readFromCache(SHELL_CACHE, OFFLINE_URL);
+    const offline =
+      (await readFromCache(SHELL_CACHE, offlineUrlFor(url))) ??
+      (await readFromCache(SHELL_CACHE, OFFLINE_URL));
 
     return (
       offline ??

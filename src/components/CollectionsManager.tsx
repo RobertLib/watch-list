@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { ListPlus, Pencil, Plus, Trash2, X } from "lucide-react";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { ShareListButton } from "@/components/ShareListButton";
@@ -27,14 +27,18 @@ import {
 import { getImageUrl } from "@/lib/tmdb-image";
 import { createSlug, mediaItemKey } from "@/lib/utils";
 import { mediaHref } from "@/lib/routes";
-import { STORAGE_REFUSED_MESSAGE } from "@/lib/media-list";
+import { storageRefusedMessage } from "@/lib/media-list";
 import { useProfileGuard } from "@/hooks/useProfileGuard";
 import { useHydrated } from "@/hooks/useHydrated";
 import { withProfileStorage } from "@/lib/profile-storage";
 import { withProfileRosterLock } from "@/lib/profile-roster-lock";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount } from "@/i18n/format";
 
 /** Cancel queued actions when their card or rendered profile disappears. */
 function useCollectionMutation(profileId: string, checkProfile: () => boolean) {
+  const locale = useLocale();
+  const refusedMessage = storageRefusedMessage(locale);
   const mounted = useRef(true);
   const saving = useRef(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -53,19 +57,20 @@ function useCollectionMutation(profileId: string, checkProfile: () => boolean) {
         withProfileStorage(profileId, operation);
         return true;
       }, false);
-      if (!handled && mounted.current) toast.showToast(STORAGE_REFUSED_MESSAGE, "error");
+      if (!handled && mounted.current) toast.showToast(refusedMessage, "error");
     } finally {
       saving.current = false;
       if (mounted.current) setIsSaving(false);
     }
   }
-  return { mutate, isSaving };
-}
 
-function saveCollectionChanges(collections: Collection[]): boolean {
-  const saved = saveCollections(collections);
-  if (!saved) toast.showToast(STORAGE_REFUSED_MESSAGE, "error");
-  return saved;
+  function saveCollectionChanges(collections: Collection[]): boolean {
+    const saved = saveCollections(collections);
+    if (!saved) toast.showToast(refusedMessage, "error");
+    return saved;
+  }
+
+  return { mutate, isSaving, saveCollectionChanges };
 }
 
 /**
@@ -97,8 +102,13 @@ function ProfileCollectionsManager({ profileId, checkProfile }: {
   // everyone – including visitors with a dozen lists – so it waits.
   const hydrated = useHydrated();
 
+  const t = useT();
   const [newName, setNewName] = useState("");
-  const { mutate, isSaving } = useCollectionMutation(profileId, checkProfile);
+  const { mutate, isSaving, saveCollectionChanges } = useCollectionMutation(profileId, checkProfile);
+  const invalidName = t(
+    "Enter a list name with visible characters",
+    "Zadejte název seznamu, který obsahuje viditelné znaky",
+  );
 
   async function create(event: React.FormEvent) {
     event.preventDefault();
@@ -106,7 +116,7 @@ function ProfileCollectionsManager({ profileId, checkProfile }: {
 
     const trimmed = newName.trim();
     if (!trimmed) {
-      toast.showToast("Enter a list name with visible characters", "error");
+      toast.showToast(invalidName, "error");
       return;
     }
 
@@ -116,18 +126,27 @@ function ProfileCollectionsManager({ profileId, checkProfile }: {
       const latest = getCollectionsSnapshot({ strict: true });
       if (latest.length >= MAX_COLLECTIONS) {
         notifyCollectionsChanged();
-        toast.showToast(`That is the most lists one browser can hold`, "error");
+        toast.showToast(
+          t(
+            `That is the most lists one browser can hold`,
+            "Víc seznamů se do jednoho prohlížeče nevejde",
+          ),
+          "error",
+        );
         return;
       }
 
       const withNew = createCollection(latest, trimmed);
       if (withNew === latest) {
-        toast.showToast("Enter a list name with visible characters", "error");
+        toast.showToast(invalidName, "error");
         return;
       }
       if (!saveCollectionChanges(withNew)) return;
       setNewName("");
-      toast.showToast(`Created "${withNew[0].name}"`, "success");
+      toast.showToast(
+        t(`Created "${withNew[0].name}"`, `Seznam „${withNew[0].name}“ je vytvořený`),
+        "success",
+      );
     });
   }
 
@@ -135,7 +154,7 @@ function ProfileCollectionsManager({ profileId, checkProfile }: {
     <div className="space-y-8">
       <form onSubmit={create} className="space-y-2">
         <label htmlFor="new-list" className="block font-medium text-white">
-          New list
+          {t("New list", "Nový seznam")}
         </label>
         <div className="flex flex-col sm:flex-row gap-2">
           <input
@@ -147,7 +166,7 @@ function ProfileCollectionsManager({ profileId, checkProfile }: {
             readOnly={isSaving}
             maxLength={MAX_COLLECTION_NAME_LENGTH}
             onChange={(event) => setNewName(event.target.value)}
-            placeholder="Films to show my dad"
+            placeholder={t("Films to show my dad", "Filmy, které ukážu tátovi")}
             className="flex-1 min-w-0 px-4 py-3 rounded-lg bg-gray-900 border border-gray-700 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40"
           />
           <button
@@ -157,7 +176,7 @@ function ProfileCollectionsManager({ profileId, checkProfile }: {
             className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 aria-disabled:opacity-60 aria-disabled:cursor-wait font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
           >
             <Plus className="w-4 h-4" aria-hidden="true" />
-            Create
+            {t("Create", "Vytvořit")}
           </button>
         </div>
       </form>
@@ -188,10 +207,13 @@ function CollectionCard({
   profileId: string;
   checkProfile: () => boolean;
 }) {
+  const locale = useLocale();
+  const t = useT();
   const [isRenaming, setIsRenaming] = useState(false);
   const [draft, setDraft] = useState(collection.name);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const { mutate, isSaving } = useCollectionMutation(profileId, checkProfile);
+  const { mutate, isSaving, saveCollectionChanges } = useCollectionMutation(profileId, checkProfile);
+  const listGone = t("That list is no longer available", "Tento seznam už neexistuje");
   const renameButtonRef = useRef<HTMLButtonElement>(null);
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
   const cancelDeleteRef = useRef<HTMLButtonElement>(null);
@@ -220,7 +242,7 @@ function CollectionCard({
     );
     if (!current) {
       notifyCollectionsChanged();
-      toast.showToast("That list is no longer available", "info");
+      toast.showToast(listGone, "info");
       return;
     }
     // A rename in another tab may have arrived since this card mounted.
@@ -236,12 +258,18 @@ function CollectionCard({
       const current = latest.find((entry) => entry.id === collection.id);
       if (!current) {
         notifyCollectionsChanged();
-        toast.showToast("That list is no longer available", "info");
+        toast.showToast(listGone, "info");
         return;
       }
       const renamed = renameCollection(latest, collection.id, draft);
       if (renamed === latest) {
-        toast.showToast("Enter a list name with visible characters", "error");
+        toast.showToast(
+          t(
+            "Enter a list name with visible characters",
+            "Zadejte název seznamu, který obsahuje viditelné znaky",
+          ),
+          "error",
+        );
         return;
       }
       if (renamed.find((entry) => entry.id === collection.id)?.name === current.name) {
@@ -296,7 +324,7 @@ function CollectionCard({
               readOnly={isSaving}
               maxLength={MAX_COLLECTION_NAME_LENGTH}
               onChange={(event) => setDraft(event.target.value)}
-              aria-label="List name"
+              aria-label={t("List name", "Název seznamu")}
               className="px-3 py-1.5 rounded-lg bg-black/60 border border-gray-700 text-white focus:outline-none focus:border-blue-500"
             />
             <button
@@ -305,7 +333,7 @@ function CollectionCard({
               aria-busy={isSaving}
               className="text-sm text-blue-400 hover:text-blue-300 aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
             >
-              Save
+              {t("Save", "Uložit")}
             </button>
             <button
               type="button"
@@ -318,7 +346,7 @@ function CollectionCard({
               }}
               className="text-sm text-gray-500 hover:text-white aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
             >
-              Cancel
+              {t("Cancel", "Zrušit")}
             </button>
           </form>
         ) : (
@@ -327,8 +355,17 @@ function CollectionCard({
               {collection.name}
             </h2>
             <p className="text-sm text-gray-500">
-              {collection.items.length} title
-              {collection.items.length === 1 ? "" : "s"}
+              {locale === "cs" ? (
+                formatCount(collection.items.length, locale, {
+                  en: ["title", "titles"],
+                  cs: ["titul", "tituly", "titulů"],
+                })
+              ) : (
+                <>
+                  {collection.items.length} title
+                  {collection.items.length === 1 ? "" : "s"}
+                </>
+              )}
             </p>
           </div>
         )}
@@ -344,7 +381,7 @@ function CollectionCard({
             ref={renameButtonRef}
             onClick={startRename}
             aria-disabled={isSaving}
-            aria-label={`Rename ${collection.name}`}
+            aria-label={t(`Rename ${collection.name}`, `Přejmenovat ${collection.name}`)}
             className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
           >
             <Pencil className="w-4 h-4" aria-hidden="true" />
@@ -357,7 +394,7 @@ function CollectionCard({
                 aria-busy={isSaving}
                 className="text-red-400 hover:text-red-300 aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
               >
-                Delete
+                {t("Delete", "Smazat")}
               </button>
               <button
                 ref={cancelDeleteRef}
@@ -369,7 +406,7 @@ function CollectionCard({
                 aria-disabled={isSaving}
                 className="text-gray-500 hover:text-white aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
               >
-                Cancel
+                {t("Cancel", "Zrušit")}
               </button>
             </span>
           ) : (
@@ -382,7 +419,7 @@ function CollectionCard({
                 focusAfterRender(event.currentTarget, cancelDeleteRef);
                 setConfirmingDelete(true);
               }}
-              aria-label={`Delete ${collection.name}`}
+              aria-label={t(`Delete ${collection.name}`, `Smazat ${collection.name}`)}
               className="p-2 rounded-lg text-gray-400 hover:text-red-300 hover:bg-white/10 aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
             >
               <Trash2 className="w-4 h-4" aria-hidden="true" />
@@ -393,8 +430,17 @@ function CollectionCard({
 
       {collection.items.length === 0 ? (
         <p className="text-sm text-gray-500">
-          Empty for now. Add titles from any film or series page with the
-          &ldquo;Add to list&rdquo; button.
+          {locale === "cs" ? (
+            <>
+              Zatím prázdný. Tituly přidáte na stránce kteréhokoli filmu nebo
+              seriálu tlačítkem „Přidat do seznamu“.
+            </>
+          ) : (
+            <>
+              Empty for now. Add titles from any film or series page with the
+              &ldquo;Add to list&rdquo; button.
+            </>
+          )}
         </p>
       ) : (
         <ul className="flex flex-wrap gap-2">
@@ -424,7 +470,10 @@ function CollectionCard({
                 onClick={() => removeItem(item.id, item.mediaType)}
                 aria-disabled={isSaving}
                 aria-busy={isSaving}
-                aria-label={`Remove ${item.title} from ${collection.name}`}
+                aria-label={t(
+                  `Remove ${item.title} from ${collection.name}`,
+                  `Odebrat ${item.title} ze seznamu ${collection.name}`,
+                )}
                 // Revealed on hover only where there is hover. On a touch
                 // screen it used to be invisible yet still tappable, so a tap
                 // near a poster's corner removed the title without warning.
@@ -441,16 +490,30 @@ function CollectionCard({
 }
 
 function EmptyState() {
+  const locale = useLocale();
+  const t = useT();
   return (
     <div className="text-center py-12 rounded-xl border border-dashed border-gray-800">
       <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-800 flex items-center justify-center">
         <ListPlus className="w-8 h-8 text-gray-600" aria-hidden="true" />
       </div>
-      <h2 className="text-xl font-bold mb-2">No lists yet</h2>
+      <h2 className="text-xl font-bold mb-2">
+        {t("No lists yet", "Zatím žádné seznamy")}
+      </h2>
       <p className="text-gray-400 max-w-md mx-auto text-sm leading-relaxed">
-        A watchlist answers one question. These answer the rest – &ldquo;the
-        horror run for October&rdquo;, &ldquo;what to show my dad&rdquo;,
-        &ldquo;best of this year&rdquo; – and each one shares as a link.
+        {locale === "cs" ? (
+          <>
+            Seznam ke zhlédnutí odpovídá jen na jednu otázku. Vlastní seznamy
+            na všechny ostatní – „horory na říjen“, „co ukázat tátovi“, „to
+            nejlepší z letoška“ – a každý se dá sdílet odkazem.
+          </>
+        ) : (
+          <>
+            A watchlist answers one question. These answer the rest – &ldquo;the
+            horror run for October&rdquo;, &ldquo;what to show my dad&rdquo;,
+            &ldquo;best of this year&rdquo; – and each one shares as a link.
+          </>
+        )}
       </p>
     </div>
   );

@@ -2,11 +2,15 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { getImageUrl } from "@/lib/tmdb-image";
 import { createSlug } from "@/lib/utils";
 import type { Person } from "@/types/tmdb";
 import { personHref } from "@/lib/routes";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { pick, type Localized } from "@/i18n/locale";
+import { formatCount } from "@/i18n/format";
+import { departmentName } from "@/components/PersonGrid";
 
 interface PeopleContentProps {
   people: Person[];
@@ -14,11 +18,11 @@ interface PeopleContentProps {
 
 type FilterKey = "all" | "movies" | "tv" | "both";
 
-const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "movies", label: "Movies" },
-  { key: "tv", label: "TV Shows" },
-  { key: "both", label: "Movies & TV" },
+const FILTERS: { key: FilterKey; label: Localized }[] = [
+  { key: "all", label: { en: "All", cs: "Vše" } },
+  { key: "movies", label: { en: "Movies", cs: "Filmy" } },
+  { key: "tv", label: { en: "TV Shows", cs: "Seriály" } },
+  { key: "both", label: { en: "Movies & TV", cs: "Filmy i seriály" } },
 ];
 
 function getMediaMix(person: Person): FilterKey {
@@ -36,6 +40,8 @@ function getMediaMix(person: Person): FilterKey {
 
 export function PeopleContent({ people }: PeopleContentProps) {
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
+  const locale = useLocale();
+  const t = useT();
 
   const filtered =
     activeFilter === "all"
@@ -52,7 +58,7 @@ export function PeopleContent({ people }: PeopleContentProps) {
       <div
         className="flex flex-wrap items-center gap-2 mb-8"
         role="group"
-        aria-label="Filter by media type"
+        aria-label={t("Filter by media type", "Filtrovat podle typu")}
       >
         {FILTERS.map((f) => {
           const count =
@@ -77,13 +83,16 @@ export function PeopleContent({ people }: PeopleContentProps) {
                   : "bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white"
               }`}
             >
-              {f.label}{" "}
+              {pick(locale, f.label)}{" "}
               <span className="ml-2 text-xs opacity-70">{count}</span>
             </button>
           );
         })}
         <span className="ml-auto text-sm text-gray-500 self-center" aria-live="polite">
-          {filtered.length} {filtered.length === 1 ? "person" : "people"}
+          {formatCount(filtered.length, locale, {
+            en: ["person", "people"],
+            cs: ["osobnost", "osobnosti", "osobností"],
+          })}
         </span>
       </div>
 
@@ -129,7 +138,7 @@ export function PeopleContent({ people }: PeopleContentProps) {
               </p>
               {person.known_for_department && (
                 <span className="inline-block text-xs text-blue-400/80 mt-0.5">
-                  {person.known_for_department}
+                  {departmentName(person.known_for_department, locale)}
                 </span>
               )}
               {knownForTitles.length > 0 && (
@@ -144,7 +153,7 @@ export function PeopleContent({ people }: PeopleContentProps) {
 
       {filtered.length === 0 && (
         <p className="text-gray-400 text-center py-16">
-          No results for this category.
+          {t("No results for this category.", "V této kategorii nikdo není.")}
         </p>
       )}
     </>

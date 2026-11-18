@@ -1,8 +1,10 @@
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { tmdbApi } from "@/lib/tmdb";
 import { createSlug } from "@/lib/utils";
 import { releaseYear } from "@/lib/dates";
+import { likeHeading } from "@/lib/like-titles";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 import type { Movie } from "@/types/tmdb";
 import { movieHref } from "@/lib/routes";
 
@@ -26,13 +28,17 @@ interface SimilarMoviesProps {
 }
 
 function SimilarMoviesContent({ similar, title, allHref }: SimilarMoviesProps) {
+  const locale = useLocale();
+  const t = useT();
   if (similar.length === 0) {
     return null;
   }
 
   return (
     <section className="mt-8">
-      <h2 className="text-2xl font-bold mb-6">Movies like {title}</h2>
+      <h2 className="text-2xl font-bold mb-6">
+        {likeHeading("movie", title, locale)}
+      </h2>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {similar.slice(0, SHOWN).map((movie, index) => {
           const slug = createSlug(movie.title, movie.id);
@@ -58,7 +64,7 @@ function SimilarMoviesContent({ similar, title, allHref }: SimilarMoviesProps) {
                   {movie.title}
                 </h3>
                 <p className="text-gray-400 text-xs mb-1">
-                  {releaseYear(movie.release_date) ?? "N/A"}
+                  {releaseYear(movie.release_date) ?? t("N/A", "neuvedeno")}
                 </p>
                 {movie.overview && (
                   <p className="text-gray-300 text-xs line-clamp-3 leading-relaxed">
@@ -76,7 +82,7 @@ function SimilarMoviesContent({ similar, title, allHref }: SimilarMoviesProps) {
           prefetch={false}
           className="inline-block mt-6 text-blue-400 hover:text-blue-300 transition-colors"
         >
-          See all movies like {title} →
+          {t(`See all movies like ${title} →`, `Všechny filmy jako ${title} →`)}
         </Link>
       )}
     </section>

@@ -1,3 +1,4 @@
+import type { Locale } from "@/i18n/locale";
 import { applyStorageTransaction } from "./storage-transaction";
 
 /**
@@ -28,6 +29,27 @@ export const DEFAULT_PROFILE: Profile = {
   id: DEFAULT_ID,
   name: "Me",
 };
+
+/**
+ * A profile's name as a page shows it.
+ *
+ * The stored name never changes with the language: both trees read the same
+ * roster, and a name is what the duplicate checks and every backup compare.
+ * Only the placeholders this app wrote itself – the default profile's "Me"
+ * and `recoverUnlistedProfiles`' "Recovered profile N" – are shown in the
+ * page's language, until the visitor renames them. A name the visitor typed
+ * is shown exactly as typed.
+ */
+export function profileDisplayName(
+  profile: Pick<Profile, "id" | "name">,
+  locale: Locale = "en",
+): string {
+  if (locale === "en") return profile.name;
+  if (profile.id === DEFAULT_ID && profile.name === DEFAULT_PROFILE.name) return "Já";
+  const recovered = /^Recovered profile (\d+)$/.exec(profile.name);
+  if (recovered) return `Obnovený profil ${recovered[1]}`;
+  return profile.name;
+}
 
 /**
  * A name as the switcher can show it. Control and format characters become

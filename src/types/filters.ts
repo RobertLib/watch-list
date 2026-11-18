@@ -1,3 +1,5 @@
+import type { Locale } from "@/i18n/locale";
+
 export interface FilterOptions {
   sortBy?: string;
   year?: string;
@@ -39,35 +41,39 @@ export interface FilterOptions {
 export interface MovieSortOptions {
   value: string;
   label: string;
+  /** `label` in Czech. */
+  labelCs: string;
 }
 
 export interface TVSortOptions {
   value: string;
   label: string;
+  /** `label` in Czech. */
+  labelCs: string;
 }
 
 export const MOVIE_SORT_OPTIONS: MovieSortOptions[] = [
-  { value: "popularity.desc", label: "Popularity (High to Low)" },
-  { value: "popularity.asc", label: "Popularity (Low to High)" },
-  { value: "vote_average.desc", label: "Rating (High to Low)" },
-  { value: "vote_average.asc", label: "Rating (Low to High)" },
-  { value: "primary_release_date.desc", label: "Release Date (Newest)" },
-  { value: "primary_release_date.asc", label: "Release Date (Oldest)" },
-  { value: "title.asc", label: "Title (A-Z)" },
-  { value: "title.desc", label: "Title (Z-A)" },
-  { value: "revenue.desc", label: "Revenue (High to Low)" },
-  { value: "revenue.asc", label: "Revenue (Low to High)" },
+  { value: "popularity.desc", label: "Popularity (High to Low)", labelCs: "Popularita (od nejvyšší)" },
+  { value: "popularity.asc", label: "Popularity (Low to High)", labelCs: "Popularita (od nejnižší)" },
+  { value: "vote_average.desc", label: "Rating (High to Low)", labelCs: "Hodnocení (od nejvyššího)" },
+  { value: "vote_average.asc", label: "Rating (Low to High)", labelCs: "Hodnocení (od nejnižšího)" },
+  { value: "primary_release_date.desc", label: "Release Date (Newest)", labelCs: "Datum premiéry (od nejnovějších)" },
+  { value: "primary_release_date.asc", label: "Release Date (Oldest)", labelCs: "Datum premiéry (od nejstarších)" },
+  { value: "title.asc", label: "Title (A-Z)", labelCs: "Název (A–Z)" },
+  { value: "title.desc", label: "Title (Z-A)", labelCs: "Název (Z–A)" },
+  { value: "revenue.desc", label: "Revenue (High to Low)", labelCs: "Tržby (od nejvyšších)" },
+  { value: "revenue.asc", label: "Revenue (Low to High)", labelCs: "Tržby (od nejnižších)" },
 ];
 
 export const TV_SORT_OPTIONS: TVSortOptions[] = [
-  { value: "popularity.desc", label: "Popularity (High to Low)" },
-  { value: "popularity.asc", label: "Popularity (Low to High)" },
-  { value: "vote_average.desc", label: "Rating (High to Low)" },
-  { value: "vote_average.asc", label: "Rating (Low to High)" },
-  { value: "first_air_date.desc", label: "Air Date (Newest)" },
-  { value: "first_air_date.asc", label: "Air Date (Oldest)" },
-  { value: "name.asc", label: "Title (A-Z)" },
-  { value: "name.desc", label: "Title (Z-A)" },
+  { value: "popularity.desc", label: "Popularity (High to Low)", labelCs: "Popularita (od nejvyšší)" },
+  { value: "popularity.asc", label: "Popularity (Low to High)", labelCs: "Popularita (od nejnižší)" },
+  { value: "vote_average.desc", label: "Rating (High to Low)", labelCs: "Hodnocení (od nejvyššího)" },
+  { value: "vote_average.asc", label: "Rating (Low to High)", labelCs: "Hodnocení (od nejnižšího)" },
+  { value: "first_air_date.desc", label: "Air Date (Newest)", labelCs: "Datum vysílání (od nejnovějších)" },
+  { value: "first_air_date.asc", label: "Air Date (Oldest)", labelCs: "Datum vysílání (od nejstarších)" },
+  { value: "name.asc", label: "Title (A-Z)", labelCs: "Název (A–Z)" },
+  { value: "name.desc", label: "Title (Z-A)", labelCs: "Název (Z–A)" },
 ];
 
 /** The year of the first film TMDB has, and so the oldest a filter can name. */
@@ -94,24 +100,32 @@ export function releaseYears(now: Date = new Date()): number[] {
 
 // Original languages used by the catalogue's with_original_language filter.
 export const LANGUAGES = [
-  { code: "en", name: "English" },
-  { code: "cs", name: "Czech" },
-  { code: "sk", name: "Slovak" },
-  { code: "de", name: "German" },
-  { code: "fr", name: "French" },
-  { code: "es", name: "Spanish" },
-  { code: "it", name: "Italian" },
-  { code: "ja", name: "Japanese" },
-  { code: "ko", name: "Korean" },
-  { code: "zh", name: "Chinese" },
-  { code: "ru", name: "Russian" },
-  { code: "pt", name: "Portuguese" },
-  { code: "nl", name: "Dutch" },
-  { code: "sv", name: "Swedish" },
-  { code: "no", name: "Norwegian" },
-  { code: "da", name: "Danish" },
-  { code: "fi", name: "Finnish" },
-  { code: "pl", name: "Polish" },
-  { code: "hu", name: "Hungarian" },
-  { code: "tr", name: "Turkish" },
+  { code: "en", name: "English", nameCs: "angličtina" },
+  { code: "cs", name: "Czech", nameCs: "čeština" },
+  { code: "sk", name: "Slovak", nameCs: "slovenština" },
+  { code: "de", name: "German", nameCs: "němčina" },
+  { code: "fr", name: "French", nameCs: "francouzština" },
+  { code: "es", name: "Spanish", nameCs: "španělština" },
+  { code: "it", name: "Italian", nameCs: "italština" },
+  { code: "ja", name: "Japanese", nameCs: "japonština" },
+  { code: "ko", name: "Korean", nameCs: "korejština" },
+  { code: "zh", name: "Chinese", nameCs: "čínština" },
+  { code: "ru", name: "Russian", nameCs: "ruština" },
+  { code: "pt", name: "Portuguese", nameCs: "portugalština" },
+  { code: "nl", name: "Dutch", nameCs: "nizozemština" },
+  { code: "sv", name: "Swedish", nameCs: "švédština" },
+  { code: "no", name: "Norwegian", nameCs: "norština" },
+  { code: "da", name: "Danish", nameCs: "dánština" },
+  { code: "fi", name: "Finnish", nameCs: "finština" },
+  { code: "pl", name: "Polish", nameCs: "polština" },
+  { code: "hu", name: "Hungarian", nameCs: "maďarština" },
+  { code: "tr", name: "Turkish", nameCs: "turečtina" },
 ];
+
+/** A filter language's name in the page's language. */
+export function languageName(
+  language: (typeof LANGUAGES)[number],
+  locale: Locale,
+): string {
+  return locale === "cs" ? language.nameCs : language.name;
+}

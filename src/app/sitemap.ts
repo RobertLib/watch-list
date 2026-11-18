@@ -1,5 +1,12 @@
 import { MetadataRoute } from "next";
-import { SITE_URL, genreHref, likePath, moodHref } from "@/lib/routes";
+import {
+  SITE_URL,
+  genreHref,
+  likePath,
+  moodHref,
+  prefixLocale,
+} from "@/lib/routes";
+import { LOCALES, type Locale } from "@/i18n/locale";
 import { genreSlug, genresFor } from "@/lib/genre-catalog";
 import { MOODS, moodsWithPlatforms } from "@/lib/moods";
 import {
@@ -54,6 +61,11 @@ const MEDIA_TYPES: MediaType[] = ["movie", "tv"];
  * whenever any file changed and said nothing about whether the page behind it
  * had. Google treats a `lastmod` that is not consistently truthful as noise
  * and stops reading it; better to state nothing than to state that.
+ *
+ * Both languages are here: every English page and its Czech twin under `/cs`,
+ * each entry naming the other as an `hreflang` alternate (with English as the
+ * `x-default`) when both exist. The pages' own `<head>` says the same
+ * (`languageAlternates` in `page-metadata.ts`); Google reads either.
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const fixed = [
@@ -80,10 +92,28 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const moods = MOODS.map((mood) => ({ path: moodHref(mood.slug), priority: 0.7 }));
 
-  const landings = [
-    ...(await indexableLandingPaths()),
-    ...(await indexableMoodLandingPaths()),
-  ].map((path) => ({ path, priority: 0.6 }));
+  // The same page in both trees: the English path, and the Czech one under
+  // `/cs` (`hreflang` pairs them, below).
+  const shared: SitemapPage[] = [...fixed, ...genres, ...moods].map(
+    ({ path, priority }) => ({
+      priority,
+      paths: { en: path, cs: prefixLocale(path, "cs") },
+    }),
+  );
+
+  // A landing is counted in each tree on its own: the Czech one lists the Czech
+  // region's catalogue, so it can clear the bar where the English one does not,
+  // or the other way round.
+  const landings = await pagesByKey(
+    (locale) =>
+      Promise.all([
+        indexableLandingPaths(locale),
+        indexableMoodLandingPaths(locale),
+      ]).then(([genre, mood]) =>
+        [...genre, ...mood].map((path) => ({ key: path, path: prefixLocale(path, locale) })),
+      ),
+    0.6,
+  );
 
   // A title page with no snapshot is `noindex` (`title-metadata.ts`), and a
   // build without TMDB access has no list to read – so this is empty exactly
@@ -92,30 +122,80 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // (`buildTimeLoad`'s `missingIsNull`) is still listed until the next daily
   // build drops it. Checking every title's snapshot here would cost up to
   // another request per title per build, for a case that rare.
-  const titles = KINDS.flatMap((kind) =>
-    prerenderedTitles(kind).map(({ slug }) => ({
-      path: `/${kind}/${slug}`,
-      priority: 0.6,
-    })),
+  //
+  // Each tree prerenders its own titles under its own slugs, so the two pages
+  // of one title are paired by id rather than by path.
+  const titles = await pagesByKey(
+    async (locale) =>
+      KINDS.flatMap((kind) =>
+        prerenderedTitles(kind, locale).map(({ id, slug }) => ({
+          key: `${kind}:${id}`,
+          path: prefixLocale(`/${kind}/${slug}`, locale),
+        })),
+      ),
+    0.6,
   );
 
-  const likePages = (await indexableLikePaths()).map((path) => ({
-    path,
-    priority: 0.5,
-  }));
+  const likePages = await pagesByKey(indexableLikePaths, 0.5);
 
-  return [
-    ...fixed,
-    ...genres,
-    ...moods,
-    ...landings,
-    ...titles,
-    ...likePages,
-  ].map(({ path, priority }) => ({
-    url: `${SITE_URL}${path}`,
-    changeFrequency: "weekly" as const,
-    priority,
-  }));
+  return [...shared, ...landings, ...titles, ...likePages].flatMap(
+    ({ paths, priority }) => {
+      const languages = alternatesOf(paths);
+      return LOCALES.flatMap((locale) => {
+        const path = paths[locale];
+        if (!path) return [];
+        return [
+          {
+            url: `${SITE_URL}${path}`,
+            changeFrequency: "weekly" as const,
+            priority,
+            ...(languages ? { alternates: { languages } } : {}),
+          },
+        ];
+      });
+    },
+  );
+}
+
+/** One page, at its path in each tree that has it. */
+interface SitemapPage {
+  priority: number;
+  paths: Partial<Record<Locale, string>>;
+}
+
+/**
+ * Pages each tree lists on its own, paired by `key` – a title's id, a
+ * landing's English path – so a page and its translation share one entry.
+ */
+async function pagesByKey(
+  list: (locale: Locale) => Promise<{ key: string; path: string }[]>,
+  priority: number,
+): Promise<SitemapPage[]> {
+  const byKey = new Map<string, SitemapPage>();
+  for (const locale of LOCALES) {
+    for (const { key, path } of await list(locale)) {
+      const page = byKey.get(key) ?? { priority, paths: {} };
+      page.paths[locale] = path;
+      byKey.set(key, page);
+    }
+  }
+  return [...byKey.values()];
+}
+
+/**
+ * The `hreflang` set for a page both trees have – every language and English
+ * as the `x-default` – or nothing for a page only one tree has.
+ */
+function alternatesOf(
+  paths: Partial<Record<Locale, string>>,
+): Record<string, string> | undefined {
+  if (!LOCALES.every((locale) => paths[locale])) return undefined;
+  return {
+    ...Object.fromEntries(
+      LOCALES.map((locale) => [locale, `${SITE_URL}${paths[locale]}`]),
+    ),
+    "x-default": `${SITE_URL}${paths.en}`,
+  };
 }
 
 /**
@@ -123,7 +203,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
  * build without TMDB access: nothing then shows any of them is not thin, and
  * their pages are `noindex` for the same reason.
  */
-async function indexableLandingPaths(): Promise<string[]> {
+async function indexableLandingPaths(locale: Locale): Promise<string[]> {
   if (!buildTimeTmdbAvailable()) return [];
 
   const candidates = MEDIA_TYPES.flatMap((mediaType) =>
@@ -134,7 +214,7 @@ async function indexableLandingPaths(): Promise<string[]> {
 
   const paths = await Promise.all(
     candidates.map(async ({ mediaType, genre, platform }) => {
-      const snapshot = await getGenreSnapshot(mediaType, genre.id, platform.slug);
+      const snapshot = await getGenreSnapshot(mediaType, genre.id, platform.slug, locale);
       return isIndexableLanding(snapshot?.totalResults)
         ? genreHref(mediaType, genreSlug(genre), { provider: platform.slug })
         : null;
@@ -148,7 +228,7 @@ async function indexableLandingPaths(): Promise<string[]> {
  * The same for the moods that have a page per platform: only the landings with
  * enough titles, counted from the snapshot the page's own metadata reads.
  */
-async function indexableMoodLandingPaths(): Promise<string[]> {
+async function indexableMoodLandingPaths(locale: Locale): Promise<string[]> {
   if (!buildTimeTmdbAvailable()) return [];
 
   const candidates = moodsWithPlatforms().flatMap((mood) =>
@@ -157,7 +237,7 @@ async function indexableMoodLandingPaths(): Promise<string[]> {
 
   const paths = await Promise.all(
     candidates.map(async ({ mood, platform }) => {
-      const snapshot = await getMoodSnapshot(mood.slug, platform.slug);
+      const snapshot = await getMoodSnapshot(mood.slug, platform.slug, locale);
       return isIndexableLanding(snapshot?.totalResults)
         ? moodHref(mood.slug, 1, platform.slug)
         : null;
@@ -175,20 +255,24 @@ async function indexableMoodLandingPaths(): Promise<string[]> {
  * is a load per page, but not a request – it is the URL the title page's
  * snapshot already asked for, answered from the build's fetch cache.
  */
-async function indexableLikePaths(): Promise<string[]> {
+async function indexableLikePaths(
+  locale: Locale,
+): Promise<{ key: string; path: string }[]> {
   if (!buildTimeTmdbAvailable()) return [];
 
-  const paths = await Promise.all(
+  const pages = await Promise.all(
     LIKE_PAGE_KINDS.flatMap((kind) =>
-      likePageTitles(kind).map(async ({ id, slug }) => {
+      likePageTitles(kind, locale).map(async ({ id, slug }) => {
         const page =
           kind === "movie"
-            ? await getMovieLikeSnapshot(id)
-            : await getTVLikeSnapshot(id);
-        return isIndexableLikePage(page) ? likePath(kind, slug) : null;
+            ? await getMovieLikeSnapshot(id, locale)
+            : await getTVLikeSnapshot(id, locale);
+        return isIndexableLikePage(page)
+          ? { key: `${kind}:${id}`, path: likePath(kind, slug, locale) }
+          : null;
       }),
     ),
   );
 
-  return paths.filter((path): path is string => path !== null);
+  return pages.filter((page) => page !== null);
 }

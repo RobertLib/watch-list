@@ -11,17 +11,28 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createSlug } from "./utils";
 import type { LikePageKind, PrerenderedKind } from "./prerendered-titles";
+import type { Locale } from "@/i18n/locale";
 
 export interface PrerenderedTitle {
   id: number;
   slug: string;
 }
 
-let cached: Record<PrerenderedKind, PrerenderedTitle[]> | null = null;
+let cached: Record<Locale, Record<PrerenderedKind, PrerenderedTitle[]>> | null =
+  null;
 
-export function prerenderedTitles(kind: PrerenderedKind): PrerenderedTitle[] {
+type RawList = Partial<Record<PrerenderedKind, unknown>>;
+
+/**
+ * The titles of one kind, in the list's order (most-voted first). Czech has a
+ * list of its own: fewer titles, each under the slug of its Czech name.
+ */
+export function prerenderedTitles(
+  kind: PrerenderedKind,
+  locale: Locale = "en",
+): PrerenderedTitle[] {
   if (!cached) {
-    let list: Partial<Record<PrerenderedKind, { id: number; name: string }[]>> = {};
+    let list: RawList & { cs?: RawList } = {};
     try {
       list = JSON.parse(
         readFileSync(
@@ -43,13 +54,22 @@ export function prerenderedTitles(kind: PrerenderedKind): PrerenderedTitle[] {
             typeof entry.name === "string",
         )
         .map(({ id, name }) => ({ id, slug: createSlug(name, id) }));
+    const czech: RawList =
+      list.cs && typeof list.cs === "object" ? list.cs : {};
     cached = {
-      movie: toTitles(list.movie),
-      tv: toTitles(list.tv),
-      person: toTitles(list.person),
+      en: {
+        movie: toTitles(list.movie),
+        tv: toTitles(list.tv),
+        person: toTitles(list.person),
+      },
+      cs: {
+        movie: toTitles(czech.movie),
+        tv: toTitles(czech.tv),
+        person: toTitles(czech.person),
+      },
     };
   }
-  return cached[kind];
+  return cached[locale][kind];
 }
 
 /**
@@ -64,8 +84,9 @@ export function prerenderedTitles(kind: PrerenderedKind): PrerenderedTitle[] {
 export function prerenderedTitleParams(
   kind: PrerenderedKind,
   fallback: string,
+  locale: Locale = "en",
 ): { slug: string }[] {
-  const titles = prerenderedTitles(kind);
+  const titles = prerenderedTitles(kind, locale);
   return titles.length > 0
     ? titles.map(({ slug }) => ({ slug }))
     : [{ slug: fallback }];
@@ -83,23 +104,52 @@ export function prerenderedTitleParams(
  * could not then grow into. And the question is asked about the famous ones:
  * "movies like Inception", not like the six-hundredth most-voted film.
  */
-export const LIKE_PAGE_LIMITS: Record<LikePageKind, number> = {
-  movie: 450,
-  tv: 200,
+export const LIKE_PAGE_LIMITS: Record<Locale, Record<LikePageKind, number>> = {
+  en: { movie: 450, tv: 200 },
+  // None yet: every Czech page is disk the English site is also counting on
+  // (see `CS_LIMITS` in `scripts/prebuild.mjs`). The routes exist, so raising
+  // these is all it takes.
+  cs: { movie: 0, tv: 0 },
 };
 
 /** The titles with a "like this" page, with the slug it is built at. */
-export function likePageTitles(kind: LikePageKind): PrerenderedTitle[] {
-  return prerenderedTitles(kind).slice(0, LIKE_PAGE_LIMITS[kind]);
+export function likePageTitles(
+  kind: LikePageKind,
+  locale: Locale = "en",
+): PrerenderedTitle[] {
+  return prerenderedTitles(kind, locale).slice(0, LIKE_PAGE_LIMITS[locale][kind]);
 }
 
 /** As `prerenderedTitleParams`: never empty, for the same reason. */
 export function likePageParams(
   kind: LikePageKind,
   fallback: string,
+  locale: Locale = "en",
 ): { slug: string }[] {
-  const titles = likePageTitles(kind);
+  const titles = likePageTitles(kind, locale);
   return titles.length > 0
     ? titles.map(({ slug }) => ({ slug }))
     : [{ slug: fallback }];
+}
+
+/**
+ * The slug a title is prerendered under in `locale`, or undefined where that
+ * tree has no page for it – for the `hreflang` between a title's two pages,
+ * whose slugs differ (`fight-club-550`, `klub-rvacu-550`).
+ */
+export function prerenderedSlug(
+  kind: PrerenderedKind,
+  id: number,
+  locale: Locale,
+): string | undefined {
+  return prerenderedTitles(kind, locale).find((title) => title.id === id)?.slug;
+}
+
+/** As `prerenderedSlug`, for the "like this" pages. */
+export function likePageSlug(
+  kind: LikePageKind,
+  id: number,
+  locale: Locale,
+): string | undefined {
+  return likePageTitles(kind, locale).find((title) => title.id === id)?.slug;
 }

@@ -24,6 +24,8 @@
  * the order of `KINDS`. About 1,200 titles come to roughly six kilobytes.
  */
 
+import type { Locale } from "@/i18n/locale";
+
 export type PrerenderedKind = "movie" | "tv" | "person";
 
 export const KINDS: readonly PrerenderedKind[] = ["movie", "tv", "person"];
@@ -92,10 +94,17 @@ export function decodePrerenderedTitles(
   ) as Record<PrerenderedKind, Map<number, string>>;
 }
 
-let decoded: {
-  raw: string;
-  titles: Record<PrerenderedKind, Map<number, string>>;
-} | null = null;
+/**
+ * One decoded list per language. The Czech tree prerenders its own, smaller
+ * set of titles under slugs made from their Czech names (`klub-rvacu-550`), so
+ * it has a list of its own – `PRERENDERED_TITLE_IDS_CS` – read the same way.
+ */
+const decoded: Partial<
+  Record<
+    Locale,
+    { raw: string; titles: Record<PrerenderedKind, Map<number, string>> }
+  >
+> = {};
 
 /**
  * Whether the build wrote a page of its own for this title, under this slug.
@@ -107,12 +116,20 @@ export function hasPrerenderedPage(
   kind: PrerenderedKind,
   id: number,
   slug: string,
+  locale: Locale = "en",
 ): boolean {
   // Read literally, every time: the bundler replaces this exact expression, and
   // a test can stub the variable between calls.
-  const raw = process.env.PRERENDERED_TITLE_IDS ?? "";
-  if (decoded?.raw !== raw) decoded = { raw, titles: decodePrerenderedTitles(raw) };
-  const hash = decoded.titles[kind].get(id);
+  const raw =
+    (locale === "cs"
+      ? process.env.PRERENDERED_TITLE_IDS_CS
+      : process.env.PRERENDERED_TITLE_IDS) ?? "";
+  const entry = decoded[locale];
+  const titles =
+    entry?.raw === raw
+      ? entry.titles
+      : (decoded[locale] = { raw, titles: decodePrerenderedTitles(raw) }).titles;
+  const hash = titles[kind].get(id);
   return hash !== undefined && hash === slugHash(slug);
 }
 
@@ -168,21 +185,30 @@ export function decodeLikePageIds(
   ) as Record<LikePageKind, Set<number>>;
 }
 
-let decodedLikePages: {
-  raw: string;
-  ids: Record<LikePageKind, Set<number>>;
-} | null = null;
+const decodedLikePages: Partial<
+  Record<Locale, { raw: string; ids: Record<LikePageKind, Set<number>> }>
+> = {};
 
 /**
  * Whether the build wrote a "like this" page for this title, under this slug.
  * False for a slug the title page was not written under, for the same reason
  * `hasPrerenderedPage` is: the file is named by the slug.
  */
-export function hasLikePage(kind: LikePageKind, id: number, slug: string): boolean {
-  if (!hasPrerenderedPage(kind, id, slug)) return false;
-  const raw = process.env.LIKE_PAGE_TITLE_IDS ?? "";
-  if (decodedLikePages?.raw !== raw) {
-    decodedLikePages = { raw, ids: decodeLikePageIds(raw) };
-  }
-  return decodedLikePages.ids[kind].has(id);
+export function hasLikePage(
+  kind: LikePageKind,
+  id: number,
+  slug: string,
+  locale: Locale = "en",
+): boolean {
+  if (!hasPrerenderedPage(kind, id, slug, locale)) return false;
+  const raw =
+    (locale === "cs"
+      ? process.env.LIKE_PAGE_TITLE_IDS_CS
+      : process.env.LIKE_PAGE_TITLE_IDS) ?? "";
+  const entry = decodedLikePages[locale];
+  const ids =
+    entry?.raw === raw
+      ? entry.ids
+      : (decodedLikePages[locale] = { raw, ids: decodeLikePageIds(raw) }).ids;
+  return ids[kind].has(id);
 }

@@ -15,6 +15,7 @@
  * on a line of its own instead.
  */
 
+import type { Locale } from "@/i18n/locale";
 import type { RegionWatchProviders, WatchProvider } from "@/types/tmdb";
 
 /** Named in full; past this the rest are counted. */
@@ -25,23 +26,68 @@ function names(providers: WatchProvider[]): string[] {
   return [...new Set(providers.map((provider) => provider.provider_name))];
 }
 
-/** "A", "A and B", "A, B and C", "A, B, C and 4 more". */
-export function listServices(all: string[]): string {
+/**
+ * "A", "A and B", "A, B and C", "A, B, C and 4 more" – or "A, B, C a 4 další".
+ *
+ * `rest` is the word for the services left uncounted, for the one sentence that
+ * needs it in another case: Czech says "ve službách A, B a 4 dalších".
+ */
+export function listServices(
+  all: string[],
+  locale: Locale = "en",
+  rest: string = locale === "cs" ? "další" : "more",
+): string {
+  const and = locale === "cs" ? "a" : "and";
   const shown = all.slice(0, NAMES_SHOWN);
-  const rest = all.length - shown.length;
-  if (rest > 0) return `${shown.join(", ")} and ${rest} more`;
+  const more = all.length - shown.length;
+  if (more > 0) return `${shown.join(", ")} ${and} ${more} ${rest}`;
   if (shown.length <= 1) return shown.join("");
-  return `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}`;
+  return `${shown.slice(0, -1).join(", ")} ${and} ${shown[shown.length - 1]}`;
+}
+
+/**
+ * "ve službě Netflix", "ve službách Netflix a HBO Max".
+ *
+ * A Czech sentence cannot put a service's name where English does – "na
+ * Netflixu" declines it, and "Disney+" or "Apple TV Store" will not decline –
+ * so the name stands beside a noun that takes the case instead, as it does in
+ * any Czech copy that names brands.
+ */
+function inServicesCs(all: string[]): string {
+  const where = all.length === 1 ? "ve službě" : "ve službách";
+  return `${where} ${listServices(all, "cs", "dalších")}`;
 }
 
 export function whereToWatchSummary(
   title: string,
   providers: RegionWatchProviders,
+  locale: Locale = "en",
 ): string {
   const streaming = names(providers.streaming);
   const rent = names(providers.rent);
   const buy = names(providers.buy);
   const paid = [...new Set([...rent, ...buy])];
+
+  // Czech, as its own sentences. "Ho" stands for the film or the series – both
+  // masculine nouns – rather than for the title, whose own gender nobody knows.
+  if (locale === "cs") {
+    const verb =
+      rent.length > 0 && buy.length > 0
+        ? "půjčit nebo koupit"
+        : rent.length > 0
+          ? "půjčit"
+          : "koupit";
+    if (streaming.length > 0) {
+      const also =
+        paid.length > 0 ? ` Také si ho můžete ${verb} ${inServicesCs(paid)}.` : "";
+      return `${title} můžete streamovat ${inServicesCs(streaming)}.${also}`;
+    }
+    if (paid.length > 0) {
+      return `${title} se tu teď nestreamuje, ale můžete si ho ${verb} ${inServicesCs(paid)}.`;
+    }
+    return `${title} se tu teď nedá streamovat, půjčit ani koupit.`;
+  }
+
   const verb =
     rent.length > 0 && buy.length > 0 ? "rent or buy" : rent.length > 0 ? "rent" : "buy";
 

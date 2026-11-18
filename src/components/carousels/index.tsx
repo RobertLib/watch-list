@@ -7,6 +7,7 @@ import { useSettingsKey } from "@/hooks/useSettings";
 import { useLocalDay } from "@/hooks/useLocalDay";
 import { loadHomeRow, type HomeRow } from "@/lib/home-rows";
 import type { MediaItem } from "@/types/tmdb";
+import { useT } from "@/i18n/LocaleProvider";
 
 /**
  * The rows on the home page.
@@ -63,9 +64,10 @@ function DiscoverCarousel({
 }
 
 export function TrendingCarousel({ snapshot }: CarouselPlacement = {}) {
+  const t = useT();
   return (
     <DiscoverCarousel
-      title="Trending This Week"
+      title={t("Trending This Week", "Trendy tohoto týdne")}
       titleWidth="w-52"
       row="trending"
       snapshot={snapshot}
@@ -74,9 +76,10 @@ export function TrendingCarousel({ snapshot }: CarouselPlacement = {}) {
 }
 
 export function NowPlayingCarousel({ headingLevel, snapshot }: CarouselPlacement = {}) {
+  const t = useT();
   return (
     <DiscoverCarousel
-      title="Now Playing in Theaters"
+      title={t("Now Playing in Theaters", "V kinech")}
       titleWidth="w-64"
       headingLevel={headingLevel}
       row="nowPlaying"
@@ -86,9 +89,10 @@ export function NowPlayingCarousel({ headingLevel, snapshot }: CarouselPlacement
 }
 
 export function PopularMoviesCarousel({ headingLevel, snapshot }: CarouselPlacement = {}) {
+  const t = useT();
   return (
     <DiscoverCarousel
-      title="Popular Movies"
+      title={t("Popular Movies", "Populární filmy")}
       titleWidth="w-48"
       headingLevel={headingLevel}
       row="popularMovies"
@@ -98,9 +102,10 @@ export function PopularMoviesCarousel({ headingLevel, snapshot }: CarouselPlacem
 }
 
 export function UpcomingMoviesCarousel({ headingLevel, snapshot }: CarouselPlacement = {}) {
+  const t = useT();
   return (
     <DiscoverCarousel
-      title="Coming Soon to Theaters"
+      title={t("Coming Soon to Theaters", "Připravujeme do kin")}
       titleWidth="w-60"
       headingLevel={headingLevel}
       row="upcomingMovies"
@@ -110,9 +115,10 @@ export function UpcomingMoviesCarousel({ headingLevel, snapshot }: CarouselPlace
 }
 
 export function TopRatedMoviesCarousel({ headingLevel, snapshot }: CarouselPlacement = {}) {
+  const t = useT();
   return (
     <DiscoverCarousel
-      title="Top Rated Movies"
+      title={t("Top Rated Movies", "Nejlépe hodnocené filmy")}
       titleWidth="w-56"
       headingLevel={headingLevel}
       row="topRatedMovies"
@@ -123,9 +129,10 @@ export function TopRatedMoviesCarousel({ headingLevel, snapshot }: CarouselPlace
 
 export function AiringTodayCarousel({ headingLevel, snapshot }: CarouselPlacement = {}) {
   const day = useLocalDay();
+  const t = useT();
   return (
     <DiscoverCarousel
-      title="Airing Today"
+      title={t("Airing Today", "Dnes vysílané")}
       titleWidth="w-36"
       headingLevel={headingLevel}
       row="airingToday"
@@ -136,9 +143,10 @@ export function AiringTodayCarousel({ headingLevel, snapshot }: CarouselPlacemen
 }
 
 export function PopularTVShowsCarousel({ headingLevel, snapshot }: CarouselPlacement = {}) {
+  const t = useT();
   return (
     <DiscoverCarousel
-      title="Popular TV Shows"
+      title={t("Popular TV Shows", "Populární seriály")}
       titleWidth="w-52"
       headingLevel={headingLevel}
       row="popularTVShows"
@@ -148,9 +156,10 @@ export function PopularTVShowsCarousel({ headingLevel, snapshot }: CarouselPlace
 }
 
 export function TopRatedTVShowsCarousel({ headingLevel, snapshot }: CarouselPlacement = {}) {
+  const t = useT();
   return (
     <DiscoverCarousel
-      title="Top Rated TV Shows"
+      title={t("Top Rated TV Shows", "Nejlépe hodnocené seriály")}
       titleWidth="w-56"
       headingLevel={headingLevel}
       row="topRatedTVShows"

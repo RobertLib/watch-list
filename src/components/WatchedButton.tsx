@@ -8,9 +8,10 @@ import { useProfileGuard } from "@/hooks/useProfileGuard";
 import { useWatched } from "@/contexts/WatchedContext";
 import { useWatchlist } from "@/contexts/WatchlistContext";
 import { toast } from "@/components/Toast";
-import { STORAGE_REFUSED_MESSAGE } from "@/lib/media-list";
+import { storageRefusedMessage } from "@/lib/media-list";
 import { setTitleWatched } from "@/lib/watched-actions";
 import { MediaItem } from "@/types/tmdb";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 
 interface WatchedButtonProps {
   item: MediaItem;
@@ -26,6 +27,8 @@ export function WatchedButton({
   const { isWatched, refreshWatched, profileId } = useWatched();
   const { refreshWatchlist, profileId: watchlistProfileId } = useWatchlist();
   const { checkProfile } = useProfileGuard();
+  const locale = useLocale();
+  const t = useT();
   const [isAnimating, animate] = useTransientFlag(300);
   const [isSaving, setIsSaving] = useState(false);
   const saving = useRef(false);
@@ -38,7 +41,13 @@ export function WatchedButton({
 
     if (saving.current || !checkProfile(profileId)) return;
     if (!watched && watchlistProfileId !== profileId) {
-      toast.showToast("Your active profile changed. Review the current title and try again.", "info");
+      toast.showToast(
+        t(
+          "Your active profile changed. Review the current title and try again.",
+          "Aktivní profil se mezitím změnil. Zkontrolujte titul a zkuste to znovu.",
+        ),
+        "info",
+      );
       return;
     }
     saving.current = true;
@@ -51,23 +60,50 @@ export function WatchedButton({
       refreshWatched();
       refreshWatchlist();
       if (result.status === "profile-unavailable") {
-        toast.showToast("The profile for this action was deleted. Review the current title and try again.", "info");
+        toast.showToast(
+          t(
+            "The profile for this action was deleted. Review the current title and try again.",
+            "Profil, ke kterému akce patřila, byl smazán. Zkontrolujte titul a zkuste to znovu.",
+          ),
+          "info",
+        );
       } else if (result.status === "changed") {
-        toast.showToast("Your watched list changed. Review the current title and try again.", "info");
+        toast.showToast(
+          t(
+            "Your watched list changed. Review the current title and try again.",
+            "Vaše zhlédnuté tituly se mezitím změnily. Zkontrolujte titul a zkuste to znovu.",
+          ),
+          "info",
+        );
       } else if (result.status === "failed") {
-        toast.showToast(STORAGE_REFUSED_MESSAGE, "error");
+        toast.showToast(
+          storageRefusedMessage(locale),
+          "error",
+        );
       } else if (result.status === "watchlist-failed") {
         toast.showToast(
-          `Marked "${item.title}" as watched, but your browser would not remove it from your watchlist`,
+          t(
+            `Marked "${item.title}" as watched, but your browser would not remove it from your watchlist`,
+            `Označeno jako zhlédnuté: „${item.title}“. Prohlížeč to ale neodebral ze seznamu.`,
+          ),
           "error",
         );
       } else if (result.status === "ok") {
         toast.showToast(
           watched
-            ? `Removed "${item.title}" from watched`
+            ? t(
+                `Removed "${item.title}" from watched`,
+                `Odebráno ze zhlédnutých: „${item.title}“`,
+              )
             : result.removedFromWatchlist
-              ? `Marked "${item.title}" as watched and removed it from your watchlist`
-              : `Marked "${item.title}" as watched`,
+              ? t(
+                  `Marked "${item.title}" as watched and removed it from your watchlist`,
+                  `Označeno jako zhlédnuté a odebráno ze seznamu: „${item.title}“`,
+                )
+              : t(
+                  `Marked "${item.title}" as watched`,
+                  `Označeno jako zhlédnuté: „${item.title}“`,
+                ),
           "success",
         );
       }
@@ -121,10 +157,20 @@ export function WatchedButton({
       // is built the same way.
       aria-label={
         watched
-          ? `Mark ${item.title} as not watched`
-          : `Mark ${item.title} as watched`
+          ? t(
+              `Mark ${item.title} as not watched`,
+              `Označit ${item.title} jako nezhlédnuté`,
+            )
+          : t(
+              `Mark ${item.title} as watched`,
+              `Označit ${item.title} jako zhlédnuté`,
+            )
       }
-      title={watched ? "Watched – click to undo" : "Mark as watched"}
+      title={
+        watched
+          ? t("Watched – click to undo", "Zhlédnuto – kliknutím vrátíte zpět")
+          : t("Mark as watched", "Označit jako zhlédnuté")
+      }
     >
       <Eye
         className={cn(

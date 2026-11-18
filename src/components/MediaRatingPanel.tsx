@@ -1,4 +1,16 @@
 import type { ReviewsResponse } from "@/types/tmdb";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount, formatNumber, type PluralForms, formatRating } from "@/i18n/format";
+import { t as translate, type Locale } from "@/i18n/locale";
+
+const VOTES: PluralForms = {
+  en: ["vote", "votes"],
+  cs: ["hlas", "hlasy", "hlasů"],
+};
+const REVIEWS: PluralForms = {
+  en: ["review", "reviews"],
+  cs: ["recenze", "recenze", "recenzí"],
+};
 
 interface MediaRatingPanelProps {
   voteAverage: number;
@@ -6,13 +18,18 @@ interface MediaRatingPanelProps {
   reviews?: ReviewsResponse;
 }
 
-function scoreLabel(score: number): { label: string; color: string } {
-  if (score >= 8.5) return { label: "Masterpiece", color: "text-emerald-400" };
-  if (score >= 7.5) return { label: "Great", color: "text-green-400" };
-  if (score >= 6.5) return { label: "Good", color: "text-lime-400" };
-  if (score >= 5.5) return { label: "Average", color: "text-yellow-400" };
-  if (score >= 4.0) return { label: "Mixed", color: "text-orange-400" };
-  return { label: "Poor", color: "text-red-400" };
+function scoreLabel(
+  score: number,
+  locale: Locale,
+): { label: string; color: string } {
+  const label = (en: string, cs: string) => translate(locale, en, cs);
+  if (score >= 8.5)
+    return { label: label("Masterpiece", "Mistrovské dílo"), color: "text-emerald-400" };
+  if (score >= 7.5) return { label: label("Great", "Výborné"), color: "text-green-400" };
+  if (score >= 6.5) return { label: label("Good", "Dobré"), color: "text-lime-400" };
+  if (score >= 5.5) return { label: label("Average", "Průměrné"), color: "text-yellow-400" };
+  if (score >= 4.0) return { label: label("Mixed", "Rozporuplné"), color: "text-orange-400" };
+  return { label: label("Poor", "Slabé"), color: "text-red-400" };
 }
 
 function ringColor(score: number): string {
@@ -50,11 +67,13 @@ export function MediaRatingPanel({
   voteCount,
   reviews,
 }: MediaRatingPanelProps) {
+  const locale = useLocale();
+  const t = useT();
   const score = Number(voteAverage.toFixed(1));
   const hasVotes = voteCount > 0;
   const { label, color } = hasVotes
-    ? scoreLabel(score)
-    : { label: "Not rated", color: "text-gray-400" };
+    ? scoreLabel(score, locale)
+    : { label: t("Not rated", "Bez hodnocení"), color: "text-gray-400" };
   const stroke = hasVotes ? ringColor(score) : "#374151";
 
   // SVG ring params
@@ -78,7 +97,9 @@ export function MediaRatingPanel({
 
   return (
     <div className="bg-gray-800 rounded-lg p-5">
-      <h3 className="text-lg font-bold text-white mb-4">Rating</h3>
+      <h3 className="text-lg font-bold text-white mb-4">
+        {t("Rating", "Hodnocení")}
+      </h3>
 
       {/* Score ring */}
       <div className="flex items-center gap-5 mb-5">
@@ -108,7 +129,7 @@ export function MediaRatingPanel({
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <span className="text-2xl font-bold text-white leading-none">
-              {score.toFixed(1)}
+              {formatRating(score, locale)}
             </span>
             <span className="text-gray-400 text-xs mt-0.5">/10</span>
           </div>
@@ -117,17 +138,23 @@ export function MediaRatingPanel({
         <div>
           <p className={`text-lg font-bold ${color}`}>{label}</p>
           <p className="text-gray-400 text-sm mt-1">
-            {voteCount.toLocaleString("en-US")} votes
+            {locale === "cs"
+              ? formatCount(voteCount, locale, VOTES)
+              : `${formatNumber(voteCount, locale)} votes`}
           </p>
           {avgReviewRating !== null && (
             <p className="text-gray-400 text-sm mt-1">
-              User review avg.{" "}
+              {t("User review avg.", "Průměr recenzí")}{" "}
               <span className="text-white font-medium">
-                {avgReviewRating.toFixed(1)}
+                {formatRating(avgReviewRating, locale)}
               </span>
               <span className="text-gray-500 text-xs">
                 {" "}
-                ({reviewsWithRating.length} reviews)
+                (
+                {locale === "cs"
+                  ? formatCount(reviewsWithRating.length, locale, REVIEWS)
+                  : `${reviewsWithRating.length} reviews`}
+                )
               </span>
             </p>
           )}
@@ -140,14 +167,18 @@ export function MediaRatingPanel({
       {hasDistribution && (
         <div className="mt-4">
           <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider">
-            Review score distribution
+            {t("Review score distribution", "Rozložení hodnocení v recenzích")}
           </p>
           <div className="flex items-end gap-0.5 h-12">
             {distribution.map((d) => (
               <div
                 key={d.score}
                 className="flex-1 flex flex-col items-center gap-0.5"
-                title={`Score ${d.score}: ${d.count} review${d.count !== 1 ? "s" : ""}`}
+                title={
+                  locale === "cs"
+                    ? `Hodnocení ${d.score}: ${formatCount(d.count, locale, REVIEWS)}`
+                    : `Score ${d.score}: ${d.count} review${d.count !== 1 ? "s" : ""}`
+                }
               >
                 <div
                   className="w-full flex items-end"

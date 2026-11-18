@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, SearchX } from "lucide-react";
 import { MediaGrid } from "@/components/MediaGrid";
@@ -13,6 +13,8 @@ import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { useSettingsKey } from "@/hooks/useSettings";
 import { tmdbApi } from "@/lib/tmdb";
 import { sanitizePage } from "@/lib/discover-filters";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount, formatNumber } from "@/i18n/format";
 
 const MAX_QUERY_LENGTH = 200;
 
@@ -45,8 +47,12 @@ function SearchResults() {
   const query = readQuery(searchParams.get("q"));
   const page = sanitizePage(Number(searchParams.get("page")) || 1);
   const settingsKey = useSettingsKey();
+  const locale = useLocale();
+  const t = useT();
 
-  useDocumentTitle(query ? `${query} – search` : "Search");
+  useDocumentTitle(
+    query ? t(`${query} – search`, `${query} – hledání`) : t("Search", "Hledání"),
+  );
 
   const { data, isLoading, error, reload } = useAsyncData(
     async () => query ? tmdbApi.searchMultiWithPeople(query, page) : null,
@@ -74,15 +80,28 @@ function SearchResults() {
       <div className="container mx-auto px-4 py-16 text-center">
         <h1 className="text-3xl font-bold mb-3 wrap-break-word">{query}</h1>
         <p className="text-gray-400 max-w-md mx-auto">
-          There {totalPages === 1 ? "is" : "are"} only {totalPages} page
-          {totalPages === 1 ? "" : "s"} of results for this search.
+          {locale === "cs" ? (
+            <>
+              Toto hledání má jen{" "}
+              {formatCount(totalPages, locale, {
+                en: ["page", "pages"],
+                cs: ["stránku", "stránky", "stránek"],
+              })}{" "}
+              výsledků.
+            </>
+          ) : (
+            <>
+              There {totalPages === 1 ? "is" : "are"} only {totalPages} page
+              {totalPages === 1 ? "" : "s"} of results for this search.
+            </>
+          )}
         </p>
         <Link
           href={searchHref(query, 1)}
           prefetch={false}
           className="mt-6 inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition-colors"
         >
-          Back to the first page
+          {t("Back to the first page", "Zpět na první stránku")}
         </Link>
       </div>
     );
@@ -91,23 +110,37 @@ function SearchResults() {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="mb-8">
-        <p className="text-sm text-gray-500 mb-1">Search results</p>
+        <p className="text-sm text-gray-500 mb-1">
+          {t("Search results", "Výsledky hledání")}
+        </p>
         <h1 className="text-3xl font-bold mb-2 wrap-break-word">{query}</h1>
         {!failed && (
           <p className="text-gray-400">
             {totalResults > 0
-              ? `${totalResults.toLocaleString("en-US")} result${
-                  totalResults === 1 ? "" : "s"
-                }${totalPages > 1 ? ` · page ${page} of ${totalPages}` : ""}`
-              : "No results matched."}
+              ? t(
+                  `${formatNumber(totalResults, locale)} result${
+                    totalResults === 1 ? "" : "s"
+                  }${totalPages > 1 ? ` · page ${page} of ${totalPages}` : ""}`,
+                  `${formatCount(totalResults, locale, {
+                    en: ["result", "results"],
+                    cs: ["výsledek", "výsledky", "výsledků"],
+                  })}${totalPages > 1 ? ` · stránka ${page} z ${totalPages}` : ""}`,
+                )
+              : t("No results matched.", "Nic jsme nenašli.")}
           </p>
         )}
       </div>
 
       {failed && (
         <LoadFailureNotice
-          title="Could not load search results"
-          description="TMDB did not answer. Check your connection and try again."
+          title={t(
+            "Could not load search results",
+            "Výsledky hledání se nepodařilo načíst",
+          )}
+          description={t(
+            "TMDB did not answer. Check your connection and try again.",
+            "TMDB neodpovídá. Zkontrolujte připojení a zkuste to znovu.",
+          )}
           onRetry={reload}
           compact
         />
@@ -122,7 +155,7 @@ function SearchResults() {
       {items.length > 0 && (
         <section aria-labelledby="titles-heading">
           <h2 id="titles-heading" className="text-xl font-semibold text-white mb-4">
-            Movies and TV shows
+            {t("Movies and TV shows", "Filmy a seriály")}
           </h2>
           <MediaGrid items={items} />
         </section>
@@ -134,7 +167,7 @@ function SearchResults() {
             id="people-heading"
             className="text-xl font-semibold text-white mb-4"
           >
-            People
+            {t("People", "Osobnosti")}
           </h2>
           <PersonGrid people={persons} />
         </section>
@@ -171,10 +204,13 @@ function Pagination({
 }) {
   const hasPrevious = page > 1;
   const hasNext = page < totalPages;
+  const t = useT();
+  const previous = t("Previous", "Předchozí");
+  const next = t("Next", "Další");
 
   return (
     <nav
-      aria-label="Search result pages"
+      aria-label={t("Search result pages", "Stránky výsledků hledání")}
       className="flex items-center justify-center gap-3 mt-10"
     >
       {hasPrevious ? (
@@ -185,10 +221,10 @@ function Pagination({
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-medium text-white transition-colors"
         >
           <ChevronLeft className="w-4 h-4" aria-hidden="true" />
-          Previous
+          {previous}
         </Link>
       ) : (
-        <span className="px-4 py-2 text-sm text-gray-600">Previous</span>
+        <span className="px-4 py-2 text-sm text-gray-600">{previous}</span>
       )}
 
       <span className="text-sm text-gray-400" aria-current="page">
@@ -202,22 +238,29 @@ function Pagination({
           rel="next"
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-medium text-white transition-colors"
         >
-          Next
+          {next}
           <ChevronRight className="w-4 h-4" aria-hidden="true" />
         </Link>
       ) : (
-        <span className="px-4 py-2 text-sm text-gray-600">Next</span>
+        <span className="px-4 py-2 text-sm text-gray-600">{next}</span>
       )}
     </nav>
   );
 }
 
 function NoResultsOnPage({ query, page }: { query: string; page: number }) {
+  const t = useT();
+
   return (
     <div className="text-center py-16">
-      <h2 className="text-2xl font-bold mb-3">No results on this page</h2>
+      <h2 className="text-2xl font-bold mb-3">
+        {t("No results on this page", "Na této stránce nic není")}
+      </h2>
       <p className="text-gray-400 max-w-md mx-auto">
-        Try another results page or return to the first page.
+        {t(
+          "Try another results page or return to the first page.",
+          "Zkuste jinou stránku výsledků, nebo se vraťte na první.",
+        )}
       </p>
       {page > 1 && (
         <Link
@@ -225,7 +268,7 @@ function NoResultsOnPage({ query, page }: { query: string; page: number }) {
           prefetch={false}
           className="mt-6 inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition-colors"
         >
-          Back to the first page
+          {t("Back to the first page", "Zpět na první stránku")}
         </Link>
       )}
     </div>
@@ -233,15 +276,21 @@ function NoResultsOnPage({ query, page }: { query: string; page: number }) {
 }
 
 function NoResults({ query }: { query: string }) {
+  const t = useT();
+
   return (
     <div className="text-center py-16">
       <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gray-800 flex items-center justify-center">
         <SearchX className="w-10 h-10 text-gray-600" aria-hidden="true" />
       </div>
-      <h2 className="text-2xl font-bold mb-3">Nothing found for “{query}”</h2>
+      <h2 className="text-2xl font-bold mb-3">
+        {t(`Nothing found for “${query}”`, `Pro „${query}“ jsme nic nenašli`)}
+      </h2>
       <p className="text-gray-400 max-w-md mx-auto">
-        Check the spelling, try fewer words, or use the original title – TMDb
-        indexes films under the language they were released in.
+        {t(
+          "Check the spelling, try fewer words, or use the original title – TMDb indexes films under the language they were released in.",
+          "Zkontrolujte pravopis, zkuste méně slov, nebo zadejte původní název – TMDb vede filmy pod jazykem, ve kterém vznikly.",
+        )}
       </p>
       <BrowseLinks />
     </div>
@@ -249,13 +298,27 @@ function NoResults({ query }: { query: string }) {
 }
 
 function EmptyQuery() {
+  const locale = useLocale();
+  const t = useT();
+  const slash = (
+    <kbd className="rounded bg-gray-800 px-1.5 py-0.5 text-sm">/</kbd>
+  );
+
   return (
     <div className="container mx-auto px-4 py-16 text-center">
-      <h1 className="text-3xl font-bold mb-3">Search</h1>
+      <h1 className="text-3xl font-bold mb-3">{t("Search", "Hledání")}</h1>
       <p className="text-gray-400 max-w-md mx-auto">
-        Look up any film, series or person. Use the search box in the header, or
-        press <kbd className="rounded bg-gray-800 px-1.5 py-0.5 text-sm">/</kbd>{" "}
-        from anywhere on the site.
+        {locale === "cs" ? (
+          <>
+            Vyhledejte jakýkoli film, seriál nebo osobnost. Použijte
+            vyhledávací pole v záhlaví, nebo kdekoli na webu stiskněte {slash}.
+          </>
+        ) : (
+          <>
+            Look up any film, series or person. Use the search box in the
+            header, or press {slash} from anywhere on the site.
+          </>
+        )}
       </p>
       <BrowseLinks />
     </div>
@@ -263,12 +326,14 @@ function EmptyQuery() {
 }
 
 function BrowseLinks() {
+  const t = useT();
+
   return (
     <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
       {[
-        { href: "/movies", label: "Browse movies" },
-        { href: "/tv-shows", label: "Browse TV shows" },
-        { href: "/genres", label: "Browse genres" },
+        { href: "/movies", label: t("Browse movies", "Procházet filmy") },
+        { href: "/tv-shows", label: t("Browse TV shows", "Procházet seriály") },
+        { href: "/genres", label: t("Browse genres", "Procházet žánry") },
       ].map((link) => (
         <Link
           key={link.href}

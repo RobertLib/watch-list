@@ -8,6 +8,7 @@ import { AsyncDiscoverySection } from "@/components/AsyncDiscoverySection";
 import { LoadingSection } from "@/components/LoadingSpinner";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { useSettingsKey } from "@/hooks/useSettings";
+import { useT } from "@/i18n/LocaleProvider";
 import {
   getTopRatedMovies,
   getNowPlayingMovies,
@@ -36,14 +37,26 @@ export function MoviesContent({
   snapshot?: MovieSectionsSnapshot | null;
 }) {
   const settingsKey = useSettingsKey();
+  const t = useT();
+  const trendingTitle = t("Trending This Week", "Trendy tohoto týdne");
+  const nowPlayingTitle = t("Now Playing", "V kinech");
+  const upcomingTitle = t("Coming Soon", "Připravujeme");
+  const topRatedTitle = t("Top Rated Movies", "Nejlépe hodnocené filmy");
 
   return (
     <>
-      <Suspense fallback={<LoadingSection title="Discover Movies" count={12} />}>
+      <Suspense
+        fallback={
+          <LoadingSection
+            title={t("Discover Movies", "Objevujte filmy")}
+            count={12}
+          />
+        }
+      >
         <DiscoverMovies settingsKey={settingsKey} />
       </Suspense>
       <AsyncDiscoverySection
-        title="Trending This Week"
+        title={trendingTitle}
         loadKey={settingsKey}
         loadFirstPage={MOVIE_SECTIONS.trending}
         placeholder={snapshot?.trending}
@@ -51,7 +64,7 @@ export function MoviesContent({
         {(trending, snapshotState) => (
           <PaginatedMovieSection
             snapshot={snapshotState}
-            title="Trending This Week"
+            title={trendingTitle}
             fetchFunction={getTrendingMoviesWeekly}
             initialMovies={trending.results}
             initialTotalPages={trending.total_pages}
@@ -59,7 +72,7 @@ export function MoviesContent({
         )}
       </AsyncDiscoverySection>
       <AsyncDiscoverySection
-        title="Now Playing"
+        title={nowPlayingTitle}
         loadKey={settingsKey}
         loadFirstPage={MOVIE_SECTIONS.nowPlaying}
         placeholder={snapshot?.nowPlaying}
@@ -67,7 +80,7 @@ export function MoviesContent({
         {(nowPlaying, snapshotState) => (
           <PaginatedMovieSection
             snapshot={snapshotState}
-            title="Now Playing"
+            title={nowPlayingTitle}
             fetchFunction={getNowPlayingMovies}
             initialMovies={nowPlaying.results}
             initialTotalPages={nowPlaying.total_pages}
@@ -75,7 +88,7 @@ export function MoviesContent({
         )}
       </AsyncDiscoverySection>
       <AsyncDiscoverySection
-        title="Coming Soon"
+        title={upcomingTitle}
         loadKey={settingsKey}
         loadFirstPage={MOVIE_SECTIONS.upcoming}
         placeholder={snapshot?.upcoming}
@@ -83,7 +96,7 @@ export function MoviesContent({
         {(upcoming, snapshotState) => (
           <PaginatedMovieSection
             snapshot={snapshotState}
-            title="Coming Soon"
+            title={upcomingTitle}
             fetchFunction={getUpcomingMovies}
             initialMovies={upcoming.results}
             initialTotalPages={upcoming.total_pages}
@@ -91,7 +104,7 @@ export function MoviesContent({
         )}
       </AsyncDiscoverySection>
       <AsyncDiscoverySection
-        title="Top Rated Movies"
+        title={topRatedTitle}
         loadKey={settingsKey}
         loadFirstPage={MOVIE_SECTIONS.topRated}
         placeholder={snapshot?.topRated}
@@ -99,7 +112,7 @@ export function MoviesContent({
         {(topRated, snapshotState) => (
           <PaginatedMovieSection
             snapshot={snapshotState}
-            title="Top Rated Movies"
+            title={topRatedTitle}
             fetchFunction={getTopRatedMovies}
             initialMovies={topRated.results}
             initialTotalPages={topRated.total_pages}
@@ -115,12 +128,14 @@ function DiscoverMovies({ settingsKey }: { settingsKey: string }) {
     () => tmdbDiscoverApi.getPopularMovies(1),
     [settingsKey],
   );
+  const t = useT();
+  const title = t("Discover Movies", "Objevujte filmy");
 
-  if (isLoading) return <LoadingSection title="Discover Movies" count={12} />;
+  if (isLoading) return <LoadingSection title={title} count={12} />;
 
   return (
     <FilteredMovieSection
-      title="Discover Movies"
+      title={title}
       initialMovies={data?.results}
       initialTotalPages={data?.total_pages}
       initialTotalResults={data?.total_results}

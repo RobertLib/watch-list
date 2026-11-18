@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { Sparkles, X } from "lucide-react";
 import { LoadFailureNotice } from "@/components/LoadFailureNotice";
 import { getReleasesSinceLastVisit } from "@/lib/api";
@@ -27,6 +27,8 @@ import type { CalendarSeed } from "@/lib/release-calendar";
 import type { MissedRelease } from "@/lib/since-last-visit-data";
 import { mediaHref } from "@/lib/routes";
 import { todayLocal } from "@/lib/dates";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatNumber, pluralForm } from "@/i18n/format";
 
 function followedSeeds(watchlist: WatchlistItem[], shows: ShowProgress[]): CalendarSeed[] {
   const bySeed = new Map<string, CalendarSeed>();
@@ -79,6 +81,8 @@ export function WelcomeBack() {
   const { watchlist, profileId, refreshWatchlist, isLoading: isWatchlistLoading } = useWatchlist();
   const { shows, profileId: progressProfileId, refreshProgress, isLoading: isProgressLoading } = useEpisodeProgress();
   const { region } = useSettings();
+  const locale = useLocale();
+  const t = useT();
 
   const [visit, setVisit] = useState<Visit | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -186,10 +190,16 @@ export function WelcomeBack() {
     return (
       <LoadFailureNotice
         compact
-        title="Could not load recent releases"
+        title={t("Could not load recent releases", "Nové premiéry se nepodařilo načíst")}
         description={currentLoad?.failure === "sources"
-          ? "Your saved titles could not be read. Check your browser's storage settings or restore a backup and try again."
-          : "Check your connection and try again to see what came out while you were away."}
+          ? t(
+              "Your saved titles could not be read. Check your browser's storage settings or restore a backup and try again.",
+              "Uložené tituly se nepodařilo přečíst. Zkontrolujte nastavení úložiště v prohlížeči nebo obnovte zálohu a zkuste to znovu.",
+            )
+          : t(
+              "Check your connection and try again to see what came out while you were away.",
+              "Zkontrolujte připojení a zkuste to znovu – uvidíte, co vyšlo, zatímco jste tu nebyli.",
+            )}
         onRetry={() => setAttempt((current) => current + 1)}
       />
     );
@@ -212,16 +222,35 @@ export function WelcomeBack() {
             className="text-lg font-semibold text-white flex items-center gap-2"
           >
             <Sparkles className="w-5 h-5 text-blue-400" aria-hidden="true" />
-            Since you were here {describeGap(previousVisit)}
+            {locale === "cs" ? (
+              <>Naposledy jste tu byli {describeGap(previousVisit, undefined, locale)}</>
+            ) : (
+              <>Since you were here {describeGap(previousVisit)}</>
+            )}
           </h2>
           <p className="text-sm text-gray-400 mt-1">
-            {releases.length} thing{releases.length === 1 ? "" : "s"} you follow
-            came out.
+            {locale === "cs" ? (
+              // The verb agrees with the count: vyšla 1 novinka, vyšly 2
+              // novinky, vyšlo 5 novinek.
+              pluralForm(releases.length, locale, {
+                en: ["", ""],
+                cs: [
+                  `Mezitím vyšla ${formatNumber(releases.length, locale)} novinka z toho, co sledujete.`,
+                  `Mezitím vyšly ${formatNumber(releases.length, locale)} novinky z toho, co sledujete.`,
+                  `Mezitím vyšlo ${formatNumber(releases.length, locale)} novinek z toho, co sledujete.`,
+                ],
+              })
+            ) : (
+              <>
+                {releases.length} thing{releases.length === 1 ? "" : "s"} you follow
+                came out.
+              </>
+            )}
           </p>
         </div>
         <button
           onClick={() => setDismissed(true)}
-          aria-label="Dismiss"
+          aria-label={t("Dismiss", "Zavřít")}
           className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors shrink-0"
         >
           <X className="w-4 h-4" aria-hidden="true" />
@@ -252,7 +281,9 @@ export function WelcomeBack() {
               <p className="text-[11px] text-gray-500 line-clamp-1">
                 {release.seasonNumber !== null && release.episodeNumber !== null
                   ? episodeCode(release.seasonNumber, release.episodeNumber)
-                  : release.movieReleaseSource === "regional-theatrical" ? "In cinemas" : "Release date"}
+                  : release.movieReleaseSource === "regional-theatrical"
+                    ? t("In cinemas", "V kinech")
+                    : t("Release date", "Premiéra")}
               </p>
             </Link>
           </li>

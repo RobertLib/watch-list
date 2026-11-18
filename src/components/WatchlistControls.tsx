@@ -3,6 +3,8 @@
 import { Layers, Search, Star, X } from "lucide-react";
 import { ViewModeToggle } from "@/components/ViewModeToggle";
 import { cn } from "@/lib/utils";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import type { Localized } from "@/i18n/locale";
 import {
   SORT_LABELS,
   type WatchlistGrouping,
@@ -11,10 +13,10 @@ import {
   type WatchlistTypeFilter,
 } from "@/lib/watchlist-view";
 
-const TYPE_OPTIONS: Array<{ value: WatchlistTypeFilter; label: string }> = [
-  { value: "all", label: "All" },
-  { value: "movie", label: "Movies" },
-  { value: "tv", label: "TV" },
+const TYPE_OPTIONS: Array<{ value: WatchlistTypeFilter; label: Localized }> = [
+  { value: "all", label: { en: "All", cs: "Vše" } },
+  { value: "movie", label: { en: "Movies", cs: "Filmy" } },
+  { value: "tv", label: { en: "TV", cs: "Seriály" } },
 ];
 
 /**
@@ -39,6 +41,8 @@ export function WatchlistControls({
   counts: { all: number; movie: number; tv: number };
   isCheckingAvailability: boolean;
 }) {
+  const locale = useLocale();
+  const t = useT();
   const grouped = preferences.grouping === "availability";
 
   return (
@@ -47,7 +51,7 @@ export function WatchlistControls({
         {/* Type filter */}
         <div
           role="group"
-          aria-label="Filter by type"
+          aria-label={t("Filter by type", "Filtrovat podle typu")}
           className="flex rounded-lg border border-gray-800 bg-gray-900/60 p-1"
         >
           {TYPE_OPTIONS.map((option) => (
@@ -62,7 +66,7 @@ export function WatchlistControls({
                   : "text-gray-400 hover:text-white",
               )}
             >
-              {option.label}
+              {option.label[locale]}
               <span className="ml-1.5 text-xs text-gray-500">
                 {counts[option.value]}
               </span>
@@ -73,7 +77,7 @@ export function WatchlistControls({
         {/* Sort */}
         <div className="flex items-center gap-2">
           <label htmlFor="watchlist-sort" className="text-sm text-gray-400">
-            Sort
+            {t("Sort", "Řadit")}
           </label>
           <select
             id="watchlist-sort"
@@ -88,7 +92,7 @@ export function WatchlistControls({
           >
             {(Object.keys(SORT_LABELS) as WatchlistSort[]).map((sort) => (
               <option key={sort} value={sort}>
-                {SORT_LABELS[sort]}
+                {SORT_LABELS[sort][locale]}
               </option>
             ))}
           </select>
@@ -113,7 +117,7 @@ export function WatchlistControls({
           )}
         >
           <Layers className="w-4 h-4" aria-hidden="true" />
-          Group by where to watch
+          {t("Group by where to watch", "Seskupit podle dostupnosti")}
           {grouped && isCheckingAvailability && (
             <span
               className="w-3.5 h-3.5 rounded-full border-2 border-blue-300 border-t-transparent animate-spin"
@@ -142,7 +146,7 @@ export function WatchlistControls({
             fill={preferences.ratedOnly ? "currentColor" : "none"}
             aria-hidden="true"
           />
-          Only what I rated
+          {t("Only what I rated", "Jen ohodnocené")}
         </button>
 
         <div className="ml-auto">
@@ -153,7 +157,7 @@ export function WatchlistControls({
       {/* Title search – the cheapest way through a list of eighty. */}
       <div className="relative max-w-sm">
         <label htmlFor="watchlist-search" className="sr-only">
-          Search your list
+          {t("Search your list", "Hledat ve vašem seznamu")}
         </label>
         <Search
           className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none"
@@ -164,14 +168,14 @@ export function WatchlistControls({
           type="text"
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="Search your list…"
+          placeholder={t("Search your list…", "Hledat ve vašem seznamu…")}
           className="w-full rounded-lg border border-gray-800 bg-gray-900 pl-9 pr-9 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
         />
         {query && (
           <button
             onClick={() => onQueryChange("")}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
-            aria-label="Clear search"
+            aria-label={t("Clear search", "Vymazat hledání")}
           >
             <X className="w-4 h-4" />
           </button>

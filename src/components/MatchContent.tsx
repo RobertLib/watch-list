@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { useSearchParams } from "next/navigation";
 import { Heart, Users } from "lucide-react";
 import { MediaGrid } from "@/components/MediaGrid";
@@ -16,6 +16,14 @@ import { decodeSharedList } from "@/lib/shared-list";
 import { matchLists } from "@/lib/list-match";
 import { mediaItemKey } from "@/lib/utils";
 import type { SharedListRef } from "@/lib/shared-list";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount, formatNumber, type PluralForms } from "@/i18n/format";
+
+// "u 1 titulu", "z 5 titulů" – the genitive after "u" and "z".
+const TITLES_GENITIVE: PluralForms = {
+  en: ["title", "titles"],
+  cs: ["titulu", "titulů", "titulů"],
+};
 
 /**
  * Two watchlists, compared.
@@ -37,9 +45,12 @@ function MatchRouter() {
   const mine = searchParams.get("mine") ?? "";
   const theirs = searchParams.get("theirs") ?? "";
   const mineTruncated = searchParams.get("mineTruncated") === "1";
+  const t = useT();
 
   useDocumentTitle(
-    mine && theirs ? "What you both want to watch" : "What should we watch?",
+    mine && theirs
+      ? t("What you both want to watch", "Co chcete vidět společně")
+      : t("What should we watch?", "Na co se podíváme?"),
   );
 
   if (!mine || !theirs) return <MatchStarterPage />;
@@ -48,16 +59,21 @@ function MatchRouter() {
 }
 
 function MatchStarterPage() {
+  const t = useT();
   return (
     <div className="container mx-auto px-4 py-8 max-w-2xl">
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-2">
           <Users className="h-8 w-8 text-pink-400" aria-hidden="true" />
-          <h1 className="text-3xl font-bold">What should we watch?</h1>
+          <h1 className="text-3xl font-bold">
+            {t("What should we watch?", "Na co se podíváme?")}
+          </h1>
         </div>
         <p className="text-gray-400">
-          Two lists, one evening. Paste the link somebody sent you and see what
-          you have both already saved.
+          {t(
+            "Two lists, one evening. Paste the link somebody sent you and see what you have both already saved.",
+            "Dva seznamy, jeden večer. Vložte odkaz, který vám někdo poslal, a uvidíte, co už máte uložené na obou seznamech.",
+          )}
         </p>
       </div>
 
@@ -72,6 +88,8 @@ function MatchResults({ mine, theirs, mineTruncated }: {
   mineTruncated: boolean;
 }) {
   const settingsKey = useSettingsKey();
+  const locale = useLocale();
+  const t = useT();
 
   const { data, error, reload } = useAsyncData(async (signal) => {
     const match = matchLists(decodeSharedList(mine), decodeSharedList(theirs));
@@ -110,8 +128,11 @@ function MatchResults({ mine, theirs, mineTruncated }: {
   if (error) {
     return (
       <LoadFailureNotice
-        title="Could not compare these lists"
-        description="TMDB did not answer. Both links are fine – check your connection and try again."
+        title={t("Could not compare these lists", "Seznamy se nepodařilo porovnat")}
+        description={t(
+          "TMDB did not answer. Both links are fine – check your connection and try again.",
+          "TMDB neodpovídá. Oba odkazy jsou v pořádku – zkontrolujte připojení a zkuste to znovu.",
+        )}
         onRetry={reload}
       />
     );
@@ -132,20 +153,36 @@ function MatchResults({ mine, theirs, mineTruncated }: {
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-2">
           <Users className="h-8 w-8 text-pink-400" aria-hidden="true" />
-          <h1 className="text-3xl font-bold">Where your lists agree</h1>
+          <h1 className="text-3xl font-bold">
+            {t("Where your lists agree", "Na čem se vaše seznamy shodnou")}
+          </h1>
         </div>
         <p className="text-gray-400">
           {counts.shared > 0
-            ? `${counts.shared} title${
-                counts.shared === 1 ? "" : "s"
-              } you have both saved. Start there.`
-            : "No overlap between these two lists – but there is plenty below to argue about."}
+            ? t(
+                `${counts.shared} title${
+                  counts.shared === 1 ? "" : "s"
+                } you have both saved. Start there.`,
+                `${formatCount(counts.shared, locale, {
+                  en: ["title", "titles"],
+                  cs: [
+                    "titul je na obou seznamech",
+                    "tituly jsou na obou seznamech",
+                    "titulů je na obou seznamech",
+                  ],
+                })}. Začněte tam.`,
+              )
+            : t(
+                "No overlap between these two lists – but there is plenty below to argue about.",
+                "Tyhle dva seznamy nemají nic společného – ale níže je o čem debatovat.",
+              )}
         </p>
         {mineTruncated && (
           <p className="mt-3 text-sm text-amber-200" role="note">
-            Your full watchlist was checked for matches with the shared list.
-            All shared titles are included; some titles unique to your list
-            are omitted.
+            {t(
+              "Your full watchlist was checked for matches with the shared list. All shared titles are included; some titles unique to your list are omitted.",
+              "Se sdíleným seznamem jsme porovnali celý váš seznam. Všechny společné tituly jsou zahrnuté; některé tituly, které máte jen vy, jsou vynechané.",
+            )}
           </p>
         )}
       </div>
@@ -153,8 +190,14 @@ function MatchResults({ mine, theirs, mineTruncated }: {
       {failedCount > 0 && (
         <LoadFailureNotice
           compact
-          title="Some title details could not be loaded"
-          description={`Details for ${failedCount} title${failedCount === 1 ? "" : "s"} could not be loaded. The comparison still includes every title in the links; try again to load the missing details.`}
+          title={t(
+            "Some title details could not be loaded",
+            "Podrobnosti některých titulů se nepodařilo načíst",
+          )}
+          description={t(
+            `Details for ${failedCount} title${failedCount === 1 ? "" : "s"} could not be loaded. The comparison still includes every title in the links; try again to load the missing details.`,
+            `U ${formatCount(failedCount, locale, TITLES_GENITIVE)} se podrobnosti nepodařilo načíst. Porovnání přesto zahrnuje všechny tituly z odkazů; chybějící podrobnosti zkuste načíst znovu.`,
+          )}
           onRetry={reload}
         />
       )}
@@ -166,7 +209,7 @@ function MatchResults({ mine, theirs, mineTruncated }: {
             className="text-xl font-semibold text-white mb-4 flex items-center gap-2"
           >
             <Heart className="w-5 h-5 text-pink-400" aria-hidden="true" />
-            Both of you
+            {t("Both of you", "Na obou seznamech")}
           </h2>
           <DetailsCoverage shown={shared.length} total={counts.shared} />
           {shared.length > 0 && <MediaGrid items={shared} size="medium" />}
@@ -180,7 +223,7 @@ function MatchResults({ mine, theirs, mineTruncated }: {
               id="mine-heading"
               className="text-xl font-semibold text-white mb-4"
             >
-              Only on the first list
+              {t("Only on the first list", "Jen na prvním seznamu")}
             </h2>
             <DetailsCoverage shown={onlyMine.length} total={counts.onlyMine} />
             {onlyMine.length > 0 && <MediaGrid items={onlyMine} size="small" />}
@@ -193,7 +236,7 @@ function MatchResults({ mine, theirs, mineTruncated }: {
               id="theirs-heading"
               className="text-xl font-semibold text-white mb-4"
             >
-              Only on the second
+              {t("Only on the second", "Jen na druhém")}
             </h2>
             <DetailsCoverage shown={onlyTheirs.length} total={counts.onlyTheirs} />
             {onlyTheirs.length > 0 && <MediaGrid items={onlyTheirs} size="small" />}
@@ -202,14 +245,16 @@ function MatchResults({ mine, theirs, mineTruncated }: {
       </div>
 
       <p className="mt-12 text-sm text-gray-500">
-        Worked out from the two links alone – nothing about either list is
-        stored here.{" "}
+        {t(
+          "Worked out from the two links alone – nothing about either list is stored here.",
+          "Spočítáno jen z obou odkazů – z žádného seznamu se tu nic neukládá.",
+        )}{" "}
         <Link
           href="/match"
           prefetch={false}
           className="text-blue-400 hover:text-blue-300 transition-colors"
         >
-          Compare a different pair
+          {t("Compare a different pair", "Porovnat jinou dvojici")}
         </Link>
         .
       </p>
@@ -218,13 +263,26 @@ function MatchResults({ mine, theirs, mineTruncated }: {
 }
 
 function DetailsCoverage({ shown, total }: { shown: number; total: number }) {
+  const locale = useLocale();
   if (shown >= total) return null;
 
   return (
     <p className="text-sm text-gray-400 mb-4" role="note">
-      Showing details for {shown} of {total} title{total === 1 ? "" : "s"}.
-      The remaining {total - shown === 1 ? "title still counts" : "titles still count"} in
-      the comparison, but {total - shown === 1 ? "its" : "their"} details are unavailable.
+      {locale === "cs" ? (
+        <>
+          Podrobnosti zobrazujeme u {formatNumber(shown, locale)} z{" "}
+          {formatCount(total, locale, TITLES_GENITIVE)}.{" "}
+          {total - shown === 1
+            ? "Zbývající titul se do porovnání pořád počítá, jen jeho podrobnosti nejsou k dispozici."
+            : "Zbývající tituly se do porovnání pořád počítají, jen jejich podrobnosti nejsou k dispozici."}
+        </>
+      ) : (
+        <>
+          Showing details for {shown} of {total} title{total === 1 ? "" : "s"}.
+          The remaining {total - shown === 1 ? "title still counts" : "titles still count"} in
+          the comparison, but {total - shown === 1 ? "its" : "their"} details are unavailable.
+        </>
+      )}
     </p>
   );
 }

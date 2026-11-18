@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { ChevronDown } from "lucide-react";
 import { getSortedRegions, getPopularRegions } from "@/lib/regions-data";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 
 interface RegionSelectorProps {
   id: string;
@@ -23,8 +24,12 @@ export function RegionSelector({
   onChange,
   disabled = false,
 }: RegionSelectorProps) {
-  const allRegions = useMemo(() => getSortedRegions(), []);
-  const popularRegions = useMemo(() => getPopularRegions(), []);
+  const locale = useLocale();
+  const t = useT();
+  // Named, sorted and picked for the page's language: Czech gets "Česko"
+  // between "Čad" and "Dánsko", and its neighbours at the top.
+  const allRegions = useMemo(() => getSortedRegions(locale), [locale]);
+  const popularRegions = useMemo(() => getPopularRegions(locale), [locale]);
 
   return (
     <div className="relative">
@@ -38,14 +43,19 @@ export function RegionSelector({
         aria-disabled={disabled || undefined}
         className="w-full appearance-none rounded-lg border border-gray-700 bg-gray-800 py-3 pl-4 pr-10 text-white transition-colors hover:border-gray-600 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 aria-disabled:cursor-wait aria-disabled:opacity-50 [&_optgroup]:bg-gray-900 [&_option]:bg-gray-900"
       >
-        <optgroup label="Popular">
+        <optgroup label={t("Popular", "Nejčastější")}>
           {popularRegions.map((region) => (
             <option key={`popular-${region.code}`} value={region.code}>
               {region.name} ({region.code})
             </option>
           ))}
         </optgroup>
-        <optgroup label={`All countries and regions (${allRegions.length})`}>
+        <optgroup
+          label={t(
+            `All countries and regions (${allRegions.length})`,
+            `Všechny země a regiony (${allRegions.length})`,
+          )}
+        >
           {allRegions.map((region) => (
             <option key={region.code} value={region.code}>
               {region.name} ({region.code})

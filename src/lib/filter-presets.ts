@@ -1,5 +1,6 @@
 import { shiftDate, shiftYears } from "./dates";
 import type { FilterOptions } from "@/types/filters";
+import { t, type Locale } from "@/i18n/locale";
 
 export interface FilterPreset {
   id: string;
@@ -12,13 +13,23 @@ export interface FilterPreset {
  * Resolve relative dates against the subscribed local day, rather than the day
  * this module loaded. An empty day is the static-export hydration snapshot;
  * dated bounds wait for the browser, and callers wait before requesting data.
+ *
+ * The id is the URL's `?preset=` and stays the same in every language; only
+ * the name and the description on the button are translated.
  */
-export function getMoviePresets(today: string): FilterPreset[] {
+export function getMoviePresets(
+  today: string,
+  locale: Locale = "en",
+): FilterPreset[] {
   return [
     {
       id: "latest-blockbusters",
-      name: "Latest Blockbusters",
-      description: "Popular movies from the last 2 years",
+      name: t(locale, "Latest Blockbusters", "Nejnovější trháky"),
+      description: t(
+        locale,
+        "Popular movies from the last 2 years",
+        "Populární filmy z posledních 2 let",
+      ),
       filters: {
         sortBy: "popularity.desc",
         ...(today ? {
@@ -30,8 +41,12 @@ export function getMoviePresets(today: string): FilterPreset[] {
     },
     {
       id: "hidden-gems",
-      name: "Hidden Gems",
-      description: "Highly rated movies you might have missed",
+      name: t(locale, "Hidden Gems", "Skryté klenoty"),
+      description: t(
+        locale,
+        "Highly rated movies you might have missed",
+        "Vysoce hodnocené filmy, které vám možná unikly",
+      ),
       filters: {
         sortBy: "popularity.asc",
         minRating: 7.5,
@@ -44,8 +59,12 @@ export function getMoviePresets(today: string): FilterPreset[] {
     },
     {
       id: "recent-releases",
-      name: "Recent Releases",
-      description: "Movies released in the last 6 months",
+      name: t(locale, "Recent Releases", "Čerstvé novinky"),
+      description: t(
+        locale,
+        "Movies released in the last 6 months",
+        "Filmy z posledních 6 měsíců",
+      ),
       filters: {
         sortBy: "primary_release_date.desc",
         ...(today ? {
@@ -57,8 +76,12 @@ export function getMoviePresets(today: string): FilterPreset[] {
     },
     {
       id: "top-rated-classics",
-      name: "Top Rated Classics",
-      description: "Highest rated movies released before 2015",
+      name: t(locale, "Top Rated Classics", "Nejlépe hodnocená klasika"),
+      description: t(
+        locale,
+        "Highest rated movies released before 2015",
+        "Nejlépe hodnocené filmy, které vyšly před rokem 2015",
+      ),
       filters: {
         sortBy: "vote_average.desc",
         minRating: 8,
@@ -69,12 +92,19 @@ export function getMoviePresets(today: string): FilterPreset[] {
   ];
 }
 
-export function getTVPresets(today: string): FilterPreset[] {
+export function getTVPresets(
+  today: string,
+  locale: Locale = "en",
+): FilterPreset[] {
   return [
     {
       id: "trending-series",
-      name: "Trending Series",
-      description: "Popular TV shows still running",
+      name: t(locale, "Trending Series", "Trendy"),
+      description: t(
+        locale,
+        "Popular TV shows still running",
+        "Oblíbené seriály, které se stále vysílají",
+      ),
       filters: {
         sortBy: "popularity.desc",
         ...(today ? { firstAirDateLte: today } : {}),
@@ -84,8 +114,12 @@ export function getTVPresets(today: string): FilterPreset[] {
     },
     {
       id: "binge-worthy",
-      name: "Binge-Worthy",
-      description: "Highly rated series worth watching through",
+      name: t(locale, "Binge-Worthy", "Na jeden zátah"),
+      description: t(
+        locale,
+        "Highly rated series worth watching through",
+        "Vysoce hodnocené seriály, které stojí za to vidět celé",
+      ),
       filters: {
         sortBy: "vote_average.desc",
         minRating: 8,
@@ -94,8 +128,12 @@ export function getTVPresets(today: string): FilterPreset[] {
     },
     {
       id: "new-series",
-      name: "New Series",
-      description: "TV shows that started this year",
+      name: t(locale, "New Series", "Nové seriály"),
+      description: t(
+        locale,
+        "TV shows that started this year",
+        "Seriály, které začaly letos",
+      ),
       filters: {
         sortBy: "first_air_date.desc",
         ...(today ? {
@@ -107,8 +145,12 @@ export function getTVPresets(today: string): FilterPreset[] {
     },
     {
       id: "award-winners",
-      name: "Award Winners",
-      description: "Critically acclaimed TV series",
+      name: t(locale, "Award Winners", "Oceňované"),
+      description: t(
+        locale,
+        "Critically acclaimed TV series",
+        "Seriály oceňované kritikou",
+      ),
       filters: {
         sortBy: "vote_average.desc",
         minRating: 8.5,

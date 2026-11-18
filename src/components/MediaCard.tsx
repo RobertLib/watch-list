@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { Star, Calendar, Play, X } from "lucide-react";
 import { MediaItem, WatchProvider } from "@/types/tmdb";
 import { getImageUrl } from "@/lib/tmdb-image";
@@ -20,6 +20,33 @@ import { cn, createSlug } from "@/lib/utils";
 import { isPlainPrimaryClick } from "@/lib/plain-click";
 import { releaseYear } from "@/lib/dates";
 import { mediaHref } from "@/lib/routes";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatNumber } from "@/i18n/format";
+import type { Locale } from "@/i18n/locale";
+
+/**
+ * TMDB's average vote with one decimal, in the page's language: "7.3" in
+ * English, "7,3" in Czech. `undefined` stays `undefined`, as `toFixed` on a
+ * missing vote used to leave the badge empty rather than print "NaN".
+ */
+export function formatVoteAverage(
+  vote: number | undefined,
+  locale: Locale,
+): string | undefined {
+  if (typeof vote !== "number") return undefined;
+  return formatNumber(vote, locale, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+}
+
+/** What the card says a title is: the raw type in English, as it always did. */
+export function mediaTypeLabel(
+  mediaType: MediaItem["media_type"],
+  t: (en: string, cs: string) => string,
+): string {
+  return t(mediaType, mediaType === "movie" ? "film" : "seriál");
+}
 
 interface MediaCardProps {
   item: MediaItem;
@@ -62,6 +89,8 @@ export function MediaCard({
   // listener and throttle to arrive at the same boolean.
   const isMobile = useIsMobile();
   const { region } = useSettings();
+  const locale = useLocale();
+  const t = useT();
 
   // Lazily loaded watch providers.
   //
@@ -107,11 +136,14 @@ export function MediaCard({
   );
   const year = releaseYear(item.release_date);
   const watched = isWatched(item.id, item.media_type);
+  const rating = formatVoteAverage(item.vote_average, locale);
 
   // Get title based on media type - handle both movies and TV shows
   const title =
     item.title ||
-    ("name" in item ? (item as { name: string }).name : "Unknown Title");
+    ("name" in item
+      ? (item as { name: string }).name
+      : t("Unknown Title", "Neznámý titul"));
 
   // Create slug URL from title and ID
   const slug = createSlug(title, item.id);
@@ -285,9 +317,9 @@ export function MediaCard({
           prefetch={false}
           onClick={handleCardClick}
           className="block w-full h-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-black rounded-lg"
-          aria-label={`View details for ${title}${year ? ` (${year})` : ""}${
-            watched ? " – watched" : ""
-          }`}
+          aria-label={`${t("View details for", "Podrobnosti:")} ${title}${
+            year ? ` (${year})` : ""
+          }${watched ? t(" – watched", " – zhlédnuto") : ""}`}
         >
           <article
             className={cn(
@@ -298,7 +330,7 @@ export function MediaCard({
           >
             <Image
               src={imageUrl}
-              alt={`Poster for ${title}`}
+              alt={`${t("Poster for", "Plakát:")} ${title}`}
               fill
               className="object-cover"
               sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
@@ -308,7 +340,7 @@ export function MediaCard({
             {isMobile && !isMobileOverlayVisible && (
               <div className="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/80 to-transparent p-2">
                 <p className="text-white text-xs text-center opacity-80">
-                  Tap for details
+                  {t("Tap for details", "Klepnutím zobrazíte detail")}
                 </p>
               </div>
             )}
@@ -320,16 +352,17 @@ export function MediaCard({
                 isMobile && isMobileOverlayVisible ? "right-12" : "right-2",
               )}
               role="img"
-              aria-label={`Rating: ${item.vote_average?.toFixed(
-                1,
-              )} out of 10 stars`}
+              aria-label={t(
+                `Rating: ${rating} out of 10 stars`,
+                `Hodnocení: ${rating} z 10 hvězdiček`,
+              )}
             >
               <div className="flex items-center gap-1 text-xs text-white">
                 <Star
                   className="w-3 h-3 fill-yellow-400 text-yellow-400"
                   aria-hidden="true"
                 />
-                <span>{item.vote_average?.toFixed(1)}</span>
+                <span>{rating}</span>
               </div>
             </div>
           </article>
@@ -354,7 +387,7 @@ export function MediaCard({
                   type="button"
                   onClick={handleCloseMobileOverlay}
                   className="pointer-events-auto absolute top-2 right-2 bg-black/70 backdrop-blur-sm rounded-full p-1.5 hover:bg-black/90 transition-colors z-10"
-                  aria-label={`Hide details for ${title}`}
+                  aria-label={`${t("Hide details for", "Skrýt podrobnosti:")} ${title}`}
                 >
                   <X className="w-4 h-4 text-white" aria-hidden="true" />
                 </button>
@@ -376,7 +409,7 @@ export function MediaCard({
                 <div className="flex items-center gap-2 text-xs text-gray-300">
                   <div className="flex items-center gap-1">
                     <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                    <span>{item.vote_average?.toFixed(1)}</span>
+                    <span>{rating}</span>
                   </div>
 
                   {item.release_date && (
@@ -389,7 +422,7 @@ export function MediaCard({
 
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-gray-400 capitalize">
-                    {item.media_type}
+                    {mediaTypeLabel(item.media_type, t)}
                   </span>
 
                   <button
@@ -397,7 +430,7 @@ export function MediaCard({
                     onClick={handlePlayClick}
                     disabled={isLoading}
                     className="pointer-events-auto bg-white/20 backdrop-blur-sm rounded-full p-2 hover:bg-white/30 transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-black"
-                    aria-label={`Play trailer for ${title}`}
+                    aria-label={`${t("Play trailer for", "Přehrát trailer:")} ${title}`}
                   >
                     <Play className="w-4 h-4 text-white" aria-hidden="true" />
                   </button>
@@ -405,15 +438,18 @@ export function MediaCard({
 
                 {providersFailed && !loadingProviders ? (
                   <div className="mt-2 text-xs text-gray-300" role="status">
-                    Could not load platforms.{" "}
+                    {t("Could not load platforms.", "Služby se nepodařilo načíst.")}{" "}
                     <button
                       ref={providerRetryRef}
                       type="button"
                       onClick={() => setProviderAttempt((attempt) => attempt + 1)}
                       className="pointer-events-auto text-left hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
-                      aria-label={`Retry streaming availability for ${title}`}
+                      aria-label={`${t(
+                        "Retry streaming availability for",
+                        "Znovu načíst dostupnost na streamovacích službách:",
+                      )} ${title}`}
                     >
-                      <span className="underline">Retry</span>
+                      <span className="underline">{t("Retry", "Zkusit znovu")}</span>
                     </button>
                   </div>
                 ) : (

@@ -10,6 +10,7 @@ import { toast } from "@/components/Toast";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useSettings, useSettingsActions } from "@/hooks/useSettings";
 import { getRegionName } from "@/lib/region";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 import type { Region } from "@/lib/region";
 import type { WatchProviderFilter } from "@/lib/watch-provider-settings";
 
@@ -25,6 +26,8 @@ export function ProfileSettings() {
   const settings = useSettings();
   const { setRegion, setWatchProviderFilter, updateSelectedProviderIds } = useSettingsActions();
   const hydrated = useHydrated();
+  const locale = useLocale();
+  const t = useT();
   const [saveStatus, setSaveStatus] = useState<SaveState>("idle");
   const pendingWrites = useRef(0);
   const [isSaving, setIsSaving] = useState(false);
@@ -64,13 +67,19 @@ export function ProfileSettings() {
   const handleRegionChange = (region: Region) =>
     save(
       () => setRegion(region),
-      "Could not save your region. Please try again.",
+      t(
+        "Could not save your region. Please try again.",
+        "Region se nepodařilo uložit. Zkuste to prosím znovu.",
+      ),
     );
 
   const handleFilterChange = (filter: WatchProviderFilter) =>
     save(
       () => setWatchProviderFilter(filter),
-      "Could not save what to show. Please try again.",
+      t(
+        "Could not save what to show. Please try again.",
+        "Nastavení, co zobrazovat, se nepodařilo uložit. Zkuste to prosím znovu.",
+      ),
     );
 
   const handleProvidersUpdate = (
@@ -78,7 +87,10 @@ export function ProfileSettings() {
     expectedRegion: string,
   ) => save(
     () => updateSelectedProviderIds(update, expectedRegion),
-    "Could not save your platforms. Please try again.",
+    t(
+      "Could not save your platforms. Please try again.",
+      "Streamovací služby se nepodařilo uložit. Zkuste to prosím znovu.",
+    ),
     // Presses are refused by the selector itself while `isSaving`.
     { exclusive: false },
   );
@@ -92,18 +104,20 @@ export function ProfileSettings() {
       <section className="rounded-lg border border-gray-800 bg-gray-900 p-6">
         <div className="mb-1 flex items-center gap-3">
           <Globe className="h-6 w-6 text-blue-500" aria-hidden="true" />
-          <h2 className="text-xl font-semibold">Region</h2>
+          <h2 className="text-xl font-semibold">{t("Region", "Region")}</h2>
         </div>
         <p className="mb-4 text-gray-400">
-          Sets the release dates, ratings and streaming availability you see
-          across WatchList.
+          {t(
+            "Sets the release dates, ratings and streaming availability you see across WatchList.",
+            "Určuje data premiér, věkové hranice a dostupnost na streamovacích službách, které na WatchListu uvidíte.",
+          )}
         </p>
 
         <label
           htmlFor="region-select"
           className="mb-2 block text-sm font-medium text-gray-300"
         >
-          Country or region
+          {t("Country or region", "Země nebo region")}
         </label>
         <RegionSelector
           id="region-select"
@@ -119,11 +133,13 @@ export function ProfileSettings() {
             className="h-6 w-6 text-green-500"
             aria-hidden="true"
           />
-          <h2 className="text-xl font-semibold">What to show</h2>
+          <h2 className="text-xl font-semibold">{t("What to show", "Co zobrazovat")}</h2>
         </div>
         <p className="mb-4 text-gray-400">
-          Filters discovery lists and carousels. Search and your saved lists
-          always include all titles.
+          {t(
+            "Filters discovery lists and carousels. Search and your saved lists always include all titles.",
+            "Filtruje přehledy a řady tipů, co sledovat. Vyhledávání a vaše uložené seznamy vždy obsahují všechny tituly.",
+          )}
         </p>
 
         <WatchProviderFilterSelector
@@ -135,11 +151,20 @@ export function ProfileSettings() {
         {settings.watchProviderFilter === "streaming-only" && (
           <div className="mt-6 border-t border-gray-800 pt-6">
             <h3 className="mb-1 font-semibold text-white">
-              Pick your platforms
+              {t("Pick your platforms", "Vyberte své streamovací služby")}
             </h3>
             <p className="mb-4 text-sm text-gray-400">
-              Platforms available in {getRegionName(settings.region)}. Tap a
-              platform to add or remove it.
+              {locale === "cs" ? (
+                <>
+                  Služby dostupné v regionu {getRegionName(settings.region, locale)}.
+                  Klepnutím službu přidáte nebo odeberete.
+                </>
+              ) : (
+                <>
+                  Platforms available in {getRegionName(settings.region)}. Tap a
+                  platform to add or remove it.
+                </>
+              )}
             </p>
 
             <StreamingProviderSelector
@@ -158,6 +183,7 @@ export function ProfileSettings() {
 type SaveState = "idle" | "saving" | "saved" | "failed";
 
 function SaveStatus({ status }: { status: SaveState }) {
+  const t = useT();
   return (
     <div
       className="flex h-5 items-center gap-2 text-sm text-gray-400"
@@ -166,16 +192,19 @@ function SaveStatus({ status }: { status: SaveState }) {
       {status === "saved" ? (
         <>
           <Check className="h-4 w-4 text-green-500" aria-hidden="true" />
-          All changes saved
+          {t("All changes saved", "Všechny změny jsou uložené")}
         </>
       ) : status === "saving" ? (
-        "Saving changes…"
+        t("Saving changes…", "Ukládání změn…")
       ) : status === "failed" ? (
         <span className="text-red-400">
-          Changes could not be saved. Please try again.
+          {t(
+            "Changes could not be saved. Please try again.",
+            "Změny se nepodařilo uložit. Zkuste to prosím znovu.",
+          )}
         </span>
       ) : (
-        "Changes are saved automatically."
+        t("Changes are saved automatically.", "Změny se ukládají automaticky.")
       )}
     </div>
   );

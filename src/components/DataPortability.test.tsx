@@ -452,7 +452,7 @@ describe("exporting a backup", () => {
     const backup = JSON.parse(await intercepted.createObjectURL.mock.calls[0][0].text()) as PortableData;
     expect(backup.unreadable).toEqual(gaps);
     expect(showToast).toHaveBeenCalledWith(
-      `Backup downloaded, but some data could not be read: ${gaps.map(describeUnreadable).join("; ")}.`,
+      `Backup downloaded, but some data could not be read: ${gaps.map((gap) => describeUnreadable(gap)).join("; ")}.`,
       "error",
       10000,
     );

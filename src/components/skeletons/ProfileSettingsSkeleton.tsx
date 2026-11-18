@@ -1,9 +1,17 @@
 import { Globe, SlidersHorizontal } from "lucide-react";
+import { t, type Locale } from "@/i18n/locale";
 
 /**
- * Mirrors the layout of ProfileSettings so the page does not shift on load
+ * Mirrors the layout of ProfileSettings so the page does not shift on load.
+ *
+ * A prop rather than the hook for the language: the profile page's
+ * `loading.tsx`, a Server Component, renders it too.
  */
-export function ProfileSettingsSkeleton() {
+export function ProfileSettingsSkeleton({
+  locale = "en",
+}: {
+  locale?: Locale;
+}) {
   return (
     <div className="space-y-6 animate-pulse">
       <div className="h-5 w-56 rounded bg-gray-800"></div>
@@ -11,6 +19,7 @@ export function ProfileSettingsSkeleton() {
       <div className="rounded-lg border border-gray-800 bg-gray-900 p-6">
         <div className="mb-1 flex items-center gap-3">
           <Globe className="h-6 w-6 text-blue-500" aria-hidden="true" />
+          {/* The same word in Czech. */}
           <h2 className="text-xl font-semibold">Region</h2>
         </div>
         <div className="mb-6 h-4 w-3/4 rounded bg-gray-800"></div>
@@ -24,7 +33,9 @@ export function ProfileSettingsSkeleton() {
             className="h-6 w-6 text-green-500"
             aria-hidden="true"
           />
-          <h2 className="text-xl font-semibold">What to show</h2>
+          <h2 className="text-xl font-semibold">
+            {t(locale, "What to show", "Co zobrazovat")}
+          </h2>
         </div>
         <div className="mb-6 h-4 w-2/3 rounded bg-gray-800"></div>
         <div className="grid gap-3 sm:grid-cols-2">

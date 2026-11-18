@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, type ReactNode } from "react";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MediaSection } from "@/components/MediaSection";
 import { WikipediaInsights } from "@/components/WikipediaInsights";
@@ -15,10 +15,16 @@ import { SnapshotRefreshNotice } from "@/components/SnapshotRefreshNotice";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { useSettingsKey } from "@/hooks/useSettings";
 import { genreHref } from "@/lib/routes";
-import { genreSlug, genresFor } from "@/lib/genre-catalog";
+import {
+  genrePhrase,
+  genreSlug,
+  genreTitle,
+  genresFor,
+} from "@/lib/genre-catalog";
 import { getGenreWikipediaContent } from "@/lib/wikipedia";
 import {
   STREAMING_LANDING_PLATFORMS,
+  onPlatform,
   type StreamingPlatform,
 } from "@/lib/streaming-landing";
 import {
@@ -34,6 +40,8 @@ import {
   type DiscoverFilters,
 } from "@/lib/discover-filters";
 import type { Genre, MediaType } from "@/types/tmdb";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount, formatNumber } from "@/i18n/format";
 
 interface GenreListingProps {
   mediaType: MediaType;
@@ -48,7 +56,13 @@ interface GenreListingProps {
   snapshot: GenreListingPage | null;
 }
 
-const EMPTY_HINT = "Showing the most popular titles in this genre.";
+function useEmptyHint(): string {
+  const t = useT();
+  return t(
+    "Showing the most popular titles in this genre.",
+    "Zobrazujeme nejpopulárnější tituly tohoto žánru.",
+  );
+}
 
 /**
  * A genre listing, optionally narrowed to one streaming platform.
@@ -83,6 +97,7 @@ function PrerenderedGenreListing({
     mediaType,
     "with_genre",
   );
+  const emptyHint = useEmptyHint();
 
   return (
     <GenreListingFrame
@@ -93,7 +108,7 @@ function PrerenderedGenreListing({
       isFiltered={false}
       totalResults={snapshot?.totalResults}
       filterBar={
-        platform ? null : <DiscoverFilterBarSkeleton emptyHint={EMPTY_HINT} />
+        platform ? null : <DiscoverFilterBarSkeleton emptyHint={emptyHint} />
       }
       results={
         snapshot ? (
@@ -125,6 +140,8 @@ function LiveGenreListing({
   const searchParams = useSearchParams();
   const router = useRouter();
   const settingsKey = useSettingsKey();
+  const t = useT();
+  const emptyHint = useEmptyHint();
 
   const maxPage = platform ? MAX_PLATFORM_PAGE : MAX_GENRE_PAGE;
   const page = Math.max(
@@ -182,6 +199,7 @@ function LiveGenreListing({
   // around them stay exactly where they are.
   const resultsPending = listingLoad.isLoading || correctionHref !== null;
   const mediaNoun = mediaType === "movie" ? "movies" : "TV shows";
+  const mediaNounCs = mediaType === "movie" ? "filmy" : "seriály";
 
   let results: ReactNode;
   if (resultsPending) {
@@ -191,8 +209,14 @@ function LiveGenreListing({
     // there to change, and changing them is itself a retry.
     results = (
       <LoadFailureNotice
-        title={`Could not load these ${mediaNoun}`}
-        description="TMDB did not answer. It may be a connection problem, or the service may be busy."
+        title={t(
+          `Could not load these ${mediaNoun}`,
+          `Tyto ${mediaNounCs} se nepodařilo načíst`,
+        )}
+        description={t(
+          "TMDB did not answer. It may be a connection problem, or the service may be busy.",
+          "TMDB neodpovídá. Může jít o potíže s připojením, nebo je služba právě přetížená.",
+        )}
         onRetry={listingLoad.reload}
         compact
       />
@@ -205,7 +229,10 @@ function LiveGenreListing({
           // region and services – is what did not arrive.
           <SnapshotRefreshNotice
             className="mb-6"
-            message={`Showing saved ${mediaNoun} – the listing for your region and services could not be loaded.`}
+            message={t(
+              `Showing saved ${mediaNoun} – the listing for your region and services could not be loaded.`,
+              `Zobrazujeme uložené ${mediaNounCs} – výběr pro váš region a služby se nepodařilo načíst.`,
+            )}
             onRetry={listingLoad.reload}
             isRetrying={listingLoad.isRetrying}
           />
@@ -238,11 +265,11 @@ function LiveGenreListing({
             // Offered as the "combine with" options.
             genres={genresFor(mediaType).filter((g) => g.id !== genre.id)}
             genreParamKey="with_genre"
-            genreLabel="Combine With"
-            genreAllLabel="No Second Genre"
+            genreLabel={t("Combine With", "Zkombinovat s")}
+            genreAllLabel={t("No Second Genre", "Bez druhého žánru")}
             totalResults={listing?.totalResults}
             resultsPending={resultsPending}
-            emptyHint={EMPTY_HINT}
+            emptyHint={emptyHint}
           />
         )
       }
@@ -287,8 +314,11 @@ function GenreResults({
   listing: GenreListingPage;
   pageHref: (target: number) => string;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const genreLower = genre.name.toLowerCase();
   const mediaNoun = mediaType === "movie" ? "movies" : "TV shows";
+  const title = genreTitle(genre, mediaType, locale);
   const { items, totalPages } = listing;
 
   return (
@@ -298,19 +328,31 @@ function GenreResults({
         items={items}
         size="medium"
         showViewToggle
+        // Czech sentences are built around the genre's title ("Akční filmy")
+        // or none at all, because a count or a "no" before the phrase would
+        // have to decline it – "žádné filmy" but "žádná filmová dramata".
         emptyMessage={
           platform
-            ? `No ${genreLower} ${mediaNoun} are streaming on ${platform.name} in your region right now.`
+            ? t(
+                `No ${genreLower} ${mediaNoun} are streaming on ${platform.name} in your region right now.`,
+                `${title} teď ve vašem regionu ${onPlatform(platform, locale)} nenajdete.`,
+              )
             : isFiltered
-              ? `No ${genreLower} ${mediaNoun} match these filters. Try loosening them.`
-              : `No ${genreLower} ${mediaNoun} found.`
+              ? t(
+                  `No ${genreLower} ${mediaNoun} match these filters. Try loosening them.`,
+                  "Těmto filtrům neodpovídá žádný titul. Zkuste je uvolnit.",
+                )
+              : t(
+                  `No ${genreLower} ${mediaNoun} found.`,
+                  "V tomto žánru jsme nic nenašli.",
+                )
         }
         className="mb-0"
       />
 
       {totalPages > 1 && (
         <nav
-          aria-label="Pagination"
+          aria-label={t("Pagination", "Stránkování")}
           className="flex items-center justify-center gap-4 mt-12"
         >
           {page > 1 && (
@@ -319,11 +361,19 @@ function GenreResults({
               prefetch={false}
               className="px-5 py-2 rounded-lg bg-gray-800 text-white hover:bg-gray-700 transition-colors"
             >
-              ← Previous
+              {t("← Previous", "← Předchozí")}
             </Link>
           )}
           <span className="text-gray-400 text-sm">
-            Page {page} of {totalPages}
+            {locale === "cs" ? (
+              <>
+                Stránka {page} z {totalPages}
+              </>
+            ) : (
+              <>
+                Page {page} of {totalPages}
+              </>
+            )}
           </span>
           {page < totalPages && (
             <Link
@@ -331,7 +381,7 @@ function GenreResults({
               prefetch={false}
               className="px-5 py-2 rounded-lg bg-gray-800 text-white hover:bg-gray-700 transition-colors"
             >
-              Next →
+              {t("Next →", "Další →")}
             </Link>
           )}
         </nav>
@@ -361,8 +411,13 @@ function GenreListingFrame({
   results: ReactNode;
   wikiContent?: Awaited<ReturnType<typeof getGenreWikipediaContent>> | null;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const slug = genreSlug(genre);
-  const noun = mediaType === "movie" ? "Movies" : "TV Shows";
+  // "Action Movies", "Akční filmy" – Czech agrees the adjective with the noun,
+  // so the pair is one phrase from the catalogue rather than two words joined.
+  const title = genreTitle(genre, mediaType, locale);
+  const phrase = genrePhrase(genre, mediaType, locale);
   const genreLower = genre.name.toLowerCase();
   const mediaNoun = mediaType === "movie" ? "movies" : "TV shows";
 
@@ -370,7 +425,7 @@ function GenreListingFrame({
     <div className="min-h-screen bg-black pt-20">
       <div className="container mx-auto px-6 lg:px-8 py-8">
         <nav
-          aria-label="Breadcrumb"
+          aria-label={t("Breadcrumb", "Drobečková navigace")}
           className="flex flex-wrap items-center gap-2 text-sm text-gray-400 mb-6"
         >
           <Link
@@ -378,7 +433,7 @@ function GenreListingFrame({
             prefetch={false}
             className="hover:text-white transition-colors"
           >
-            Genres
+            {t("Genres", "Žánry")}
           </Link>
           <span className="text-gray-600">/</span>
           {platform ? (
@@ -388,7 +443,7 @@ function GenreListingFrame({
                 prefetch={false}
                 className="hover:text-white transition-colors"
               >
-                {genre.name} {noun}
+                {title}
               </Link>
               <span className="text-gray-600">/</span>
               <span className="text-gray-300 font-medium" aria-current="page">
@@ -397,31 +452,53 @@ function GenreListingFrame({
             </>
           ) : (
             <span className="text-gray-300 font-medium" aria-current="page">
-              {genre.name} {noun}
+              {title}
             </span>
           )}
         </nav>
 
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-white mb-4">
-            {genre.name} {noun}
-            {platform && ` on ${platform.name}`}
+            {title}
+            {platform && ` ${onPlatform(platform, locale)}`}
           </h1>
           <p className="text-gray-400 text-lg">
             {platform
               ? totalResults === undefined
-                ? `${genre.name} ${mediaNoun} streaming on ${platform.name}`
+                ? t(
+                    `${genre.name} ${mediaNoun} streaming on ${platform.name}`,
+                    `${title} ke streamování ${onPlatform(platform, locale)}`,
+                  )
                 : totalResults > 0
-                  ? `${totalResults.toLocaleString("en-US")} ${genreLower} ${
-                      totalResults === 1
-                        ? mediaNoun.replace(/s$/, "")
-                        : mediaNoun
-                    } streaming on ${platform.name}, most popular first`
-                  : `Nothing in ${genreLower} is streaming on ${platform.name} in your region right now`
+                  ? t(
+                      `${formatNumber(totalResults, locale)} ${genreLower} ${
+                        totalResults === 1
+                          ? mediaNoun.replace(/s$/, "")
+                          : mediaNoun
+                      } streaming on ${platform.name}, most popular first`,
+                      `${title} ${onPlatform(platform, locale)}: ${formatCount(
+                        totalResults,
+                        locale,
+                        {
+                          en: ["title", "titles"],
+                          cs: ["titul", "tituly", "titulů"],
+                        },
+                      )}, od nejpopulárnějších`,
+                    )
+                  : t(
+                      `Nothing in ${genreLower} is streaming on ${platform.name} in your region right now`,
+                      `${title} teď ve vašem regionu ${onPlatform(platform, locale)} nenajdete`,
+                    )
               : isFiltered
-                ? `Browse ${genreLower} ${mediaNoun} matching your filters`
-                : `Discover popular ${genreLower} ${mediaNoun}`}
-            {page > 1 && ` – page ${page}`}
+                ? t(
+                    `Browse ${genreLower} ${mediaNoun} matching your filters`,
+                    `${title} odpovídající vašim filtrům`,
+                  )
+                : t(
+                    `Discover popular ${genreLower} ${mediaNoun}`,
+                    `Objevte populární ${phrase}`,
+                  )}
+            {page > 1 && t(` – page ${page}`, ` – stránka ${page}`)}
           </p>
         </div>
 
@@ -433,8 +510,14 @@ function GenreListingFrame({
         <section className="mt-16">
           <h2 className="text-lg font-semibold text-white mb-3">
             {platform
-              ? `${genre.name} ${mediaNoun} on other platforms`
-              : `Where to stream ${genreLower} ${mediaNoun}`}
+              ? t(
+                  `${genre.name} ${mediaNoun} on other platforms`,
+                  `${title} v dalších službách`,
+                )
+              : t(
+                  `Where to stream ${genreLower} ${mediaNoun}`,
+                  `Kde streamovat ${phrase}`,
+                )}
           </h2>
           <div className="flex flex-wrap gap-2">
             {STREAMING_LANDING_PLATFORMS.filter(
@@ -446,7 +529,12 @@ function GenreListingFrame({
                 prefetch={false}
                 className="px-3 py-1.5 rounded-full bg-gray-800 text-gray-300 text-sm hover:bg-gray-700 hover:text-white transition-colors"
               >
-                {platform ? p.name : `${genre.name} on ${p.name}`}
+                {platform
+                  ? p.name
+                  : t(
+                      `${genre.name} on ${p.name}`,
+                      `${title} ${onPlatform(p, locale)}`,
+                    )}
               </Link>
             ))}
           </div>

@@ -62,12 +62,15 @@ import {
 import {
   getLegacyProfileStorageOwner,
   getProfileStorageOwner,
+  profileDisplayName,
   resolveProfileStorageOwner,
   sanitizeProfileId,
   sanitizeProfileName,
   withProfileStorage,
 } from "./profile-storage";
 import { inspectStoredSettings, type StoredSetting } from "./settings";
+import { formatList } from "@/i18n/format";
+import type { Locale, Localized } from "@/i18n/locale";
 
 // The two list sanitisers live with the stores they repair – browser storage
 // needs them just as much as a backup file does – and are re-exported here so a
@@ -501,51 +504,66 @@ const SLOT_KEYS = {
   lastVisit: LAST_VISIT_STORAGE_KEY,
 } as const satisfies Record<keyof PortableStores, string>;
 
-/** What each store is called where a person reads about it. */
-const STORE_LABELS: Record<keyof PortableStores, string> = {
-  watchlist: "watchlist",
-  watched: "watched list",
-  episodeProgress: "episode progress",
-  ratings: "ratings",
-  collections: "named lists",
-  ranking: "ranking",
-  goal: "yearly goal",
-  dailyGame: "daily puzzle history",
-  higherLower: "higher-or-lower record",
-  lastVisit: "last-visit date",
+/**
+ * What each store is called where a person reads about it.
+ *
+ * Each Czech label is a phrase whose accusative is its nominative: the same
+ * words follow "Některá data se nepodařilo přečíst:" and "Nepodařilo se
+ * obnovit …" (`restoreFailureLabel`), and a feminine noun would need a second
+ * form for the second.
+ */
+const STORE_LABELS: Record<keyof PortableStores, Localized> = {
+  watchlist: { en: "watchlist", cs: "seznam" },
+  watched: { en: "watched list", cs: "zhlédnuté tituly" },
+  episodeProgress: { en: "episode progress", cs: "zhlédnuté epizody" },
+  ratings: { en: "ratings", cs: "hodnocení" },
+  collections: { en: "named lists", cs: "vlastní seznamy" },
+  ranking: { en: "ranking", cs: "žebříček" },
+  goal: { en: "yearly goal", cs: "roční cíl" },
+  dailyGame: { en: "daily puzzle history", cs: "výsledky denních hádanek" },
+  higherLower: { en: "higher-or-lower record", cs: "rekord ve hře Vyšší, nebo nižší" },
+  lastVisit: { en: "last-visit date", cs: "datum poslední návštěvy" },
 };
 
 /** An unreadable legacy watchlist cookie whose text storage kept. */
 const RETIRED_COOKIE_STORE = "legacyWatchlistCookie";
 
-const OTHER_LABELS: Record<string, string> = {
-  "settings.region": "region setting",
-  "settings.watchProviderFilter": "what-to-show setting",
-  "settings.selectedProviderIds": "platform selection",
-  "settings.hasCustomSettings": "record of changed settings",
-  profiles: "profile list",
-  [RETIRED_COOKIE_STORE]: "older saved watchlist",
+const OTHER_LABELS: Record<string, Localized> = {
+  "settings.region": { en: "region setting", cs: "nastavení regionu" },
+  "settings.watchProviderFilter": { en: "what-to-show setting", cs: "nastavení, co zobrazovat" },
+  "settings.selectedProviderIds": { en: "platform selection", cs: "výběr streamovacích služeb" },
+  "settings.hasCustomSettings": { en: "record of changed settings", cs: "záznam o změněných nastaveních" },
+  profiles: { en: "profile list", cs: "seznam profilů" },
+  [RETIRED_COOKIE_STORE]: { en: "older saved watchlist", cs: "starší uložený seznam" },
 };
 
 /** The person-facing name of a store, from its storage key; undefined if not a store. */
-export function storeLabelForKey(key: string): string | undefined {
-  if (key === LEGACY_LAST_VISIT_STORAGE_KEY) return STORE_LABELS.lastVisit;
-  if (key === WATCHLIST_COOKIE_RECOVERY_KEY) return OTHER_LABELS[RETIRED_COOKIE_STORE];
+export function storeLabelForKey(key: string, locale: Locale = "en"): string | undefined {
+  if (key === LEGACY_LAST_VISIT_STORAGE_KEY) return STORE_LABELS.lastVisit[locale];
+  if (key === WATCHLIST_COOKIE_RECOVERY_KEY) return OTHER_LABELS[RETIRED_COOKIE_STORE][locale];
   const field = (Object.keys(SLOT_KEYS) as (keyof PortableStores)[])
     .find((candidate) => SLOT_KEYS[candidate] === key);
-  return field ? STORE_LABELS[field] : undefined;
+  return field ? STORE_LABELS[field][locale] : undefined;
 }
 
-function joinLabels(labels: string[]): string {
+function joinLabels(labels: string[], locale: Locale): string {
+  // `formatList` would add the serial comma English never had here.
+  if (locale === "cs") return formatList(labels, locale);
   return labels.length < 2
     ? labels.join("")
     : `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)}`;
 }
 
-/** `watched list for "Sam"`, `the region setting` – one line per unreadable entry. */
-export function describeUnreadable(entry: UnreadableData): string {
+/**
+ * `watched list for "Sam"`, `the region setting` – one line per unreadable
+ * entry. In Czech `zhlédnuté tituly profilu „Sam“`, `nastavení regionu`.
+ */
+export function describeUnreadable(entry: UnreadableData, locale: Locale = "en"): string {
   const labels = joinLabels(entry.stores.map((store) =>
-    STORE_LABELS[store as keyof PortableStores] ?? OTHER_LABELS[store] ?? store));
+    STORE_LABELS[store as keyof PortableStores]?.[locale] ?? OTHER_LABELS[store]?.[locale] ?? store), locale);
+  if (locale === "cs") {
+    return entry.profile ? `${labels} profilu „${profileDisplayName(entry.profile, locale)}“` : labels;
+  }
   return entry.profile ? `${labels} for "${entry.profile.name}"` : `the ${labels}`;
 }
 

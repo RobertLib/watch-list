@@ -14,12 +14,20 @@ import {
   getProfiles,
   MAX_PROFILE_NAME_LENGTH,
   MAX_PROFILES,
+  profileDisplayName,
   renameProfile,
   subscribeProfiles,
   switchProfileWithResult,
   type Profile,
 } from "@/lib/profiles";
 import { cn } from "@/lib/utils";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount, type PluralForms } from "@/i18n/format";
+
+const PROFILES = {
+  en: ["profile", "profiles"],
+  cs: ["profil", "profily", "profilů"],
+} satisfies PluralForms;
 
 /**
  * Who is watching.
@@ -39,6 +47,27 @@ export function ProfileSwitcher() {
   const [requiresReload, setRequiresReload] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const saving = useRef(false);
+  const locale = useLocale();
+  const t = useT();
+  const shownName = (profile: Profile) => profileDisplayName(profile, locale);
+
+  /**
+   * Whether `name` is taken only on screen: another profile is still stored
+   * under a placeholder ("Me") that this page shows translated ("Já"). The
+   * roster's own check compares stored names and would let a second "Já"
+   * in beside it. In English what is shown is what is stored, so this never
+   * answers yes there. Checked against the roster on screen: it is the one
+   * whose names the visitor is reading.
+   */
+  const isShownNameTaken = (name: string, exceptId?: string) =>
+    profiles.some((profile) => {
+      const shown = shownName(profile);
+      return (
+        profile.id !== exceptId &&
+        shown !== profile.name &&
+        shown.toLocaleLowerCase() === name.toLocaleLowerCase()
+      );
+    });
 
   // Which row is in edit mode, and what has been typed into it. One pair rather
   // than per-row state because only one row can be edited at a time.
@@ -79,7 +108,7 @@ export function ProfileSwitcher() {
           setRequiresReload(true);
           return;
         }
-        toast.showToast("Could not switch profile", "error");
+        toast.showToast(t("Could not switch profile", "Profil se nepodařilo přepnout"), "error");
         return;
       }
 
@@ -101,6 +130,11 @@ export function ProfileSwitcher() {
     const trimmed = newName.trim();
     if (!trimmed) return;
 
+    if (isShownNameTaken(trimmed)) {
+      toast.showToast(duplicateMessage(trimmed), "error");
+      return;
+    }
+
     saving.current = true;
     setIsSaving(true);
     try {
@@ -116,10 +150,13 @@ export function ProfileSwitcher() {
 
         toast.showToast(
           currentProfiles.length >= MAX_PROFILES
-            ? `One browser holds up to ${MAX_PROFILES} profiles`
+            ? t(
+                `One browser holds up to ${MAX_PROFILES} profiles`,
+                `Jeden prohlížeč pojme nejvýš ${formatCount(MAX_PROFILES, locale, PROFILES)}`,
+              )
             : isDuplicate
-              ? `There is already a profile called "${trimmed}"`
-              : "Could not add that profile",
+              ? duplicateMessage(trimmed)
+              : t("Could not add that profile", "Profil se nepodařilo přidat"),
           "error",
         );
         return;
@@ -127,7 +164,13 @@ export function ProfileSwitcher() {
 
       setProfiles(getProfiles());
       setNewName("");
-      toast.showToast(`Added "${created.name}" – switch to start their list`, "success");
+      toast.showToast(
+        t(
+          `Added "${created.name}" – switch to start their list`,
+          `Profil „${shownName(created)}“ je přidaný – přepněte na něj a začněte jeho seznam`,
+        ),
+        "success",
+      );
     } finally {
       saving.current = false;
       setIsSaving(false);
@@ -137,7 +180,14 @@ export function ProfileSwitcher() {
   function startRename(profile: Profile) {
     if (requiresReload || saving.current) return;
     setRenamingId(profile.id);
-    setDraft(profile.name);
+    setDraft(shownName(profile));
+  }
+
+  function duplicateMessage(name: string): string {
+    return t(
+      `There is already a profile called "${name}"`,
+      `Profil „${name}“ už existuje`,
+    );
   }
 
   async function commitRename(event: React.FormEvent, profile: Profile) {
@@ -146,9 +196,15 @@ export function ProfileSwitcher() {
 
     const trimmed = draft.trim();
     // An unchanged name is a cancel, not a failure – it is what pressing Enter
-    // straight after opening the field does.
-    if (!trimmed || trimmed === profile.name) {
+    // straight after opening the field does. The field opens on the name as
+    // shown, which for a placeholder is not the stored one.
+    if (!trimmed || trimmed === profile.name || trimmed === shownName(profile)) {
       setRenamingId(null);
+      return;
+    }
+
+    if (isShownNameTaken(trimmed, profile.id)) {
+      toast.showToast(duplicateMessage(trimmed), "error");
       return;
     }
 
@@ -162,8 +218,8 @@ export function ProfileSwitcher() {
               other.id !== profile.id &&
               other.name.toLocaleLowerCase() === trimmed.toLocaleLowerCase(),
           )
-            ? `There is already a profile called "${trimmed}"`
-            : "Could not rename that profile",
+            ? duplicateMessage(trimmed)
+            : t("Could not rename that profile", "Profil se nepodařilo přejmenovat"),
           "error",
         );
         return;
@@ -191,15 +247,21 @@ export function ProfileSwitcher() {
         // wrong one sends the visitor off to switch profiles for no reason.
         toast.showToast(
           profile.id === activeId
-            ? "Switch to another profile first"
-            : `Could not delete "${profile.name}" – this browser refused to save the change`,
+            ? t("Switch to another profile first", "Nejdřív přepněte na jiný profil")
+            : t(
+                `Could not delete "${profile.name}" – this browser refused to save the change`,
+                `Profil „${shownName(profile)}“ se nepodařilo smazat – prohlížeč odmítl změnu uložit`,
+              ),
           "error",
         );
         return;
       }
 
       setProfiles(getProfiles());
-      toast.showToast(`Deleted "${profile.name}"`, "success");
+      toast.showToast(
+        t(`Deleted "${profile.name}"`, `Profil „${shownName(profile)}“ je smazaný`),
+        "success",
+      );
     } finally {
       saving.current = false;
       setIsSaving(false);
@@ -217,28 +279,33 @@ export function ProfileSwitcher() {
           className="text-lg font-semibold text-white flex items-center gap-2"
         >
           <Users className="w-5 h-5 text-blue-400" aria-hidden="true" />
-          Who is watching
+          {t("Who is watching", "Kdo se dívá")}
         </h2>
         <p className="text-sm text-gray-400 mt-1 leading-relaxed">
-          One browser, separate watchlists. Everything personal – saved titles,
-          episode ticks, ratings, lists, puzzle streak – belongs to whoever is
-          active. Region and platform settings are shared.
+          {t(
+            "One browser, separate watchlists. Everything personal – saved titles, episode ticks, ratings, lists, puzzle streak – belongs to whoever is active. Region and platform settings are shared.",
+            "Jeden prohlížeč, oddělené seznamy. Vše osobní – uložené tituly, odškrtnuté epizody, hodnocení, vlastní seznamy, série v hádankách – patří tomu, kdo je právě aktivní. Nastavení regionu a streamovacích služeb je společné.",
+          )}
         </p>
       </div>
 
       {requiresReload && (
         <div role="alert" className="rounded-lg border border-red-500/40 bg-red-500/10 p-4 space-y-3">
-          <p className="font-semibold text-red-200">Profile switch failed</p>
+          <p className="font-semibold text-red-200">
+            {t("Profile switch failed", "Přepnutí profilu se nezdařilo")}
+          </p>
           <p className="text-sm text-red-100/80 leading-relaxed">
-            The active profile changed before the switch could finish. Reload
-            to read the currently saved profile before switching again.
+            {t(
+              "The active profile changed before the switch could finish. Reload to read the currently saved profile before switching again.",
+              "Aktivní profil se změnil dřív, než se přepnutí stihlo dokončit. Než přepnete znovu, načtěte stránku, ať se načte aktuálně uložený profil.",
+            )}
           </p>
           <button
             type="button"
             onClick={() => window.location.reload()}
             className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
           >
-            Reload saved data
+            {t("Reload saved data", "Znovu načíst uložená data")}
           </button>
         </div>
       )}
@@ -255,11 +322,12 @@ export function ProfileSwitcher() {
         aria-busy={isSaving}
         className="space-y-4 disabled:opacity-60 aria-disabled:opacity-60"
       >
-        <legend className="sr-only">Profile controls</legend>
+        <legend className="sr-only">{t("Profile controls", "Správa profilů")}</legend>
         <ul className="space-y-2">
           {profiles.map((profile) => {
             const isActive = hasLoaded && profile.id === activeId;
             const isRenaming = renamingId === profile.id;
+            const name = shownName(profile);
 
             return (
               <li key={profile.id}>
@@ -282,21 +350,21 @@ export function ProfileSwitcher() {
                         readOnly={isSaving}
                         maxLength={MAX_PROFILE_NAME_LENGTH}
                         onChange={(event) => setDraft(event.target.value)}
-                        aria-label={`Rename ${profile.name}`}
+                        aria-label={t(`Rename ${profile.name}`, `Přejmenovat profil „${name}“`)}
                         className="flex-1 min-w-0 px-3 py-1.5 rounded-lg bg-black/60 border border-gray-700 text-sm text-white focus:outline-none focus:border-blue-500"
                       />
                       <button
                         type="submit"
                         className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
                       >
-                        Save
+                        {t("Save", "Uložit")}
                       </button>
                       <button
                         type="button"
                         onClick={() => setRenamingId(null)}
                         className="text-sm text-gray-500 hover:text-white transition-colors"
                       >
-                        Cancel
+                        {t("Cancel", "Zrušit")}
                       </button>
                     </form>
                   ) : (
@@ -315,13 +383,13 @@ export function ProfileSwitcher() {
                           )}
                           aria-hidden="true"
                         >
-                          {profile.name.slice(0, 1).toUpperCase()}
+                          {name.slice(0, 1).toUpperCase()}
                         </span>
-                        <span className="text-white">{profile.name}</span>
+                        <span className="text-white">{name}</span>
                         {isActive && (
                           <span className="flex items-center gap-1 text-xs text-blue-300">
                             <Check className="w-3.5 h-3.5" aria-hidden="true" />
-                            active
+                            {t("active", "aktivní")}
                           </span>
                         )}
                       </button>
@@ -331,7 +399,7 @@ export function ProfileSwitcher() {
                           their own name on. */}
                       <button
                         onClick={() => startRename(profile)}
-                        aria-label={`Rename ${profile.name}`}
+                        aria-label={t(`Rename ${profile.name}`, `Přejmenovat profil „${name}“`)}
                         className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/10 transition-colors"
                       >
                         <Pencil className="w-4 h-4" aria-hidden="true" />
@@ -343,22 +411,28 @@ export function ProfileSwitcher() {
                           <span className="flex items-center gap-2 text-sm">
                             <button
                               onClick={() => remove(profile)}
-                              aria-label={`Yes, delete ${profile.name} and their data`}
+                              aria-label={t(
+                                `Yes, delete ${profile.name} and their data`,
+                                `Ano, smazat profil „${name}“ i s jeho daty`,
+                              )}
                               className="text-red-400 hover:text-red-300 transition-colors"
                             >
-                              Delete
+                              {t("Delete", "Smazat")}
                             </button>
                             <button
                               onClick={() => setConfirmingDeleteId(null)}
                               className="text-gray-500 hover:text-white transition-colors"
                             >
-                              Cancel
+                              {t("Cancel", "Zrušit")}
                             </button>
                           </span>
                         ) : (
                           <button
                             onClick={() => setConfirmingDeleteId(profile.id)}
-                            aria-label={`Delete ${profile.name} and their data`}
+                            aria-label={t(
+                              `Delete ${profile.name} and their data`,
+                              `Smazat profil „${name}“ i s jeho daty`,
+                            )}
                             className="p-1.5 rounded-lg text-gray-500 hover:text-red-300 hover:bg-white/10 transition-colors"
                           >
                             <Trash2 className="w-4 h-4" aria-hidden="true" />
@@ -375,7 +449,7 @@ export function ProfileSwitcher() {
         {profiles.length < MAX_PROFILES && (
           <form onSubmit={add} className="flex gap-2">
             <label htmlFor="new-profile" className="sr-only">
-              New profile name
+              {t("New profile name", "Jméno nového profilu")}
             </label>
             <input
               id="new-profile"
@@ -383,7 +457,7 @@ export function ProfileSwitcher() {
               readOnly={isSaving}
               maxLength={MAX_PROFILE_NAME_LENGTH}
               onChange={(event) => setNewName(event.target.value)}
-              placeholder="Add someone…"
+              placeholder={t("Add someone…", "Přidat někoho…")}
               className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-black/60 border border-gray-700 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
             />
             <button
@@ -391,16 +465,17 @@ export function ProfileSwitcher() {
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-medium text-white transition-colors"
             >
               <Plus className="w-4 h-4" aria-hidden="true" />
-              Add
+              {t("Add", "Přidat")}
             </button>
           </form>
         )}
       </fieldset>
 
       <p className="text-xs text-gray-500 leading-relaxed">
-        Each profile keeps its own lists, ratings and progress. Switching
-        profiles updates every open tab in this browser. The backup on this page
-        covers every profile.
+        {t(
+          "Each profile keeps its own lists, ratings and progress. Switching profiles updates every open tab in this browser. The backup on this page covers every profile.",
+          "Každý profil má vlastní seznamy, hodnocení a rozkoukané seriály. Přepnutí profilu se projeví ve všech otevřených kartách tohoto prohlížeče. Záloha na této stránce zahrnuje všechny profily.",
+        )}
       </p>
     </section>
   );

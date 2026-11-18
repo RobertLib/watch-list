@@ -10,6 +10,8 @@ import {
 } from "@/lib/shared-list";
 import { toast } from "@/components/Toast";
 import { useTransientFlag } from "@/hooks/useTransientFlag";
+import { useLocale, useLocalizeHref, useT } from "@/i18n/LocaleProvider";
+import { formatCount } from "@/i18n/format";
 
 /**
  * Turn the current list into a link.
@@ -30,6 +32,9 @@ export function ShareListButton({
   items: SharedListRef[];
   defaultTitle: string;
 }) {
+  const locale = useLocale();
+  const t = useT();
+  const localizeHref = useLocalizeHref();
   const id = useId();
   const titleId = `${id}-title`;
   const urlId = `${id}-url`;
@@ -113,7 +118,9 @@ export function ShareListButton({
 
   if (items.length === 0) return null;
 
-  const path = buildSharedListPath(items, title);
+  // In the sharer's own language: a Czech visitor sends a Czech page. The query
+  // is the same in both trees, so the link still opens in either.
+  const path = localizeHref(buildSharedListPath(items, title));
   // `window` is absent during the prerender that writes the static HTML; the
   // relative path is replaced with the absolute one as soon as the browser
   // takes over, which is before anyone can click Copy.
@@ -133,13 +140,16 @@ export function ShareListButton({
       // Clipboard access can be refused outright. The field is selectable, so
       // there is still a way to get the link out – say so rather than failing
       // silently.
-      toast.showToast("Copy the link from the box instead", "info");
+      toast.showToast(
+        t("Copy the link from the box instead", "Zkopírujte si odkaz z políčka ručně"),
+        "info",
+      );
     }
   }
 
   async function shareNatively() {
     try {
-      await navigator.share({ title: title || "My watchlist", url });
+      await navigator.share({ title: title || t("My watchlist", "Můj seznam"), url });
     } catch {
       // The visitor dismissed the sheet, which is not an error.
     }
@@ -156,7 +166,7 @@ export function ShareListButton({
         aria-controls={open ? panelId : undefined}
       >
         <Share2 className="w-4 h-4" aria-hidden="true" />
-        Share
+        {t("Share", "Sdílet")}
       </button>
 
       {open && (
@@ -167,10 +177,14 @@ export function ShareListButton({
         >
           <div className="flex items-start justify-between gap-2">
             <div>
-              <p className="font-semibold text-white text-sm">Share this list</p>
+              <p className="font-semibold text-white text-sm">
+                {t("Share this list", "Sdílet tento seznam")}
+              </p>
               <p className="text-xs text-gray-400 mt-0.5">
-                The titles travel inside the link – no account needed on either
-                end.
+                {t(
+                  "The titles travel inside the link – no account needed on either end.",
+                  "Tituly jsou přímo v odkazu – účet nepotřebuje ani jedna strana.",
+                )}
               </p>
             </div>
             <button
@@ -179,7 +193,7 @@ export function ShareListButton({
                 setOpen(false);
               }}
               className="text-gray-400 hover:text-white shrink-0"
-              aria-label="Close"
+              aria-label={t("Close", "Zavřít")}
             >
               <X className="w-4 h-4" />
             </button>
@@ -190,7 +204,7 @@ export function ShareListButton({
               htmlFor={titleId}
               className="block text-xs font-medium text-gray-300 mb-1"
             >
-              Name it (optional)
+              {t("Name it (optional)", "Pojmenujte ho (nepovinné)")}
             </label>
             <input
               id={titleId}
@@ -201,14 +215,14 @@ export function ShareListButton({
                 const value = event.target.value;
                 setCustomTitle(value === defaultTitle ? null : value);
               }}
-              placeholder="My sci-fi picks"
+              placeholder={t("My sci-fi picks", "Moje sci-fi tipy")}
               className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
             />
           </div>
 
           <div>
             <label htmlFor={urlId} className="sr-only">
-              Share link
+              {t("Share link", "Odkaz ke sdílení")}
             </label>
             <input
               id={urlId}
@@ -222,7 +236,14 @@ export function ShareListButton({
 
           {truncated && (
             <p className="text-xs text-amber-300/80">
-              Only the first {MAX_SHARED_LIST_ITEMS} titles fit in a link.
+              {locale === "cs" ? (
+                `Do odkazu se vejde jen prvních ${formatCount(MAX_SHARED_LIST_ITEMS, locale, {
+                  en: ["title", "titles"],
+                  cs: ["titul", "tituly", "titulů"],
+                })}.`
+              ) : (
+                <>Only the first {MAX_SHARED_LIST_ITEMS} titles fit in a link.</>
+              )}
             </p>
           )}
 
@@ -236,7 +257,7 @@ export function ShareListButton({
               ) : (
                 <Copy className="w-4 h-4" aria-hidden="true" />
               )}
-              {copied ? "Copied" : "Copy link"}
+              {copied ? t("Copied", "Zkopírováno") : t("Copy link", "Kopírovat odkaz")}
             </button>
 
             {canShareNatively && (
@@ -245,7 +266,7 @@ export function ShareListButton({
                 className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               >
                 <Share2 className="w-4 h-4" aria-hidden="true" />
-                Share…
+                {t("Share…", "Sdílet…")}
               </button>
             )}
           </div>

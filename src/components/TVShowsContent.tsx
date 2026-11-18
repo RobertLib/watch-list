@@ -9,6 +9,7 @@ import { LoadingSection } from "@/components/LoadingSpinner";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { useSettingsKey } from "@/hooks/useSettings";
 import { useLocalDay } from "@/hooks/useLocalDay";
+import { useT } from "@/i18n/LocaleProvider";
 import {
   getTopRatedTVShows,
   getAiringTodayTVShows,
@@ -28,14 +29,25 @@ export function TVShowsContent({
 }) {
   const settingsKey = useSettingsKey();
   const day = useLocalDay();
+  const t = useT();
+  const trendingTitle = t("Trending This Week", "Trendy tohoto týdne");
+  const airingTodayTitle = t("Airing Today", "Dnes vysílané");
+  const topRatedTitle = t("Top Rated TV Shows", "Nejlépe hodnocené seriály");
 
   return (
     <>
-      <Suspense fallback={<LoadingSection title="Discover TV Shows" count={12} />}>
+      <Suspense
+        fallback={
+          <LoadingSection
+            title={t("Discover TV Shows", "Objevujte seriály")}
+            count={12}
+          />
+        }
+      >
         <DiscoverTVShows settingsKey={settingsKey} />
       </Suspense>
       <AsyncDiscoverySection
-        title="Trending This Week"
+        title={trendingTitle}
         loadKey={settingsKey}
         loadFirstPage={TV_SECTIONS.trending}
         placeholder={snapshot?.trending}
@@ -43,7 +55,7 @@ export function TVShowsContent({
         {(trending, snapshotState) => (
           <PaginatedTVSection
             snapshot={snapshotState}
-            title="Trending This Week"
+            title={trendingTitle}
             fetchFunction={getTrendingTVShowsWeekly}
             initialTVShows={trending.results}
             initialTotalPages={trending.total_pages}
@@ -52,7 +64,7 @@ export function TVShowsContent({
       </AsyncDiscoverySection>
       {/* Only this listing changes at midnight; other loaded pages stay mounted. */}
       <AsyncDiscoverySection
-        title="Airing Today"
+        title={airingTodayTitle}
         loadKey={`${settingsKey}|${day}`}
         loadFirstPage={TV_SECTIONS.airingToday}
         placeholder={snapshot?.airingToday}
@@ -60,7 +72,7 @@ export function TVShowsContent({
         {(airingToday, snapshotState) => (
           <PaginatedTVSection
             snapshot={snapshotState}
-            title="Airing Today"
+            title={airingTodayTitle}
             fetchFunction={getAiringTodayTVShows}
             initialTVShows={airingToday.results}
             initialTotalPages={airingToday.total_pages}
@@ -68,7 +80,7 @@ export function TVShowsContent({
         )}
       </AsyncDiscoverySection>
       <AsyncDiscoverySection
-        title="Top Rated TV Shows"
+        title={topRatedTitle}
         loadKey={settingsKey}
         loadFirstPage={TV_SECTIONS.topRated}
         placeholder={snapshot?.topRated}
@@ -76,7 +88,7 @@ export function TVShowsContent({
         {(topRated, snapshotState) => (
           <PaginatedTVSection
             snapshot={snapshotState}
-            title="Top Rated TV Shows"
+            title={topRatedTitle}
             fetchFunction={getTopRatedTVShows}
             initialTVShows={topRated.results}
             initialTotalPages={topRated.total_pages}
@@ -92,12 +104,14 @@ function DiscoverTVShows({ settingsKey }: { settingsKey: string }) {
     () => tmdbDiscoverApi.getPopularTVShows(1),
     [settingsKey],
   );
+  const t = useT();
+  const title = t("Discover TV Shows", "Objevujte seriály");
 
-  if (isLoading) return <LoadingSection title="Discover TV Shows" count={12} />;
+  if (isLoading) return <LoadingSection title={title} count={12} />;
 
   return (
     <FilteredTVSection
-      title="Discover TV Shows"
+      title={title}
       initialTVShows={data?.results}
       initialTotalPages={data?.total_pages}
       initialTotalResults={data?.total_results}

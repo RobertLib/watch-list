@@ -18,6 +18,7 @@
  */
 
 import type { MediaType } from "@/types/tmdb";
+import { LOCALE_PREFIX, type Locale } from "@/i18n/locale";
 import { extractIdFromSlug } from "./utils";
 import {
   hasLikePage,
@@ -50,16 +51,20 @@ function withParams(path: string, params: Record<string, string | undefined>) {
  * not exist; it goes to the query page, which reads any form and canonicalises
  * to the path itself.
  */
-function titleHref(kind: PrerenderedKind, slug: string): string {
+function titleHref(
+  kind: PrerenderedKind,
+  slug: string,
+  locale: Locale = "en",
+): string {
   const id = extractIdFromSlug(slug);
   if (
     id !== null &&
     (slug === String(id) || slug.endsWith(`-${id}`)) &&
-    hasPrerenderedPage(kind, id, slug)
+    hasPrerenderedPage(kind, id, slug, locale)
   ) {
-    return `/${kind}/${slug}`;
+    return `${LOCALE_PREFIX[locale]}/${kind}/${slug}`;
   }
-  return titleQueryHref(kind, slug);
+  return withParams(`${LOCALE_PREFIX[locale]}/${kind}`, { id: slug });
 }
 
 /**
@@ -85,8 +90,12 @@ export function mediaHref(mediaType: MediaType, slug: string): string {
 }
 
 /** Where a title's "movies like this" page is written – whether or not it was. */
-export function likePath(mediaType: MediaType, slug: string): string {
-  return `/${mediaType === "movie" ? "movies-like" : "shows-like"}/${slug}`;
+export function likePath(
+  mediaType: MediaType,
+  slug: string,
+  locale: Locale = "en",
+): string {
+  return `${LOCALE_PREFIX[locale]}/${mediaType === "movie" ? "movies-like" : "shows-like"}/${slug}`;
 }
 
 /**
@@ -94,11 +103,16 @@ export function likePath(mediaType: MediaType, slug: string): string {
  *
  * Only the best-known titles have one (`LIKE_PAGE_LIMITS`), so unlike a title
  * link this has nowhere to fall back to: a caller shows the link or does not.
+ * Each language has its own list, so the caller says which it is building for.
  */
-export function likeHref(mediaType: MediaType, slug: string): string | null {
+export function likeHref(
+  mediaType: MediaType,
+  slug: string,
+  locale: Locale = "en",
+): string | null {
   const id = extractIdFromSlug(slug);
-  return id !== null && hasLikePage(mediaType, id, slug)
-    ? likePath(mediaType, slug)
+  return id !== null && hasLikePage(mediaType, id, slug, locale)
+    ? likePath(mediaType, slug, locale)
     : null;
 }
 
@@ -215,6 +229,131 @@ export function absoluteUrl(path: string): string {
 }
 
 /** The canonical, absolute address of a title's page. */
-export function absoluteMediaUrl(mediaType: MediaType, slug: string): string {
-  return absoluteUrl(mediaHref(mediaType, slug));
+export function absoluteMediaUrl(
+  mediaType: MediaType,
+  slug: string,
+  locale: Locale = "en",
+): string {
+  return absoluteUrl(localizeHref(mediaHref(mediaType, slug), locale));
+}
+
+/** A page's absolute address in one language. */
+export function absoluteLocalizedUrl(path: string, locale: Locale): string {
+  return absoluteUrl(localizeHref(path, locale));
+}
+
+const TITLE_HREF = /^\/(movie|tv|person)(?:\/([^/?#]+))?\/?(\?[^#]*)?(#.*)?$/;
+const LIKE_HREF = /^\/(movies-like|shows-like)\/([^/?#]+)\/?(\?[^#]*)?(#.*)?$/;
+
+/**
+ * An English href, moved into another language's tree.
+ *
+ * Every builder above answers with the English path, and the components link
+ * through `@/i18n/Link`, which passes each href through here – so the links
+ * are written once and the Czech tree gets `/cs/movies` for `/movies` without
+ * a locale threaded through forty call sites.
+ *
+ * Most paths only gain the prefix. The titles cannot: each language
+ * prerenders its own set, each under the slug of its own name, so a title is
+ * looked up again in the Czech list – whichever form, path or query, the
+ * English builder chose – and gets the Czech path only where the build wrote
+ * one. A "like this" page Czech does not have falls back to the title itself,
+ * whose page lists the same titles, rather than to a 404.
+ *
+ * Idempotent: an href already in the tree, an absolute URL, a protocol-relative
+ * one or a bare fragment is returned as it is.
+ */
+export function localizeHref(href: string, locale: Locale): string {
+  if (locale === "en") return href;
+  if (!href.startsWith("/") || href.startsWith("//")) return href;
+
+  const prefix = LOCALE_PREFIX[locale];
+  if (
+    href === prefix ||
+    href.startsWith(`${prefix}/`) ||
+    href.startsWith(`${prefix}?`) ||
+    href.startsWith(`${prefix}#`)
+  ) {
+    return href;
+  }
+
+  const title = TITLE_HREF.exec(href);
+  if (title) {
+    const kind = title[1] as PrerenderedKind;
+    const params = new URLSearchParams(title[3] ?? "");
+    const slug = title[2] ?? params.get("id");
+    if (slug) {
+      params.delete("id");
+      const fragment = title[4] ?? "";
+      const rest = params.toString();
+      if (!rest) return `${titleHref(kind, slug, locale)}${fragment}`;
+      return `${withParams(`${prefix}/${kind}`, { id: slug })}&${rest}${fragment}`;
+    }
+  }
+
+  const like = LIKE_HREF.exec(href);
+  if (like) {
+    const mediaType: MediaType = like[1] === "movies-like" ? "movie" : "tv";
+    return (
+      likeHref(mediaType, like[2], locale) ?? titleHref(mediaType, like[2], locale)
+    );
+  }
+
+  return prefixLocale(href, locale);
+}
+
+/**
+ * The page at `href` – in whichever tree – as the other tree has it: what the
+ * language switch links to.
+ *
+ * Mostly the prefix added or taken away. A title is looked up again, because
+ * the two trees prerender different titles under different slugs: the English
+ * `/movie/fight-club-550` is `/cs/movie?id=fight-club-550` unless the Czech
+ * tree wrote that very slug, and the Czech `/cs/movie/klub-rvacu-550` is
+ * `/movie?id=klub-rvacu-550` in English. The query page reads either slug and
+ * settles on its own canonical address.
+ */
+export function switchLocaleHref(href: string, target: Locale): string {
+  const bare = stripLocalePrefix(href);
+
+  const title = TITLE_HREF.exec(bare);
+  if (title) {
+    const params = new URLSearchParams(title[3] ?? "");
+    const slug = title[2] ?? params.get("id");
+    if (slug) {
+      params.delete("id");
+      const base = titleHref(title[1] as PrerenderedKind, slug, target);
+      const rest = params.toString();
+      return `${rest ? `${withParams(`${LOCALE_PREFIX[target]}/${title[1]}`, { id: slug })}&${rest}` : base}${title[4] ?? ""}`;
+    }
+  }
+
+  const like = LIKE_HREF.exec(bare);
+  if (like) {
+    const mediaType: MediaType = like[1] === "movies-like" ? "movie" : "tv";
+    return likeHref(mediaType, like[2], target) ?? titleHref(mediaType, like[2], target);
+  }
+
+  return prefixLocale(bare, target);
+}
+
+/** `/cs/movies` → `/movies`, `/cs?x` → `/?x`; an English href as it is. */
+function stripLocalePrefix(href: string): string {
+  if (href === "/cs") return "/";
+  if (href.startsWith("/cs/")) return href.slice(3);
+  if (href.startsWith("/cs?") || href.startsWith("/cs#")) return `/${href.slice(3)}`;
+  return href;
+}
+
+/**
+ * Only the prefix, with no lookup: `/` is `/cs`, `/movie?id=…` is
+ * `/cs/movie?id=…`. For the one caller that must not be given a title's path
+ * back – the 404 page, answering a path that just failed.
+ */
+export function prefixLocale(href: string, locale: Locale): string {
+  const prefix = LOCALE_PREFIX[locale];
+  if (!prefix) return href;
+  return href === "/" || href.startsWith("/?") || href.startsWith("/#")
+    ? `${prefix}${href.slice(1)}`
+    : `${prefix}${href}`;
 }

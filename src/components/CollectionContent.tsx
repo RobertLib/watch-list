@@ -14,7 +14,9 @@ import { useAsyncData } from "@/hooks/useAsyncData";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { useCanonicalUrl } from "@/hooks/useCanonicalUrl";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
-import { SITE_URL, absoluteUrl, collectionHref } from "@/lib/routes";
+import { absoluteLocalizedUrl, collectionHref } from "@/lib/routes";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount } from "@/i18n/format";
 import type { MediaItem } from "@/types/tmdb";
 
 /** A film series – "the Alien collection" – named by `?id=` like every title. */
@@ -27,11 +29,15 @@ export function CollectionContent() {
 }
 
 function CollectionSkeleton() {
+  const t = useT();
   return (
     <div className="min-h-screen bg-gray-900">
       <div className="h-64 sm:h-80 w-full bg-gray-800 animate-pulse" />
       <div className="container mx-auto px-4 py-8 max-w-6xl">
-        <LoadingSection title="Loading collection..." count={4} />
+        <LoadingSection
+          title={t("Loading collection...", "Načítání kolekce…")}
+          count={4}
+        />
       </div>
     </div>
   );
@@ -40,6 +46,8 @@ function CollectionSkeleton() {
 function CollectionDetail() {
   const searchParams = useSearchParams();
   const id = extractIdFromSlug(searchParams.get("id") ?? "");
+  const locale = useLocale();
+  const t = useT();
 
   const { data, isLoading, error, reload } = useAsyncData(
     async () => (id ? tmdbApi.getCollectionDetails(id) : null),
@@ -48,7 +56,9 @@ function CollectionDetail() {
 
   useDocumentTitle(data ? data.name : null);
   useCanonicalUrl(
-    data ? absoluteUrl(collectionHref(createSlug(data.name, data.id))) : null,
+    data
+      ? absoluteLocalizedUrl(collectionHref(createSlug(data.name, data.id)), locale)
+      : null,
   );
 
   if (isLoading) return <CollectionSkeleton />;
@@ -60,8 +70,11 @@ function CollectionDetail() {
   if (error && !isNotFoundError(error)) {
     return (
       <LoadFailureNotice
-        title="Could not load this collection"
-        description="TMDB did not answer. It may be a connection problem, or the service may be busy – the collection is probably still there."
+        title={t("Could not load this collection", "Kolekci se nepodařilo načíst")}
+        description={t(
+          "TMDB did not answer. It may be a connection problem, or the service may be busy – the collection is probably still there.",
+          "TMDB neodpovídá. Může jít o potíže s připojením, nebo je služba přetížená – kolekce tam nejspíš pořád je.",
+        )}
         onRetry={reload}
       />
     );
@@ -70,17 +83,21 @@ function CollectionDetail() {
   if (!data) {
     return (
       <NotFoundNotice
-        title="Collection not found"
-        description="We could not find that collection. It may have been removed from TMDB, or the link may be incomplete."
+        title={t("Collection not found", "Kolekce nenalezena")}
+        description={t(
+          "We could not find that collection. It may have been removed from TMDB, or the link may be incomplete.",
+          "Tuto kolekci jsme nenašli. Možná byla z TMDB odstraněna, nebo je odkaz neúplný.",
+        )}
         backHref="/movies"
-        backLabel="Browse movies"
+        backLabel={t("Browse movies", "Procházet filmy")}
       />
     );
   }
 
   const collection = data;
-  const canonicalUrl = absoluteUrl(
+  const canonicalUrl = absoluteLocalizedUrl(
     collectionHref(createSlug(collection.name, collection.id)),
+    locale,
   );
 
   // Release order, undated parts last. TMDB lists an announced sequel with
@@ -119,16 +136,18 @@ function CollectionDetail() {
             poster_path: p.poster_path,
           })),
         }}
+        locale={locale}
       />
       <StructuredData
         type="BreadcrumbList"
         data={{
           breadcrumbItems: [
-            { name: "Home", url: SITE_URL },
-            { name: "Movies", url: absoluteUrl("/movies") },
+            { name: t("Home", "Domů"), url: absoluteLocalizedUrl("/", locale) },
+            { name: t("Movies", "Filmy"), url: absoluteLocalizedUrl("/movies", locale) },
             { name: collection.name, url: canonicalUrl },
           ],
         }}
+        locale={locale}
       />
       {/* Hero */}
       <div className="relative">
@@ -162,13 +181,16 @@ function CollectionDetail() {
           )}
           <div className="pb-1">
             <p className="text-gray-300 text-xs uppercase tracking-widest mb-1">
-              Collection
+              {t("Collection", "Kolekce")}
             </p>
             <h1 className="text-2xl sm:text-4xl font-bold text-white drop-shadow">
               {collection.name}
             </h1>
             <p className="text-gray-300 text-sm mt-1">
-              {movies.length} {movies.length === 1 ? "film" : "films"}
+              {formatCount(movies.length, locale, {
+                en: ["film", "films"],
+                cs: ["film", "filmy", "filmů"],
+              })}
             </p>
           </div>
         </div>
@@ -177,7 +199,7 @@ function CollectionDetail() {
       <div className="container mx-auto px-4 py-8 max-w-6xl">
         <Breadcrumbs
           items={[
-            { label: "Movies", href: "/movies" },
+            { label: t("Movies", "Filmy"), href: "/movies" },
             { label: collection.name, href: "#" },
           ]}
         />

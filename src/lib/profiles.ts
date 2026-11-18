@@ -16,7 +16,7 @@ import type { StorageTransactionResult } from "./storage-transaction";
 
 // The roster's shape and its one normalizer live with the storage ownership
 // that has to agree with them; this is still where callers find them.
-export { DEFAULT_PROFILE, MAX_PROFILE_NAME_LENGTH, MAX_PROFILES, sanitizeProfiles, type Profile } from "./profile-storage";
+export { DEFAULT_PROFILE, MAX_PROFILE_NAME_LENGTH, MAX_PROFILES, profileDisplayName, sanitizeProfiles, type Profile } from "./profile-storage";
 
 /**
  * More than one person per browser.

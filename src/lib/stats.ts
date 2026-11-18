@@ -1,6 +1,8 @@
 import { mediaItemKey } from "./utils";
 import type { MediaType } from "@/types/tmdb";
 import type { Ratings } from "./ratings";
+import type { Locale } from "@/i18n/locale";
+import { formatCount, formatNumber, type PluralForms } from "@/i18n/format";
 
 /**
  * What the visitor's own record adds up to.
@@ -273,8 +275,19 @@ export function summarizeYear(input: StatsInput, year: string): WatchStats {
  * "2 hours" travels without the page's note explaining it. Null when there is
  * nothing to say.
  */
-function describeWatchTime(stats: WatchStats): string | null {
+function describeWatchTime(stats: WatchStats, locale: Locale = "en"): string | null {
   const untimed = stats.seriesWithUndatedTime;
+
+  if (locale === "cs") {
+    // Genitive after "bez započtení" and "u": 1 seriálu, 2 seriálů, 5 seriálů.
+    const series = formatCount(untimed, locale, SERIES_GENITIVE);
+    if (stats.minutes > 0) {
+      const time = formatWatchTime(stats.minutes, locale);
+      return untimed > 0 ? `${time}, bez započtení ${series}` : time;
+    }
+    return untimed > 0 ? `čas u ${series} nezapočítán` : null;
+  }
+
   const series = `${untimed} series`;
 
   if (stats.minutes > 0) {
@@ -284,6 +297,11 @@ function describeWatchTime(stats: WatchStats): string | null {
 
   return untimed > 0 ? `time on ${series} not counted` : null;
 }
+
+const SERIES_GENITIVE: PluralForms = {
+  en: ["series", "series"],
+  cs: ["seriálu", "seriálů", "seriálů"],
+};
 
 /** Every year the record covers, newest first. */
 export function yearsCovered(input: StatsInput): string[] {
@@ -298,24 +316,61 @@ export function yearsCovered(input: StatsInput): string[] {
 }
 
 /** "9 days" reads better than "13,240 minutes" once the number gets big. */
-export function formatWatchTime(minutes: number): string {
+export function formatWatchTime(minutes: number, locale: Locale = "en"): string {
   // Rounded before the zero check, so a total that is positive but rounds to
   // nothing falls into "no time yet" rather than out the bottom of the ladder.
   const wholeMinutes = Number.isFinite(minutes) ? Math.round(minutes) : 0;
-  if (wholeMinutes <= 0) return "no time yet";
+  if (wholeMinutes <= 0) return locale === "cs" ? "zatím nic" : "no time yet";
 
   // Under an hour is reported in minutes rather than rounded up into them:
   // `Math.round(20 / 60)` is zero, which is how a single ticked episode – the
   // first thing anyone here ever counts – used to read back as "0 hours".
   if (wholeMinutes < 60) {
-    return `${wholeMinutes} minute${wholeMinutes === 1 ? "" : "s"}`;
+    return locale === "cs"
+      ? formatCount(wholeMinutes, locale, { en: ["minute", "minutes"], cs: ["minuta", "minuty", "minut"] })
+      : `${wholeMinutes} minute${wholeMinutes === 1 ? "" : "s"}`;
   }
 
   const hours = Math.round(wholeMinutes / 60);
-  if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"}`;
+  if (hours < 48) {
+    return locale === "cs"
+      ? formatCount(hours, locale, { en: ["hour", "hours"], cs: ["hodina", "hodiny", "hodin"] })
+      : `${hours} hour${hours === 1 ? "" : "s"}`;
+  }
 
   const days = Math.round(hours / 24);
-  return `${days} day${days === 1 ? "" : "s"} of screen time`;
+  return locale === "cs"
+    ? `${formatCount(days, locale, { en: ["day", "days"], cs: ["den", "dny", "dní"] })}${SCREEN_TIME_SUFFIX.cs}`
+    : `${days} day${days === 1 ? "" : "s"}${SCREEN_TIME_SUFFIX.en}`;
+}
+
+/**
+ * What `formatWatchTime` puts after a count of days, so the year card – whose
+ * tile label already says it – can take it off again.
+ */
+export const SCREEN_TIME_SUFFIX: Record<Locale, string> = {
+  en: " of screen time",
+  cs: " před obrazovkou",
+};
+
+/**
+ * A decade as `summarize` names it ("1990s"), for a reader. English keeps the
+ * name; Czech has no short form that covers every decade alike ("90. léta"
+ * leaves the 2000s without one), so it spells out the years.
+ */
+export function formatDecade(name: string, locale: Locale = "en"): string {
+  if (locale !== "cs") return name;
+  const match = /^(\d{3})0s$/.exec(name);
+  if (!match) return name;
+  const start = Number(`${match[1]}0`);
+  return `${start}–${start + 9}`;
+}
+
+/** A score out of ten, to one decimal place: "7.4" / "7,4". */
+export function formatScore(score: number, locale: Locale = "en"): string {
+  return locale === "cs"
+    ? formatNumber(score, locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+    : score.toFixed(1);
 }
 
 /** A line worth sharing, built from the numbers rather than from a template. */
@@ -323,8 +378,25 @@ export function buildStatsShareText(
   stats: WatchStats,
   label: string,
   url: string,
+  locale: Locale = "en",
 ): string {
-  const watchTime = describeWatchTime(stats);
+  const watchTime = describeWatchTime(stats, locale);
+
+  if (locale === "cs") {
+    const parts = [
+      `🎬 ${formatCount(stats.films, locale, { en: ["film", "films"], cs: ["film", "filmy", "filmů"] })}`,
+      stats.episodes > 0
+        ? `📺 ${formatCount(stats.episodes, locale, { en: ["episode", "episodes"], cs: ["epizoda", "epizody", "epizod"] })}`
+        : null,
+      watchTime ? `⏱️ ${watchTime}` : null,
+      // A genre name from TMDB is a noun ("Komedie") as often as an adjective
+      // ("Akční"), so it stands on its own after a colon.
+      stats.topGenres[0] ? `🏷️ nejčastější žánr: ${stats.topGenres[0].name}` : null,
+    ].filter(Boolean);
+
+    return `Můj WatchList: ${label}\n${parts.join("\n")}\n${url}`;
+  }
+
   const parts = [
     `🎬 ${stats.films} film${stats.films === 1 ? "" : "s"}`,
     stats.episodes > 0 ? `📺 ${stats.episodes} episodes` : null,

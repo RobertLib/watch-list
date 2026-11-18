@@ -11,6 +11,7 @@ import { ViewModeToggle } from "./ViewModeToggle";
 import { discoverTVShowsWithFilters, getPopularTVShows } from "@/lib/api";
 import { getTVPresets } from "@/lib/filter-presets";
 import { useLocalDay } from "@/hooks/useLocalDay";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 import {
   formatResultCount,
   MAX_TMDB_PAGE,
@@ -51,9 +52,11 @@ export function FilteredTVSection({
   onInitialRetry,
 }: FilteredTVSectionProps) {
   const searchParams = useSearchParams();
+  const locale = useLocale();
+  const t = useT();
   // Relative presets follow local midnight and a suspended tab becoming visible.
   const day = useLocalDay();
-  const presets = getTVPresets(day);
+  const presets = getTVPresets(day, locale);
   const localDayReady = day !== "";
 
   // The URL is the single source of truth: the filter bar and the presets only
@@ -195,7 +198,7 @@ export function FilteredTVSection({
 
       {hasLoadError || initialLoadFailed ? (
         <LoadFailureNotice
-          title="Could not load TV shows"
+          title={t("Could not load TV shows", "Seriály se nepodařilo načíst")}
           onRetry={initialLoadFailed ? onInitialRetry : retryLoad}
           compact
         />
@@ -207,9 +210,9 @@ export function FilteredTVSection({
         <>
           <p className="text-sm text-gray-400 mb-4 min-h-5" aria-live="polite">
             {loading
-              ? "Updating results…"
+              ? t("Updating results…", "Aktualizujeme výsledky…")
               : totalResults !== undefined &&
-                formatResultCount(totalResults, "tv")}
+                formatResultCount(totalResults, "tv", locale)}
           </p>
 
           <div

@@ -1,6 +1,7 @@
 import type { MediaType } from "@/types/tmdb";
 import type { WatchlistItem } from "./watchlist";
 import type { WatchedItem } from "./watched";
+import { t, type Locale } from "@/i18n/locale";
 
 /**
  * What the watchlist and the watched list have in common.
@@ -31,6 +32,15 @@ export type ListWriteResult = "ok" | "duplicate" | "failed";
  */
 export const STORAGE_REFUSED_MESSAGE =
   "Your browser would not save that. Check its storage settings.";
+
+/** `STORAGE_REFUSED_MESSAGE` in the page's language – the one a toast shows. */
+export function storageRefusedMessage(locale: Locale = "en"): string {
+  return t(
+    locale,
+    STORAGE_REFUSED_MESSAGE,
+    "Prohlížeč změnu neuložil. Zkontrolujte jeho nastavení úložiště.",
+  );
+}
 
 // A backup file is chosen by hand, so nothing here is a hostile payload by
 // default – but it is still arbitrary JSON, and one malformed entry would

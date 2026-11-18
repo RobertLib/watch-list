@@ -1,5 +1,6 @@
 import { MAX_GUESSES } from "./daily-puzzle";
 import { archiveSolvedCount, type DailyGameState } from "./daily-game";
+import { pick, type Locale, type Localized } from "@/i18n/locale";
 
 /**
  * Badges for the daily puzzle.
@@ -26,8 +27,8 @@ export interface Badge {
 
 interface BadgeSpec {
   id: string;
-  label: string;
-  description: string;
+  label: Localized;
+  description: Localized;
   emoji: string;
   /** The number reached so far, and the number that earns the badge. */
   measure: (state: DailyGameState) => number;
@@ -37,40 +38,43 @@ interface BadgeSpec {
 const SPECS: BadgeSpec[] = [
   {
     id: "first-win",
-    label: "First blood",
-    description: "Solve your first puzzle.",
+    label: { en: "First blood", cs: "Prvotina" },
+    description: { en: "Solve your first puzzle.", cs: "Vyřešte svou první hádanku." },
     emoji: "🎬",
     measure: (state) => state.won,
     target: 1,
   },
   {
     id: "streak-3",
-    label: "Three in a row",
-    description: "Win three days running.",
+    label: { en: "Three in a row", cs: "Tři v řadě" },
+    description: { en: "Win three days running.", cs: "Vyhrajte tři dny po sobě." },
     emoji: "🔥",
     measure: (state) => state.bestStreak,
     target: 3,
   },
   {
     id: "streak-7",
-    label: "A full week",
-    description: "Win seven days running.",
+    label: { en: "A full week", cs: "Celý týden" },
+    description: { en: "Win seven days running.", cs: "Vyhrajte sedm dní po sobě." },
     emoji: "🗓️",
     measure: (state) => state.bestStreak,
     target: 7,
   },
   {
     id: "streak-30",
-    label: "A month of mornings",
-    description: "Win thirty days running.",
+    label: { en: "A month of mornings", cs: "Měsíc ranních hádanek" },
+    description: { en: "Win thirty days running.", cs: "Vyhrajte třicet dní po sobě." },
     emoji: "🏆",
     measure: (state) => state.bestStreak,
     target: 30,
   },
   {
     id: "sniper",
-    label: "Sniper",
-    description: "Get one on the very first guess.",
+    label: { en: "Sniper", cs: "Odstřelovač" },
+    description: {
+      en: "Get one on the very first guess.",
+      cs: "Uhodněte film hned na první tip.",
+    },
     emoji: "🎯",
     // Index 0 of the distribution is exactly the first-guess wins.
     measure: (state) => state.distribution[0] ?? 0,
@@ -78,32 +82,35 @@ const SPECS: BadgeSpec[] = [
   },
   {
     id: "clutch",
-    label: "Down to the wire",
-    description: `Win on your last guess.`,
+    label: { en: "Down to the wire", cs: "Za pět dvanáct" },
+    description: { en: `Win on your last guess.`, cs: "Vyhrajte až posledním tipem." },
     emoji: "😅",
     measure: (state) => state.distribution[MAX_GUESSES - 1] ?? 0,
     target: 1,
   },
   {
     id: "played-10",
-    label: "Regular",
-    description: "Play ten puzzles.",
+    label: { en: "Regular", cs: "Štamgast" },
+    description: { en: "Play ten puzzles.", cs: "Zahrajte si deset hádanek." },
     emoji: "🍿",
     measure: (state) => state.played,
     target: 10,
   },
   {
     id: "played-50",
-    label: "Devoted",
-    description: "Play fifty puzzles.",
+    label: { en: "Devoted", cs: "Srdcař" },
+    description: { en: "Play fifty puzzles.", cs: "Zahrajte si padesát hádanek." },
     emoji: "🎞️",
     measure: (state) => state.played,
     target: 50,
   },
   {
     id: "archivist",
-    label: "Archivist",
-    description: "Catch up on five puzzles you missed.",
+    label: { en: "Archivist", cs: "Archivář" },
+    description: {
+      en: "Catch up on five puzzles you missed.",
+      cs: "Dožeňte pět hádanek, které jste vynechali.",
+    },
     emoji: "📼",
     // Catch-ups only: a day with a result from the day is never counted, even
     // where an older version let the archive replay it.
@@ -112,14 +119,17 @@ const SPECS: BadgeSpec[] = [
   },
 ];
 
-export function badgesFor(state: DailyGameState): Badge[] {
+export function badgesFor(
+  state: DailyGameState,
+  locale: Locale = "en",
+): Badge[] {
   return SPECS.map((spec) => {
     const current = spec.measure(state);
 
     return {
       id: spec.id,
-      label: spec.label,
-      description: spec.description,
+      label: pick(locale, spec.label),
+      description: pick(locale, spec.description),
       emoji: spec.emoji,
       earned: current >= spec.target,
       progress:

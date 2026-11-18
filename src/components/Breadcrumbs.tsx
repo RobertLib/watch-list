@@ -1,10 +1,12 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { ChevronRight, Home } from "lucide-react";
 import { Genre } from "@/types/tmdb";
 import { createSlug } from "@/lib/utils";
 import { genreHref } from "@/lib/routes";
+import { findGenreById, genreSlug } from "@/lib/genre-catalog";
+import { useT } from "@/i18n/LocaleProvider";
 
 interface BreadcrumbItem {
   label: string;
@@ -17,16 +19,17 @@ interface BreadcrumbsProps {
 }
 
 export function Breadcrumbs({ items, className = "" }: BreadcrumbsProps) {
+  const t = useT();
   return (
     <nav
-      aria-label="Breadcrumb"
+      aria-label={t("Breadcrumb", "Drobečková navigace")}
       className={`flex items-center space-x-2 text-sm text-gray-400 ${className}`}
     >
       <Link
         href="/"
         prefetch={false}
         className="hover:text-white transition-colors flex items-center"
-        aria-label="Home"
+        aria-label={t("Home", "Domů")}
       >
         <Home className="w-4 h-4" />
       </Link>
@@ -67,9 +70,13 @@ export function MediaBreadcrumbs({
   title,
   genres = [],
 }: MediaBreadcrumbsProps) {
+  const t = useT();
   const items: BreadcrumbItem[] = [
     {
-      label: mediaType === "movie" ? "Movies" : "TV Shows",
+      label:
+        mediaType === "movie"
+          ? t("Movies", "Filmy")
+          : t("TV Shows", "Seriály"),
       href: mediaType === "movie" ? "/movies" : "/tv-shows",
     },
   ];
@@ -77,11 +84,17 @@ export function MediaBreadcrumbs({
   // Add primary genre if available
   if (genres.length > 0) {
     const primaryGenre = genres[0];
+    // The genre page is published under the catalogue's English slug in both
+    // trees. On a Czech page TMDB names the genre in Czech ("Akční"), and a
+    // slug made from that name is a page the build never wrote.
+    const known = findGenreById(mediaType, primaryGenre.id);
     items.push({
       label: primaryGenre.name,
       href: genreHref(
         mediaType,
-        createSlug(primaryGenre.name, primaryGenre.id),
+        known
+          ? genreSlug(known)
+          : createSlug(primaryGenre.name, primaryGenre.id),
       ),
     });
   }

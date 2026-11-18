@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { Check, ListPlus, Plus } from "lucide-react";
 import { toast } from "@/components/Toast";
 import {
@@ -20,10 +20,12 @@ import {
   type CollectionItem,
 } from "@/lib/collections";
 import { cn } from "@/lib/utils";
-import { STORAGE_REFUSED_MESSAGE } from "@/lib/media-list";
+import { storageRefusedMessage } from "@/lib/media-list";
 import { DEFAULT_PROFILE_ID, getActiveProfileId, subscribeProfiles } from "@/lib/profiles";
 import { withProfileStorage } from "@/lib/profile-storage";
 import { withProfileRosterLock } from "@/lib/profile-roster-lock";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount, pluralForm } from "@/i18n/format";
 
 const getServerProfileId = () => DEFAULT_PROFILE_ID;
 
@@ -59,6 +61,8 @@ function ProfileAddToListButton({ item, className, profileId }: {
     getCollectionsSnapshot,
     getServerCollectionsSnapshot,
   );
+  const locale = useLocale();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -133,17 +137,35 @@ function ProfileAddToListButton({ item, className, profileId }: {
     return () => window.removeEventListener("resize", positionPanel);
   }, [open, memberOf]);
 
+  const storageRefused = storageRefusedMessage(locale);
+  const invalidName = t(
+    "Enter a list name with visible characters",
+    "Zadejte název seznamu, který obsahuje viditelné znaky",
+  );
+
   function isCurrentProfile() {
     try {
       if (profileId === getActiveProfileId({ strict: true })) return true;
     } catch {
-      toast.showToast("Could not check your active profile. Reload the page and try again.", "error");
+      toast.showToast(
+        t(
+          "Could not check your active profile. Reload the page and try again.",
+          "Aktivní profil se nepodařilo ověřit. Načtěte stránku znovu a zkuste to ještě jednou.",
+        ),
+        "error",
+      );
       return false;
     }
 
     setOpen(false);
     setNewName("");
-    toast.showToast("Your active profile changed. Reopen the list picker and try again.", "info");
+    toast.showToast(
+      t(
+        "Your active profile changed. Reopen the list picker and try again.",
+        "Aktivní profil se mezitím změnil. Otevřete výběr seznamů znovu a zkuste to ještě jednou.",
+      ),
+      "info",
+    );
     return false;
   }
 
@@ -157,7 +179,7 @@ function ProfileAddToListButton({ item, className, profileId }: {
         withProfileStorage(profileId, operation);
         return true;
       }, false);
-      if (!handled && mounted.current) toast.showToast(STORAGE_REFUSED_MESSAGE, "error");
+      if (!handled && mounted.current) toast.showToast(storageRefused, "error");
     } finally {
       saving.current = false;
       if (mounted.current) setIsSaving(false);
@@ -171,7 +193,13 @@ function ProfileAddToListButton({ item, className, profileId }: {
       const latest = getCollectionsSnapshot({ strict: true });
       const collection = latest.find((entry) => entry.id === collectionId);
       if (!collection) {
-        toast.showToast("That list is no longer available. Reopen the list picker and try again.", "info");
+        toast.showToast(
+          t(
+            "That list is no longer available. Reopen the list picker and try again.",
+            "Tento seznam už neexistuje. Otevřete výběr seznamů znovu a zkuste to ještě jednou.",
+          ),
+          "info",
+        );
         return;
       }
       if (
@@ -181,7 +209,13 @@ function ProfileAddToListButton({ item, className, profileId }: {
       ) {
         notifyCollectionsChanged();
         toast.showToast(
-          `"${collection.name}" is full (${MAX_COLLECTION_ITEMS} titles). Remove a title before adding another.`,
+          t(
+            `"${collection.name}" is full (${MAX_COLLECTION_ITEMS} titles). Remove a title before adding another.`,
+            `Seznam „${collection.name}“ je plný (${formatCount(MAX_COLLECTION_ITEMS, locale, {
+              en: ["title", "titles"],
+              cs: ["titul", "tituly", "titulů"],
+            })}). Než přidáte další, nějaký titul odeberte.`,
+          ),
           "error",
         );
         return;
@@ -196,7 +230,7 @@ function ProfileAddToListButton({ item, className, profileId }: {
             )
           : addToCollection(latest, collectionId, item),
       );
-      if (!saved) toast.showToast(STORAGE_REFUSED_MESSAGE, "error");
+      if (!saved) toast.showToast(storageRefused, "error");
     });
   }
 
@@ -206,14 +240,20 @@ function ProfileAddToListButton({ item, className, profileId }: {
 
     const trimmed = newName.trim();
     if (!trimmed) {
-      toast.showToast("Enter a list name with visible characters", "error");
+      toast.showToast(invalidName, "error");
       return;
     }
 
     await mutate(() => {
       const latest = getCollectionsSnapshot({ strict: true });
       if (latest.length >= MAX_COLLECTIONS) {
-        toast.showToast("That is the most lists one browser can hold", "error");
+        toast.showToast(
+          t(
+            "That is the most lists one browser can hold",
+            "Víc seznamů se do jednoho prohlížeče nevejde",
+          ),
+          "error",
+        );
         return;
       }
 
@@ -221,16 +261,19 @@ function ProfileAddToListButton({ item, className, profileId }: {
       // Sanitizing a name can leave it empty even after trim (for example U+200B).
       // A refused creation returns the original lists; never treat one as new.
       if (withNew === latest) {
-        toast.showToast("Enter a list name with visible characters", "error");
+        toast.showToast(invalidName, "error");
         return;
       }
       if (!saveCollections(withNew)) {
-        toast.showToast(STORAGE_REFUSED_MESSAGE, "error");
+        toast.showToast(storageRefused, "error");
         return;
       }
 
       setNewName("");
-      toast.showToast(`Added to "${withNew[0].name}"`, "success");
+      toast.showToast(
+        t(`Added to "${withNew[0].name}"`, `Přidáno do seznamu „${withNew[0].name}“`),
+        "success",
+      );
     });
   }
 
@@ -253,7 +296,17 @@ function ProfileAddToListButton({ item, className, profileId }: {
         )}
       >
         <ListPlus className="w-4 h-4" aria-hidden="true" />
-        {memberOf > 0 ? `On ${memberOf} list${memberOf === 1 ? "" : "s"}` : "Add to list"}
+        {memberOf > 0
+          ? t(
+              `On ${memberOf} list${memberOf === 1 ? "" : "s"}`,
+              // "do" rather than "v": the preposition before a figure would
+              // otherwise have to follow how the number is read (v 1, ve 2).
+              `Uloženo do ${memberOf} ${pluralForm(memberOf, locale, {
+                en: ["list", "lists"],
+                cs: ["seznamu", "seznamů", "seznamů"],
+              })}`,
+            )
+          : t("Add to list", "Přidat do seznamu")}
       </button>
 
       {open && (
@@ -299,7 +352,8 @@ function ProfileAddToListButton({ item, className, profileId }: {
                       </span>
                       <span className="text-xs text-gray-500 shrink-0">
                         {collection.items.length}
-                        {collection.items.length >= MAX_COLLECTION_ITEMS && " · full"}
+                        {collection.items.length >= MAX_COLLECTION_ITEMS &&
+                          t(" · full", " · plný")}
                       </span>
                     </button>
                   </li>
@@ -310,7 +364,7 @@ function ProfileAddToListButton({ item, className, profileId }: {
 
           <form onSubmit={createAndAdd} className="flex gap-2">
             <label htmlFor={`new-list-${item.id}`} className="sr-only">
-              New list name
+              {t("New list name", "Název nového seznamu")}
             </label>
             <input
               id={`new-list-${item.id}`}
@@ -321,14 +375,17 @@ function ProfileAddToListButton({ item, className, profileId }: {
               aria-busy={isSaving}
               maxLength={MAX_COLLECTION_NAME_LENGTH}
               onChange={(event) => setNewName(event.target.value)}
-              placeholder="New list…"
+              placeholder={t("New list…", "Nový seznam…")}
               className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-black/60 border border-gray-700 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
             />
             <button
               type="submit"
               aria-disabled={isSaving}
               aria-busy={isSaving}
-              aria-label="Create list and add this title"
+              aria-label={t(
+                "Create list and add this title",
+                "Vytvořit seznam a přidat do něj tento titul",
+              )}
               className="p-2 rounded-lg bg-blue-600 hover:bg-blue-700 aria-disabled:opacity-60 aria-disabled:cursor-wait text-white transition-colors"
             >
               <Plus className="w-4 h-4" aria-hidden="true" />
@@ -340,7 +397,7 @@ function ProfileAddToListButton({ item, className, profileId }: {
             prefetch={false}
             className="block text-xs text-gray-500 hover:text-white transition-colors"
           >
-            Manage your lists
+            {t("Manage your lists", "Spravovat seznamy")}
           </Link>
         </div>
       )}

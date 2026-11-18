@@ -1,16 +1,18 @@
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { tmdbApi } from "@/lib/tmdb";
 import { createSlug } from "@/lib/utils";
 import type { Credits } from "@/types/tmdb";
 import { personHref } from "@/lib/routes";
 import { mergeCastByPerson } from "@/lib/media-converters";
+import { useT } from "@/i18n/LocaleProvider";
 
 interface TVCastProps {
   credits: Credits;
 }
 
 function TVCastContent({ credits }: TVCastProps) {
+  const t = useT();
   // Merged before the cut, so twelve billings for three roles of one actor
   // still show twelve people – and each person is one card, keyed by their id.
   const mainCast = mergeCastByPerson(credits.cast).slice(0, 12);
@@ -21,7 +23,9 @@ function TVCastContent({ credits }: TVCastProps) {
 
   return (
     <section className="mb-12">
-      <h2 className="text-2xl font-bold mb-6">Main Cast</h2>
+      <h2 className="text-2xl font-bold mb-6">
+        {t("Main Cast", "Hlavní obsazení")}
+      </h2>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {mainCast.map((actor, index) => (
           <Link

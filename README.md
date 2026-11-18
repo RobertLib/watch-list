@@ -38,6 +38,7 @@ nothing runs on a server at request time. See [Architecture](#architecture).
 - **Regional streaming info** — Where to watch per country (200+ regions supported), including subscription, free and ad-supported services, with deep-links to provider apps
 - **Genre browsing** — Browse movies and TV shows by genre with pagination
 - **Search** — Instant preview in the header plus a real `/search?q=` page, paginated with linkable URLs, reachable with `/` or ⌘K (Ctrl+K on Windows/Linux) from anywhere outside a text field
+- **English and Czech** — The whole site in both languages: English at the root, Czech under [`/cs`](https://www.watch-list.me/cs), each indexable on its own and paired by `hreflang`. The Czech pages ask TMDb for Czech titles and overviews (falling back to English where TMDb has none) and default to the Czech region's streaming catalogue
 - **Metadata** — Structured data (JSON-LD), sitemap, robots.txt, OpenGraph/Twitter cards
 - **PWA** — App manifest for mobile installation
 
@@ -244,18 +245,30 @@ It is now a static export, and the shape of everything follows from that:
   both ends (`1263256-happy-gilmore-2`, `1917-530915`) reads either way; for that
   shape alone the redirect asks TMDb what the leading number names and keeps the
   id-first reading only when the rest of the slug is that title.
+- **Each language is a tree of its own.** `src/app/(en)/` is the English site
+  at the root and `src/app/cs/` the Czech one under `/cs`, each with its own
+  root layout (both render `src/components/RootDocument.tsx`), so a Czech page
+  is `<html lang="cs">` in its static HTML. Components are shared and read the
+  language from React context; links are written as English paths and
+  `src/i18n/Link.tsx` moves them into the page's tree. The Czech tree prerenders
+  its own, smaller set of titles under the slugs of their Czech names
+  (`/cs/movie/klub-rvacu-550`), because both trees share Pages' 1 GB. With two
+  root layouts there is no single layout for a 404, so the page for an unknown
+  URL is `src/app/global-not-found.tsx`, which switches to Czech under `/cs`.
+  See `src/i18n/README.md` for how to write a string in both languages.
 - **Settings live in `localStorage`**, behind a small store (`src/lib/settings.ts`)
   that `tmdbApi` can read synchronously and that components subscribe to through
   `useSettings()`. Changing region or platforms re-runs every listing.
 - **There are no API routes and no Server Actions.** What they did is now plain
   async functions in `src/lib/api.ts`, with the same names and signatures.
-- **The Content Security Policy is a `<meta>` tag** in `src/app/layout.tsx`,
+- **The Content Security Policy is a `<meta>` tag** in `src/components/RootDocument.tsx`,
   because Pages cannot send response headers. It has to allow inline scripts —
   the export writes them into every page and there is no server to mint nonces —
   but it pins every other origin: TMDb's API and images, Wikipedia and Wikidata,
   YouTube's thumbnails and player, and Google Analytics when it is configured.
   A new origin goes into that list in the same change, or production blocks it.
-- **Metadata is built, not patched in.** `src/app/layout.tsx` holds what the whole
+- **Metadata is built, not patched in.** Each tree's root layout
+  (`src/app/(en)/layout.tsx`, `src/app/cs/layout.tsx`) holds what the whole
   site shares; each route adds its own through `pageMetadata` in
   `src/lib/page-metadata.ts`, and a prerendered title through
   `src/lib/title-metadata.ts`, with its own summary and picture. The pages
@@ -296,8 +309,8 @@ own HTML file, with its content in it.
 
 - **Indexable pages carry their content in the HTML.** The genre pages, the
   genre-on-a-platform landings, the mood pages and the home page are rendered at
-  build time with a snapshot of their listing — page one, for the default region
-  (US) and no filters — taken from TMDb by `src/lib/build-time-tmdb.ts`; so do
+  build time with a snapshot of their listing — page one, for the tree's default
+  region (US for English, CZ for Czech) and no filters — taken from TMDb by `src/lib/build-time-tmdb.ts`; so do
   the fixed sections of `/movies` and `/tv-shows`, and `/people`. A
   crawler reads titles, headings and links there, not skeletons. In the browser
   the same snapshot is what the page starts from (`useAsyncData`'s
@@ -373,6 +386,12 @@ own HTML file, with its content in it.
 ```
 src/
 ├── app/                     # Server Components: metadata + the client half
+│   ├── (en)/                # The English site, at the root (the tree below)
+│   ├── cs/                  # The Czech site, under /cs – the same routes again
+│   ├── global-not-found.tsx # 404.html, for both trees
+│   ├── sitemap.ts           # Both trees, paired by hreflang
+│   │
+│   │  # The routes, in each tree:
 │   ├── about/               # About page
 │   ├── calendar/            # Release calendar
 │   ├── collection/          # A film series          — ?id=
@@ -414,6 +433,7 @@ src/
 │   ├── tv-time-alternative/ # For people TV Time left behind
 │   └── watchlist/           # Personal watchlist
 │       └── ranking/         # Pairwise ranking of the watchlist
+├── i18n/                    # Locale, Link, formatting – see its README
 ├── components/
 │   ├── carousels/           # Home-page rows, one file
 │   ├── movie/               # Movie-specific components

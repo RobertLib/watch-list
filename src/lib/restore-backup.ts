@@ -20,8 +20,9 @@ import {
   type StorageTransactionResult,
 } from "./storage-transaction";
 import { providerIdsToStoredValue } from "./watch-provider-settings";
-import { DELETED_PROFILE_PREFIX, getLegacyProfileStorageOwner, getProfileStorageOwner, isProfileDeleted, isProfileStorageOwnerAvailable, PROFILE_STORAGE_OWNER_KEY, withProfileStorage } from "./profile-storage";
+import { DELETED_PROFILE_PREFIX, getLegacyProfileStorageOwner, getProfileStorageOwner, isProfileDeleted, isProfileStorageOwnerAvailable, PROFILE_STORAGE_OWNER_KEY, profileDisplayName, withProfileStorage } from "./profile-storage";
 import { withProfileRosterLock } from "./profile-roster-lock";
+import { t, type Locale } from "@/i18n/locale";
 
 /** Restore every part of a backup before publishing any new store snapshot. */
 export function restoreBackup(data: PortableData): Promise<StorageTransactionResult> {
@@ -117,45 +118,66 @@ function restoreBackupLocked(data: PortableData, owner: string): StorageTransact
  * restored stores belong to – "your" data – and `profiles` names the rest, from
  * the file and from the roster it replaces. An unknown key falls back to "this
  * backup" rather than ever showing an address.
+ *
+ * In Czech the phrase is in the accusative, as "Nepodařilo se obnovit …" needs
+ * it – „tuto zálohu“. "Your" is left out there: Czech says „Nepodařilo se
+ * obnovit hodnocení“ of the visitor's own, and a possessive would have to agree
+ * with every label's gender and number.
  */
 export function restoreFailureLabel(
   key: string | null,
   context: { activeProfileId?: string; profiles?: ProfileRef[] } = {},
+  locale: Locale = "en",
 ): string {
-  const nameOf = (profileId: string) =>
-    context.profiles?.find((profile) => profile.id === profileId)?.name;
+  const nameOf = (profileId: string) => {
+    const found = context.profiles?.find((profile) => profile.id === profileId);
+    return found ? profileDisplayName(found, locale) : undefined;
+  };
   const owned = (label: string, profileId: string | null) => {
-    if (profileId !== null && profileId === context.activeProfileId) return `your ${label}`;
+    if (profileId !== null && profileId === context.activeProfileId) {
+      return locale === "cs" ? label : `your ${label}`;
+    }
     const name = profileId === null ? undefined : nameOf(profileId);
+    if (locale === "cs") return name ? `${label} profilu „${name}“` : label;
     return name ? `${label} for "${name}"` : `the ${label}`;
   };
   const profile = (profileId: string, fallback: string) => {
     const name = nameOf(profileId);
-    return name ? `the profile "${name}"` : fallback;
+    if (!name) return fallback;
+    return locale === "cs" ? `profil „${name}“` : `the profile "${name}"`;
   };
+  const thisBackup = t(locale, "this backup", "tuto zálohu");
+  const profileList = t(locale, "the profile list", "seznam profilů");
 
-  if (key === null) return "this backup";
+  if (key === null) return thisBackup;
   if (key.startsWith(STORE_PREFIX)) {
     const separator = key.lastIndexOf(":");
-    const label = storeLabelForKey(key.slice(separator + 1));
+    const label = storeLabelForKey(key.slice(separator + 1), locale);
     const profileId = decode(key.slice(STORE_PREFIX.length, separator));
-    return label ? owned(label, profileId) : "this backup";
+    return label ? owned(label, profileId) : thisBackup;
   }
   if (key.startsWith(SLOT_PREFIX)) {
-    return profile(key.slice(SLOT_PREFIX.length), "a profile's older saved data");
+    return profile(
+      key.slice(SLOT_PREFIX.length),
+      t(locale, "a profile's older saved data", "starší uložená data jednoho z profilů"),
+    );
   }
   if (key.startsWith(DELETED_PROFILE_PREFIX)) {
-    return profile(decode(key.slice(DELETED_PROFILE_PREFIX.length)), "the profile list");
+    return profile(decode(key.slice(DELETED_PROFILE_PREFIX.length)), profileList);
   }
   if (key === "active-profile" || key === "profiles" || key === PROFILE_STORAGE_OWNER_KEY) {
-    return "the profile list";
+    return profileList;
   }
   if ([REGION_KEY, WATCH_PROVIDER_FILTER_KEY, SELECTED_PROVIDERS_KEY, HAS_SETTINGS_KEY].includes(key)) {
-    return "your region and platform settings";
+    return t(
+      locale,
+      "your region and platform settings",
+      "nastavení regionu a streamovacích služeb",
+    );
   }
   // A bare key is a store at the original owner's live address.
-  const label = storeLabelForKey(key);
-  if (!label) return "this backup";
+  const label = storeLabelForKey(key, locale);
+  if (!label) return thisBackup;
   let owner: string | null = null;
   try {
     owner = getLegacyProfileStorageOwner();

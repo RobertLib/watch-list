@@ -10,6 +10,7 @@ import {
 } from "./profile-storage";
 import { applyStorageTransaction } from "./storage-transaction";
 import { todayLocal } from "./dates";
+import type { Locale } from "@/i18n/locale";
 
 /**
  * When this profile was last here.
@@ -211,8 +212,23 @@ export function isGapWorthShowing(
  * every gap under a day "earlier today" – and the strip only appears after a
  * gap of hours, so that was most of them.
  */
-export function describeGap(previous: string, now: Date = new Date()): string {
+export function describeGap(
+  previous: string,
+  now: Date = new Date(),
+  locale: Locale = "en",
+): string {
   const days = calendarDaysBetween(new Date(previous), now);
+
+  // Czech takes the instrumental after "před", which is the same word for every
+  // count from two up – and every count that reaches it is two or more.
+  if (locale === "cs") {
+    if (days <= 0) return "dnes";
+    if (days === 1) return "včera";
+    if (days < 7) return `před ${days} dny`;
+    if (days < 14) return "minulý týden";
+    if (days < 60) return `před ${Math.round(days / 7)} týdny`;
+    return `před ${Math.round(days / 30)} měsíci`;
+  }
 
   if (days <= 0) return "earlier today";
   if (days === 1) return "yesterday";

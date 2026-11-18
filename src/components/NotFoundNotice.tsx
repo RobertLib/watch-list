@@ -1,5 +1,6 @@
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { Compass } from "lucide-react";
+import { useT } from "@/i18n/LocaleProvider";
 
 /**
  * Whether a failed load means "TMDB has no such thing" rather than "TMDB did
@@ -37,6 +38,8 @@ export function NotFoundNotice({
   backHref: string;
   backLabel: string;
 }) {
+  // A hook, with no `"use client"` here: every importer is a Client Component.
+  const t = useT();
   return (
     <div className="container mx-auto px-6 py-24 text-center">
       <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gray-800 flex items-center justify-center">
@@ -60,7 +63,7 @@ export function NotFoundNotice({
           prefetch={false}
           className="inline-flex items-center px-6 py-3 bg-gray-800 hover:bg-gray-700 rounded-lg font-semibold transition-colors"
         >
-          Search WatchList
+          {t("Search WatchList", "Hledat na WatchListu")}
         </Link>
       </div>
     </div>

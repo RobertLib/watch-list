@@ -1,5 +1,11 @@
 import { createSlug } from "@/lib/utils";
-import { SITE_URL, absoluteMediaUrl, absoluteUrl } from "@/lib/routes";
+import {
+  SITE_URL,
+  absoluteLocalizedUrl,
+  absoluteMediaUrl,
+  absoluteUrl,
+} from "@/lib/routes";
+import { INTL_LOCALE, t, type Locale } from "@/i18n/locale";
 import { isYouTubeKey } from "@/lib/trailer";
 
 /**
@@ -124,9 +130,14 @@ interface StructuredDataProps {
     }>;
     [key: string]: unknown;
   };
+  /**
+   * The page's language: the site's own descriptions in it, and every title
+   * URL in its tree. The data passed in is already in it.
+   */
+  locale?: Locale;
 }
 
-export function StructuredData({ type, data }: StructuredDataProps) {
+export function StructuredData({ type, data, locale = "en" }: StructuredDataProps) {
   let structuredData;
 
   switch (type) {
@@ -134,11 +145,15 @@ export function StructuredData({ type, data }: StructuredDataProps) {
       structuredData = {
         "@context": "https://schema.org",
         "@type": "WebSite",
-        "@id": `${SITE_URL}/#website`,
+        "@id": `${absoluteLocalizedUrl("/", locale)}#website`,
         name: "WatchList",
-        description:
+        description: t(
+          locale,
           "Create your free movie and TV show watchlist. Discover trending films and track everything across all streaming platforms.",
-        url: SITE_URL,
+          "Vytvořte si zdarma seznam filmů a seriálů ke zhlédnutí. Objevujte populární filmy a mějte přehled napříč všemi streamovacími službami.",
+        ),
+        url: absoluteLocalizedUrl("/", locale),
+        inLanguage: INTL_LOCALE[locale],
         publisher: { "@id": `${SITE_URL}/#organization` },
         // No `SearchAction`. It existed to ask Google for a sitelinks search
         // box, and Google retired that feature in November 2024 – nothing else
@@ -277,9 +292,13 @@ export function StructuredData({ type, data }: StructuredDataProps) {
         "@context": "https://schema.org",
         "@type": "WebApplication",
         name: "WatchList",
-        description:
+        description: t(
+          locale,
           "Discover and track movies and TV shows across streaming platforms",
-        url: SITE_URL,
+          "Objevujte a sledujte filmy a seriály napříč streamovacími službami",
+        ),
+        url: absoluteLocalizedUrl("/", locale),
+        inLanguage: INTL_LOCALE[locale],
         applicationCategory: "Entertainment",
         operatingSystem: "Web Browser",
         offers: {
@@ -365,6 +384,7 @@ export function StructuredData({ type, data }: StructuredDataProps) {
               url: absoluteMediaUrl(
                 "movie",
                 createSlug(part.title, part.id),
+                locale,
               ),
               datePublished: part.release_date || undefined,
               image: part.poster_path
@@ -392,7 +412,7 @@ export function StructuredData({ type, data }: StructuredDataProps) {
         url: data.url,
         name: data.name,
         description: data.overview || undefined,
-        isPartOf: { "@id": `${SITE_URL}/#website` },
+        isPartOf: { "@id": `${absoluteLocalizedUrl("/", locale)}#website` },
         mainEntity: {
           "@type": "ItemList",
           numberOfItems: data.listItems?.length ?? 0,
@@ -437,6 +457,7 @@ export function StructuredData({ type, data }: StructuredDataProps) {
             url: absoluteMediaUrl(
               title.mediaType,
               createSlug(title.title, title.id),
+              locale,
             ),
           })) || [],
       };

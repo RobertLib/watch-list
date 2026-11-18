@@ -1,5 +1,6 @@
-import { mediaHref } from "./routes";
+import { localizeHref, mediaHref } from "./routes";
 import type { CalendarEvent } from "./release-calendar";
+import { t, type Locale } from "@/i18n/locale";
 
 /**
  * iCalendar export for the release calendar.
@@ -88,11 +89,11 @@ export function episodeCode(
   ).padStart(2, "0")}`;
 }
 
-function summaryFor(event: CalendarEvent): string {
+function summaryFor(event: CalendarEvent, locale: Locale): string {
   if (event.mediaType === "movie") {
     const label = event.movieReleaseSource === "regional-theatrical"
-      ? "in cinemas"
-      : "release date";
+      ? t(locale, "in cinemas", "v kinech")
+      : t(locale, "release date", "premiéra");
     return `${event.title} – ${label}`;
   }
 
@@ -112,6 +113,11 @@ export interface IcsOptions {
   now: Date;
   /** Name the calendar app shows for the whole feed. */
   calendarName?: string;
+  /**
+   * The language the visitor saved the file from: the events' wording, the
+   * feed's default name, and which tree each event links back to.
+   */
+  locale?: Locale;
   /**
    * Attach a `VALARM` to every event.
    *
@@ -147,7 +153,8 @@ export function buildCalendarIcs(
   {
     baseUrl,
     now,
-    calendarName = "WatchList releases",
+    locale = "en",
+    calendarName = t(locale, "WatchList releases", "WatchList – premiéry"),
     alarms = false,
     refreshHours,
   }: IcsOptions,
@@ -177,7 +184,8 @@ export function buildCalendarIcs(
     // `mediaHref` rather than a path built here: a title is addressed
     // `/movie?id=…` in this app, and `/movie/<slug>` is a route the static
     // export does not serve – every event in the file pointed at a 404.
-    const url = `${baseUrl}${mediaHref(event.mediaType, event.slug)}`;
+    // Moved into the visitor's language like every other link on the page.
+    const url = `${baseUrl}${localizeHref(mediaHref(event.mediaType, event.slug), locale)}`;
 
     lines.push(
       "BEGIN:VEVENT",
@@ -189,7 +197,7 @@ export function buildCalendarIcs(
       // one would put the reminder in the wrong place for most of the world.
       `DTSTART;VALUE=DATE:${toIcsDate(event.date)}`,
       `DTEND;VALUE=DATE:${nextDay(event.date)}`,
-      `SUMMARY:${escapeText(summaryFor(event))}`,
+      `SUMMARY:${escapeText(summaryFor(event, locale))}`,
       `DESCRIPTION:${escapeText(url)}`,
       // A URI value, not a TEXT one, so it is written as it is: RFC 5545 §3.3.13
       // has no escaping for URIs, and a client that took the rules literally
@@ -203,7 +211,7 @@ export function buildCalendarIcs(
       lines.push(
         "BEGIN:VALARM",
         "ACTION:DISPLAY",
-        `DESCRIPTION:${escapeText(summaryFor(event))}`,
+        `DESCRIPTION:${escapeText(summaryFor(event, locale))}`,
         `TRIGGER:${ALARM_TRIGGER}`,
         "END:VALARM",
       );

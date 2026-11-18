@@ -1,27 +1,40 @@
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { createSlug } from "@/lib/utils";
 import type { Credits } from "@/types/tmdb";
 import { personHref } from "@/lib/routes";
+import { crewJobLabel } from "@/lib/person-credits";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { pick, type Localized } from "@/i18n/locale";
 
 interface MediaFullCrewProps {
   credits: Credits;
 }
 
-const CREW_DEPARTMENTS: { department: string; label: string }[] = [
-  { department: "Directing", label: "Direction" },
-  { department: "Writing", label: "Writing" },
-  { department: "Production", label: "Production" },
-  { department: "Sound", label: "Music & Sound" },
-  { department: "Camera", label: "Cinematography" },
-  { department: "Editing", label: "Editing" },
-  { department: "Art", label: "Art Direction" },
-  { department: "Costume & Make-Up", label: "Costume & Make-Up" },
-  { department: "Visual Effects", label: "Visual Effects" },
+// Matched on TMDB's English department names, which it sends in either
+// language; only the headings are the page's.
+const CREW_DEPARTMENTS: { department: string; label: Localized }[] = [
+  { department: "Directing", label: { en: "Direction", cs: "Režie" } },
+  { department: "Writing", label: { en: "Writing", cs: "Scénář" } },
+  { department: "Production", label: { en: "Production", cs: "Produkce" } },
+  { department: "Sound", label: { en: "Music & Sound", cs: "Hudba a zvuk" } },
+  { department: "Camera", label: { en: "Cinematography", cs: "Kamera" } },
+  { department: "Editing", label: { en: "Editing", cs: "Střih" } },
+  { department: "Art", label: { en: "Art Direction", cs: "Výprava" } },
+  {
+    department: "Costume & Make-Up",
+    label: { en: "Costume & Make-Up", cs: "Kostýmy a masky" },
+  },
+  {
+    department: "Visual Effects",
+    label: { en: "Visual Effects", cs: "Vizuální efekty" },
+  },
 ];
 
 export function MediaFullCrew({ credits }: MediaFullCrewProps) {
+  const locale = useLocale();
+  const t = useT();
   const grouped = CREW_DEPARTMENTS.map(({ department, label }) => ({
-    label,
+    label: pick(locale, label),
     members: credits.crew
       .filter((m) => m.department === department)
       .slice(0, 6),
@@ -31,7 +44,7 @@ export function MediaFullCrew({ credits }: MediaFullCrewProps) {
 
   return (
     <section className="mb-12">
-      <h2 className="text-2xl font-bold mb-6">Full Crew</h2>
+      <h2 className="text-2xl font-bold mb-6">{t("Full Crew", "Štáb")}</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {grouped.map(({ label, members }) => (
           <div key={label}>
@@ -44,7 +57,9 @@ export function MediaFullCrew({ credits }: MediaFullCrewProps) {
                   key={`${member.id}-${member.job}`}
                   className="text-white text-sm"
                 >
-                  <span className="text-gray-400">{member.job}: </span>
+                  <span className="text-gray-400">
+                    {crewJobLabel(member.job, locale)}:{" "}
+                  </span>
                   <Link
                     href={personHref(createSlug(member.name, member.id))}
                     prefetch={false}

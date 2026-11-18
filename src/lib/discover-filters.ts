@@ -5,6 +5,8 @@ import {
   TV_SORT_OPTIONS,
   type FilterOptions,
 } from "@/types/filters";
+import { formatCount } from "@/i18n/format";
+import type { Locale } from "@/i18n/locale";
 import { sanitizeWatchProvidersFilter } from "@/lib/watch-provider-settings";
 import { todayLocal } from "@/lib/dates";
 
@@ -411,19 +413,17 @@ export function buildDiscoverFilterQuery(
   return query ? `?${query}` : "";
 }
 
-/** Human-readable result count, e.g. "1,234 movies". */
+/** Human-readable result count, e.g. "1,234 movies", "1 234 filmů". */
 export function formatResultCount(
   total: number,
   type: DiscoverMediaType,
+  locale: Locale = "en",
 ): string {
-  const noun =
+  return formatCount(
+    total,
+    locale,
     type === "movie"
-      ? total === 1
-        ? "movie"
-        : "movies"
-      : total === 1
-        ? "TV show"
-        : "TV shows";
-
-  return `${total.toLocaleString("en-US")} ${noun}`;
+      ? { en: ["movie", "movies"], cs: ["film", "filmy", "filmů"] }
+      : { en: ["TV show", "TV shows"], cs: ["seriál", "seriály", "seriálů"] },
+  );
 }

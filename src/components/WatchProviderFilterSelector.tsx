@@ -3,23 +3,31 @@
 import { Clapperboard, Tv } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { WatchProviderFilter } from "@/lib/watch-provider-settings";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { pick, type Localized } from "@/i18n/locale";
 
 const OPTIONS: {
   value: WatchProviderFilter;
-  label: string;
-  description: string;
+  label: Localized;
+  description: Localized;
   icon: typeof Tv;
 }[] = [
   {
     value: "all",
-    label: "Everything",
-    description: "All movies and shows, wherever they are available",
+    label: { en: "Everything", cs: "Vše" },
+    description: {
+      en: "All movies and shows, wherever they are available",
+      cs: "Všechny filmy a seriály, ať jsou k vidění kdekoli",
+    },
     icon: Clapperboard,
   },
   {
     value: "streaming-only",
-    label: "Only my platforms",
-    description: "Just titles you can stream on the platforms you pick",
+    label: { en: "Only my platforms", cs: "Jen moje služby" },
+    description: {
+      en: "Just titles you can stream on the platforms you pick",
+      cs: "Jen tituly, které můžete streamovat na vybraných službách",
+    },
     icon: Tv,
   },
 ];
@@ -40,9 +48,14 @@ export function WatchProviderFilterSelector({
   onChange,
   disabled = false,
 }: WatchProviderFilterSelectorProps) {
+  const locale = useLocale();
+  const t = useT();
+
   return (
     <fieldset aria-disabled={disabled || undefined}>
-      <legend className="sr-only">Choose what to show</legend>
+      <legend className="sr-only">
+        {t("Choose what to show", "Vyberte, co zobrazit")}
+      </legend>
       <div className="grid gap-3 sm:grid-cols-2">
         {OPTIONS.map((option) => {
           const isSelected = value === option.value;
@@ -80,9 +93,11 @@ export function WatchProviderFilterSelector({
                   aria-hidden="true"
                 />
                 <div>
-                  <div className="font-medium text-white">{option.label}</div>
+                  <div className="font-medium text-white">
+                    {pick(locale, option.label)}
+                  </div>
                   <div className="text-sm text-gray-400">
-                    {option.description}
+                    {pick(locale, option.description)}
                   </div>
                 </div>
               </div>

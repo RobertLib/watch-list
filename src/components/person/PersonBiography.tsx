@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { useT } from "@/i18n/LocaleProvider";
 
 interface PersonBiographyProps {
   biography: string;
@@ -11,6 +12,7 @@ const COLLAPSE_THRESHOLD = 600; // characters
 
 export function PersonBiography({ biography }: PersonBiographyProps) {
   const [expanded, setExpanded] = useState(false);
+  const t = useT();
   const isLong = biography.length > COLLAPSE_THRESHOLD;
 
   const paragraphs = biography.split("\n").filter((p) => p.trim().length > 0);
@@ -25,7 +27,7 @@ export function PersonBiography({ biography }: PersonBiographyProps) {
 
   return (
     <section className="mb-8">
-      <h2 className="text-xl font-bold mb-3">Biography</h2>
+      <h2 className="text-xl font-bold mb-3">{t("Biography", "Životopis")}</h2>
       <div className="text-gray-300 space-y-3 leading-relaxed">
         {(expanded || !isLong ? paragraphs : collapsedParagraphs!).map(
           (paragraph, i, arr) => (
@@ -43,11 +45,12 @@ export function PersonBiography({ biography }: PersonBiographyProps) {
         >
           {expanded ? (
             <>
-              <ChevronUp className="w-4 h-4" /> Show less
+              <ChevronUp className="w-4 h-4" /> {t("Show less", "Zobrazit méně")}
             </>
           ) : (
             <>
-              <ChevronDown className="w-4 h-4" /> Read full biography
+              <ChevronDown className="w-4 h-4" />{" "}
+              {t("Read full biography", "Celý životopis")}
             </>
           )}
         </button>

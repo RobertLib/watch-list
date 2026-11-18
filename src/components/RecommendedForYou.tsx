@@ -12,6 +12,9 @@ import { getWatchlistRecommendations } from "@/lib/api";
 import type { RecommendationSeed, RecommendationsResult } from "@/lib/recommendations";
 import { mediaItemKey } from "@/lib/utils";
 import type { MediaType } from "@/types/tmdb";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import type { Locale } from "@/i18n/locale";
+import { formatNumber, pluralForm } from "@/i18n/format";
 
 // Adding several titles in a row should cost one request, not one per click.
 const REFRESH_DELAY_MS = 500;
@@ -25,6 +28,8 @@ const EMPTY_RESULT: RecommendationsResult = { items: [], basedOn: [] };
  * after mount – the home page itself stays statically rendered.
  */
 export function RecommendedForYou() {
+  const locale = useLocale();
+  const t = useT();
   const {
     watchlist,
     isLoading: isWatchlistLoading,
@@ -135,8 +140,11 @@ export function RecommendedForYou() {
     return (
       <LoadFailureNotice
         compact
-        title="Could not load recommendations"
-        description="Recommendations or streaming availability could not be checked. Your saved lists are still here."
+        title={t("Could not load recommendations", "Doporučení se nepodařilo načíst")}
+        description={t(
+          "Recommendations or streaming availability could not be checked. Your saved lists are still here.",
+          "Nepodařilo se ověřit doporučení ani dostupnost na streamovacích službách. Vaše uložené seznamy zůstávají, jak byly.",
+        )}
         onRetry={() => setAttempt((n) => n + 1)}
       />
     );
@@ -147,8 +155,8 @@ export function RecommendedForYou() {
   return (
     <MediaCarousel
       id="recommended-for-you"
-      title="Recommended for You"
-      subtitle={buildSubtitle(result.basedOn)}
+      title={t("Recommended for You", "Doporučujeme vám")}
+      subtitle={buildSubtitle(result.basedOn, locale)}
       items={result.items}
     />
   );
@@ -237,12 +245,29 @@ function toSeeds<T extends { id: number; mediaType: MediaType; title: string }>(
 }
 
 /** e.g. "Based on Dune and Arrival, plus 3 more from your lists" */
-function buildSubtitle(basedOn: string[]): string | undefined {
+function buildSubtitle(basedOn: string[], locale: Locale): string | undefined {
   const titles = basedOn.filter(Boolean);
   if (titles.length === 0) return undefined;
 
   const shown = titles.slice(0, 2);
   const remaining = titles.length - shown.length;
+
+  if (locale === "cs") {
+    // "titulu"/"titulů" carries the case, so the names themselves – in quotes –
+    // never have to be declined.
+    const quoted = shown.map((title) => `„${title}“`);
+    if (remaining > 0) {
+      const more = pluralForm(remaining, locale, {
+        en: ["more", "more"],
+        cs: ["dalšího", "dalších", "dalších"],
+      });
+      return `Na základě titulů ${quoted.join(", ")} a ${formatNumber(remaining, locale)} ${more} z vašich seznamů`;
+    }
+    return quoted.length === 1
+      ? `Na základě titulu ${quoted[0]} z vašich seznamů`
+      : `Na základě titulů ${quoted.join(" a ")} z vašich seznamů`;
+  }
+
   const named = shown.join(" and ");
 
   return remaining > 0

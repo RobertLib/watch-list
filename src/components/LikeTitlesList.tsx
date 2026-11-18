@@ -1,18 +1,21 @@
 "use client";
 
+import { catalogGenreSlug } from "@/lib/genre-catalog";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { WatchlistButton } from "@/components/WatchlistButton";
 import {
+  likeHeading,
   likeIntroduction,
   likeNoun,
   type LikePageData,
   type LikeTitle,
 } from "@/lib/like-titles";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { pluralForm, formatRating } from "@/i18n/format";
 import { genreHref, likeHref, likePath, mediaHref } from "@/lib/routes";
 import { getImageUrl } from "@/lib/tmdb-image";
-import { createSlug } from "@/lib/utils";
 import type { MediaType } from "@/types/tmdb";
 
 /**
@@ -42,9 +45,12 @@ function LikeRow({
   item: LikeTitle;
   position: number;
 }) {
+  const locale = useLocale();
+  const t = useT();
   const href = mediaHref(mediaType, item.slug);
-  const moreLikeIt = likeHref(mediaType, item.slug);
-  const noun = likeNoun(mediaType);
+  // Looked up in the page's own language's list: each language writes its own
+  // set of "like" pages, under the slugs of its own titles.
+  const moreLikeIt = likeHref(mediaType, item.slug, locale);
 
   return (
     <li className="flex gap-4 sm:gap-5 py-5 border-b border-gray-800">
@@ -98,14 +104,26 @@ function LikeRow({
               <span className="text-yellow-400" aria-hidden="true">
                 ★
               </span>{" "}
-              {item.voteAverage.toFixed(1)}
-              <span className="sr-only"> out of 10</span>
+              {formatRating(item.voteAverage, locale)}
+              <span className="sr-only">{t(" out of 10", " z 10")}</span>
             </>
           )}
           {item.voteCount > 0 && item.sharedGenres.length > 0 && " · "}
-          {item.sharedGenres.length > 0 && (
-            <>Also {item.sharedGenres.join(", ").toLowerCase()}</>
-          )}
+          {item.sharedGenres.length > 0 &&
+            (locale === "cs" ? (
+              // TMDB's Czech genre names are a mix of adjectives ("akční") and
+              // nouns ("komedie"), which no single word can lead into the way
+              // "Also" does in English – so they are named as genres.
+              <>
+                {pluralForm(item.sharedGenres.length, locale, {
+                  en: ["Shared genre", "Shared genres"],
+                  cs: ["Společný žánr", "Společné žánry", "Společné žánry"],
+                })}
+                : {item.sharedGenres.join(", ").toLowerCase()}
+              </>
+            ) : (
+              <>Also {item.sharedGenres.join(", ").toLowerCase()}</>
+            ))}
         </p>
         {item.overview && (
           <p className="mt-2 text-sm text-gray-300 leading-relaxed">
@@ -136,7 +154,7 @@ function LikeRow({
             prefetch={false}
             className="text-blue-400 hover:text-blue-300 transition-colors"
           >
-            Where to watch
+            {t("Where to watch", "Kde sledovat")}
           </Link>
           {moreLikeIt && (
             <Link
@@ -144,7 +162,7 @@ function LikeRow({
               prefetch={false}
               className="text-gray-400 hover:text-white transition-colors"
             >
-              {noun} like {item.title}
+              {likeHeading(mediaType, item.title, locale)}
             </Link>
           )}
         </div>
@@ -154,12 +172,15 @@ function LikeRow({
 }
 
 export function LikeTitlesList({ page }: { page: LikePageData }) {
+  const locale = useLocale();
+  const t = useT();
   const { mediaType } = page;
-  const noun = likeNoun(mediaType);
+  const noun = likeNoun(mediaType, locale);
   const sectionHref = mediaType === "movie" ? "/movies" : "/tv-shows";
-  const sectionLabel = mediaType === "movie" ? "Movies" : "TV Shows";
+  const sectionLabel =
+    mediaType === "movie" ? t("Movies", "Filmy") : t("TV Shows", "Seriály");
   const titleHref = mediaHref(mediaType, page.slug);
-  const heading = `${noun} like ${page.title}`;
+  const heading = likeHeading(mediaType, page.title, locale);
   const year = page.year ? ` (${page.year})` : "";
 
   return (
@@ -177,11 +198,18 @@ export function LikeTitlesList({ page }: { page: LikePageData }) {
         <h1 className="text-4xl font-bold text-white mb-3">{heading}</h1>
         {page.items.length > 0 ? (
           <p className="text-gray-300 text-lg leading-relaxed">
-            {likeIntroduction(page)}
+            {likeIntroduction(page, locale)}
           </p>
         ) : (
           <p className="text-gray-300 text-lg leading-relaxed">
-            TMDB has nothing to recommend after {page.title} yet.
+            {locale === "cs" ? (
+              <>
+                TMDB zatím po {mediaType === "movie" ? "filmu" : "seriálu"}{" "}
+                {page.title} nic nedoporučuje.
+              </>
+            ) : (
+              <>TMDB has nothing to recommend after {page.title} yet.</>
+            )}
           </p>
         )}
 
@@ -208,7 +236,10 @@ export function LikeTitlesList({ page }: { page: LikePageData }) {
               {year}
             </span>
             <span className="block text-sm text-gray-400">
-              Where to watch it, cast and trailer →
+              {t(
+                "Where to watch it, cast and trailer →",
+                "Kde ho sledovat, obsazení a trailer →",
+              )}
             </span>
           </span>
         </Link>
@@ -226,30 +257,41 @@ export function LikeTitlesList({ page }: { page: LikePageData }) {
 
         <section className="mt-12">
           <h2 className="text-xl font-semibold text-white mb-3">
-            Where this list comes from
+            {t("Where this list comes from", "Odkud tento seznam pochází")}
           </h2>
-          <p className="text-gray-400 leading-relaxed">
-            From TMDB: first what people who watched {page.title} went on to
-            watch, then titles that share its genres and keywords. Nobody is
-            paid to be on it, and it is rebuilt every day, so it changes as
-            people watch.
-          </p>
+          {locale === "cs" ? (
+            <p className="text-gray-400 leading-relaxed">
+              Z TMDB: nejdřív to, na co se dívali lidé, kteří viděli{" "}
+              {page.title}, potom tituly se stejnými žánry a klíčovými slovy.
+              Nikdo neplatí za to, aby tu byl, a seznam se každý den sestavuje
+              znovu, takže se mění podle toho, co lidé sledují.
+            </p>
+          ) : (
+            <p className="text-gray-400 leading-relaxed">
+              From TMDB: first what people who watched {page.title} went on to
+              watch, then titles that share its genres and keywords. Nobody is
+              paid to be on it, and it is rebuilt every day, so it changes as
+              people watch.
+            </p>
+          )}
         </section>
 
         {page.genres.length > 0 && (
           <section className="mt-10">
             <h2 className="text-xl font-semibold text-white mb-4">
-              More of the same kind
+              {t("More of the same kind", "Další ve stejném duchu")}
             </h2>
             <ul className="flex flex-wrap gap-2">
               {page.genres.map((genre) => (
                 <li key={genre.id}>
                   <Link
-                    href={genreHref(mediaType, createSlug(genre.name, genre.id))}
+                    href={genreHref(mediaType, catalogGenreSlug(mediaType, genre))}
                     prefetch={false}
                     className="inline-flex items-center px-4 py-2 rounded-full bg-white/5 hover:bg-white/10 text-sm text-gray-300 hover:text-white transition-colors"
                   >
-                    {genre.name} {noun.toLowerCase()}
+                    {locale === "cs"
+                      ? `${noun}: ${genre.name.toLowerCase()}`
+                      : `${genre.name} ${noun.toLowerCase()}`}
                   </Link>
                 </li>
               ))}
@@ -259,7 +301,7 @@ export function LikeTitlesList({ page }: { page: LikePageData }) {
                   prefetch={false}
                   className="inline-flex items-center px-4 py-2 rounded-full border border-white/10 hover:bg-white/10 text-sm text-gray-300 hover:text-white transition-colors"
                 >
-                  Browse by mood →
+                  {t("Browse by mood →", "Procházet podle nálady →")}
                 </Link>
               </li>
             </ul>

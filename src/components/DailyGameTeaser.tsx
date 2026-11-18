@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { Flame, Puzzle } from "lucide-react";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useUtcDay } from "@/hooks/useUtcDay";
@@ -12,6 +12,8 @@ import {
   subscribeToGameState,
 } from "@/lib/daily-game";
 import { MAX_GUESSES, puzzleNumberForDay } from "@/lib/daily-puzzle";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount, pluralForm } from "@/i18n/format";
 
 /**
  * Home-page card for the daily puzzle.
@@ -21,6 +23,8 @@ import { MAX_GUESSES, puzzleNumberForDay } from "@/lib/daily-puzzle";
  * why the card leads with the streak once there is one.
  */
 export function DailyGameTeaser() {
+  const locale = useLocale();
+  const t = useT();
   const isHydrated = useHydrated();
   const day = useUtcDay();
   // Read straight from the store rather than copied into local state: the card
@@ -34,6 +38,7 @@ export function DailyGameTeaser() {
   const streak = isHydrated ? effectiveStreak(state, day) : 0;
   const board = isHydrated && state.today?.day === day ? state.today : null;
   const playedToday = board !== null && board.status !== "playing";
+  const left = board ? MAX_GUESSES - board.guesses.length : MAX_GUESSES;
 
   return (
     <Link
@@ -47,7 +52,7 @@ export function DailyGameTeaser() {
 
       <div className="min-w-0 flex-1">
         <p className="font-semibold text-white group-hover:text-blue-300 transition-colors">
-          Daily Film Puzzle
+          {t("Daily Film Puzzle", "Denní filmová hádanka")}
           {isHydrated && (
             <span className="text-gray-500 font-normal">
               {" "}
@@ -58,11 +63,29 @@ export function DailyGameTeaser() {
         <p className="text-sm text-gray-400">
           {playedToday
             ? board?.status === "won"
-              ? `Solved today in ${board.guesses.length}/${MAX_GUESSES}. Come back tomorrow.`
-              : "Today's puzzle beat you. There is another one tomorrow."
+              ? t(
+                  `Solved today in ${board.guesses.length}/${MAX_GUESSES}. Come back tomorrow.`,
+                  `Dnes vyřešeno – ${board.guesses.length}/${MAX_GUESSES}. Přijďte zase zítra.`,
+                )
+              : t(
+                  "Today's puzzle beat you. There is another one tomorrow.",
+                  "Dnešní hádanka vás porazila. Zítra máte další šanci.",
+                )
             : board && board.guesses.length > 0
-              ? `${MAX_GUESSES - board.guesses.length} guesses left on today's puzzle.`
-              : "Guess the film from a blurred still. Six guesses."}
+              ? t(
+                  `${left} guesses left on today's puzzle.`,
+                  `V dnešní hádance vám ${pluralForm(left, locale, {
+                    en: ["", ""],
+                    cs: ["zbývá", "zbývají", "zbývá"],
+                  })} ${formatCount(left, locale, {
+                    en: ["guess", "guesses"],
+                    cs: ["pokus", "pokusy", "pokusů"],
+                  })}.`,
+                )
+              : t(
+                  "Guess the film from a blurred still. Six guesses.",
+                  "Uhodněte film podle rozmazaného záběru. Máte šest pokusů.",
+                )}
         </p>
       </div>
 
@@ -74,7 +97,11 @@ export function DailyGameTeaser() {
       )}
 
       <span className="rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold text-white shrink-0 group-hover:bg-white/20 transition-colors">
-        {playedToday ? "See result" : board ? "Continue" : "Play"}
+        {playedToday
+          ? t("See result", "Zobrazit výsledek")
+          : board
+            ? t("Continue", "Pokračovat")
+            : t("Play", "Hrát")}
       </span>
     </Link>
   );

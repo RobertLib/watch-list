@@ -4,6 +4,7 @@ import Image from "next/image";
 import { getImageUrl } from "@/lib/tmdb-image";
 import { WatchProvider } from "@/types/tmdb";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/LocaleProvider";
 
 interface WatchProvidersProps {
   providers: WatchProvider[];
@@ -16,11 +17,14 @@ export function WatchProviders({
   loading = false,
   className,
 }: WatchProvidersProps) {
+  const t = useT();
   return (
     <div className={cn("flex items-center gap-2", className)}>
       {loading ? (
         <>
-          <span className="text-xs text-gray-400">Loading providers...</span>
+          <span className="text-xs text-gray-400">
+            {t("Loading providers...", "Načítání služeb…")}
+          </span>
           <div className="flex gap-1">
             {[...Array(3)].map((_, i) => (
               <div
@@ -32,7 +36,9 @@ export function WatchProviders({
         </>
       ) : providers.length > 0 ? (
         <>
-          <span className="text-xs text-gray-400">Available on:</span>
+          <span className="text-xs text-gray-400">
+            {t("Available on:", "Dostupné na:")}
+          </span>
           <div className="flex gap-1">
             {providers.slice(0, 3).map((provider) => (
               <div

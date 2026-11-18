@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useT } from "@/i18n/LocaleProvider";
 import { MediaItem } from "@/types/tmdb";
 import { MemoizedMediaCard } from "./MediaCard";
 import { cn } from "@/lib/utils";
@@ -67,6 +68,7 @@ function ScrollButton({
   onClick: () => void;
 }) {
   const Icon = direction === "left" ? ChevronLeft : ChevronRight;
+  const t = useT();
 
   return (
     <button
@@ -79,7 +81,11 @@ function ScrollButton({
           ? "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-black/90"
           : "opacity-0 pointer-events-none focus-visible:opacity-50 cursor-default",
       )}
-      aria-label={direction === "left" ? "Scroll left" : "Scroll right"}
+      aria-label={
+        direction === "left"
+          ? t("Scroll left", "Posunout doleva")
+          : t("Scroll right", "Posunout doprava")
+      }
       aria-disabled={!enabled}
       tabIndex={enabled ? undefined : -1}
     >

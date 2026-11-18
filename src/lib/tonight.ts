@@ -1,6 +1,7 @@
 import { mediaItemKey } from "./utils";
 import type { MediaType } from "@/types/tmdb";
 import type { AvailabilityStatus, ProviderBadge } from "./watchlist-view";
+import { t, type Locale, type Localized } from "@/i18n/locale";
 
 /**
  * "What should I watch tonight?"
@@ -69,24 +70,36 @@ export const DEFAULT_FILTERS: TonightFilters = {
  */
 export const RUNTIME_BANDS: Array<{
   id: RuntimeBand;
-  label: string;
-  hint: string;
+  label: Localized;
+  hint: Localized;
   max: number | null;
   min: number | null;
 }> = [
-  { id: "any", label: "Any length", hint: "", max: null, min: null },
-  { id: "short", label: "Under 1 hour", hint: "an episode", max: 60, min: null },
+  {
+    id: "any",
+    label: { en: "Any length", cs: "Jakákoli délka" },
+    hint: { en: "", cs: "" },
+    max: null,
+    min: null,
+  },
+  {
+    id: "short",
+    label: { en: "Under 1 hour", cs: "Do 1 hodiny" },
+    hint: { en: "an episode", cs: "jedna epizoda" },
+    max: 60,
+    min: null,
+  },
   {
     id: "medium",
-    label: "Up to 2 hours",
-    hint: "a normal evening",
+    label: { en: "Up to 2 hours", cs: "Do 2 hodin" },
+    hint: { en: "a normal evening", cs: "běžný večer" },
     max: 120,
     min: null,
   },
   {
     id: "long",
-    label: "2 hours or more",
-    hint: "clear the evening",
+    label: { en: "2 hours or more", cs: "2 hodiny a víc" },
+    hint: { en: "clear the evening", cs: "na celý večer" },
     max: null,
     min: 120,
   },
@@ -169,12 +182,21 @@ export function availableGenres(candidates: TonightCandidate[]): string[] {
   return [...genres].sort((a, b) => a.localeCompare(b));
 }
 
-/** "1h 47m", the way a runtime is read out loud. */
-export function formatRuntime(minutes: number | null): string | null {
+/** "1h 47m", the way a runtime is read out loud. Czech spaces its units: "1 h 47 min". */
+export function formatRuntime(
+  minutes: number | null,
+  locale: Locale = "en",
+): string | null {
   if (minutes === null || minutes <= 0) return null;
 
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
+
+  if (locale === "cs") {
+    if (hours === 0) return `${rest} min`;
+    if (rest === 0) return `${hours} h`;
+    return `${hours} h ${rest} min`;
+  }
 
   if (hours === 0) return `${rest}m`;
   if (rest === 0) return `${hours}h`;
@@ -191,22 +213,28 @@ export function formatRuntime(minutes: number | null): string | null {
 export function reasonFor(
   candidate: TonightCandidate,
   filters: TonightFilters,
+  locale: Locale = "en",
 ): string {
   const parts: string[] = [];
 
-  const runtime = formatRuntime(candidate.runtime);
+  const runtime = formatRuntime(candidate.runtime, locale);
   if (runtime) {
     parts.push(
-      candidate.mediaType === "tv" ? `${runtime} an episode` : runtime,
+      candidate.mediaType === "tv"
+        ? t(locale, `${runtime} an episode`, `${runtime} na epizodu`)
+        : runtime,
     );
   }
 
   if (candidate.availability === "mine" && candidate.providers.length > 0) {
-    parts.push(`on ${candidate.providers[0].name}`);
+    // "ve službě Netflix": the name stays in the nominative, so no service's
+    // name has to be declined.
+    const provider = candidate.providers[0].name;
+    parts.push(t(locale, `on ${provider}`, `ve službě ${provider}`));
   } else if (candidate.availability === "streaming") {
-    parts.push("streaming now");
+    parts.push(t(locale, "streaming now", "právě se streamuje"));
   } else if (candidate.availability === "rent") {
-    parts.push("rent or buy");
+    parts.push(t(locale, "rent or buy", "k zapůjčení nebo koupi"));
   }
 
   if (filters.genre) parts.push(filters.genre.toLowerCase());

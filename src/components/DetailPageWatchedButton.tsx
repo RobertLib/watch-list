@@ -7,9 +7,10 @@ import { useWatched } from "@/contexts/WatchedContext";
 import { useWatchlist } from "@/contexts/WatchlistContext";
 import { useProfileGuard } from "@/hooks/useProfileGuard";
 import { toast } from "@/components/Toast";
-import { STORAGE_REFUSED_MESSAGE } from "@/lib/media-list";
+import { storageRefusedMessage } from "@/lib/media-list";
 import { setTitleWatched } from "@/lib/watched-actions";
 import { MediaItem, MediaType } from "@/types/tmdb";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 
 interface DetailPageWatchedButtonProps {
   id: number;
@@ -31,6 +32,8 @@ export function DetailPageWatchedButton({
   const { isWatched, refreshWatched, profileId } = useWatched();
   const { refreshWatchlist, profileId: watchlistProfileId } = useWatchlist();
   const { checkProfile } = useProfileGuard();
+  const locale = useLocale();
+  const t = useT();
   const [isSaving, setIsSaving] = useState(false);
   const saving = useRef(false);
 
@@ -52,7 +55,13 @@ export function DetailPageWatchedButton({
   const handleClick = async () => {
     if (saving.current || !checkProfile(profileId)) return;
     if (!watched && watchlistProfileId !== profileId) {
-      toast.showToast("Your active profile changed. Review the current title and try again.", "info");
+      toast.showToast(
+        t(
+          "Your active profile changed. Review the current title and try again.",
+          "Aktivní profil se mezitím změnil. Zkontrolujte titul a zkuste to znovu.",
+        ),
+        "info",
+      );
       return;
     }
     saving.current = true;
@@ -64,23 +73,47 @@ export function DetailPageWatchedButton({
       refreshWatched();
       refreshWatchlist();
       if (result.status === "profile-unavailable") {
-        toast.showToast("The profile for this action was deleted. Review the current title and try again.", "info");
+        toast.showToast(
+          t(
+            "The profile for this action was deleted. Review the current title and try again.",
+            "Profil, ke kterému akce patřila, byl smazán. Zkontrolujte titul a zkuste to znovu.",
+          ),
+          "info",
+        );
       } else if (result.status === "changed") {
-        toast.showToast("Your watched list changed. Review the current title and try again.", "info");
+        toast.showToast(
+          t(
+            "Your watched list changed. Review the current title and try again.",
+            "Seznam zhlédnutých se mezitím změnil. Zkontrolujte titul a zkuste to znovu.",
+          ),
+          "info",
+        );
       } else if (result.status === "failed") {
-        toast.showToast(STORAGE_REFUSED_MESSAGE, "error");
+        toast.showToast(storageRefusedMessage(locale), "error");
       } else if (result.status === "watchlist-failed") {
         toast.showToast(
-          `Marked "${title}" as watched, but your browser would not remove it from your watchlist`,
+          t(
+            `Marked "${title}" as watched, but your browser would not remove it from your watchlist`,
+            `Přidáno mezi zhlédnuté: „${title}“. Ze seznamu to ale prohlížeč odebrat nedokázal`,
+          ),
           "error",
         );
       } else if (result.status === "ok") {
         toast.showToast(
           watched
-            ? `Removed "${title}" from watched`
+            ? t(
+                `Removed "${title}" from watched`,
+                `Odebráno ze zhlédnutých: „${title}“`,
+              )
             : result.removedFromWatchlist
-              ? `Marked "${title}" as watched and removed it from your watchlist`
-              : `Marked "${title}" as watched`,
+              ? t(
+                  `Marked "${title}" as watched and removed it from your watchlist`,
+                  `Přidáno mezi zhlédnuté a odebráno ze seznamu: „${title}“`,
+                )
+              : t(
+                  `Marked "${title}" as watched`,
+                  `Přidáno mezi zhlédnuté: „${title}“`,
+                ),
           "success",
         );
       }
@@ -115,11 +148,13 @@ export function DetailPageWatchedButton({
             someone using voice control. */}
         {watched ? (
           <>
-            Watched
-            <span className="sr-only">, mark as not watched</span>
+            {t("Watched", "Zhlédnuto")}
+            <span className="sr-only">
+              {t(", mark as not watched", ", označit jako nezhlédnuté")}
+            </span>
           </>
         ) : (
-          "Mark as watched"
+          t("Mark as watched", "Označit jako zhlédnuté")
         )}
       </button>
     </div>

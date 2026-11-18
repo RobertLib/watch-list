@@ -9,6 +9,7 @@ import {
   type DiscoverMediaType,
 } from "@/lib/discover-filters";
 import type { FilterPreset } from "@/lib/filter-presets";
+import { useT } from "@/i18n/LocaleProvider";
 
 interface FilterPresetsProps {
   type: DiscoverMediaType;
@@ -21,8 +22,11 @@ export function FilterPresets({ type, presets }: FilterPresetsProps) {
   const searchParams = useSearchParams();
   const selectedPreset = searchParams.get("preset");
   const idPrefix = useId();
+  const t = useT();
 
   // A preset replaces every other filter – picking the active one again clears it.
+  // `pathname` is already this page in its own language (`/cs/movies`), so it
+  // is pushed as it is rather than localised a second time.
   const handlePresetSelect = (preset: FilterPreset) => {
     router.push(
       selectedPreset === preset.id ? pathname : `${pathname}?preset=${preset.id}`,
@@ -38,7 +42,9 @@ export function FilterPresets({ type, presets }: FilterPresetsProps) {
     <div className="space-y-6">
       {/* Quick Presets */}
       <section className="bg-gray-900/50 rounded-lg p-6">
-        <h3 id="quick-filters-heading" className="text-lg font-semibold text-white mb-4">Quick Filters</h3>
+        <h3 id="quick-filters-heading" className="text-lg font-semibold text-white mb-4">
+          {t("Quick Filters", "Rychlé filtry")}
+        </h3>
         <div
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
           role="group"

@@ -12,6 +12,8 @@
  * TMDB returns.
  */
 
+import type { Locale } from "@/i18n/locale";
+
 export interface StreamingPlatform {
   /** Primary TMDB watch provider ID. */
   id: number;
@@ -21,6 +23,21 @@ export interface StreamingPlatform {
   slug: string;
   /** Display name, as users know the brand. */
   name: string;
+  /**
+   * The name after Czech „na“ where it differs: „na Netflixu“. The other
+   * brands are not declined – „na Disney+“, „na HBO Max“.
+   */
+  nameCsLocative?: string;
+}
+
+/**
+ * "on Netflix" / „na Netflixu“ – the platform as a page title says where its
+ * titles stream.
+ */
+export function onPlatform(platform: StreamingPlatform, locale: Locale): string {
+  return locale === "cs"
+    ? `na ${platform.nameCsLocative ?? platform.name}`
+    : `on ${platform.name}`;
 }
 
 // IDs and names checked against TMDB /watch/providers on 2026-11-09. TMDB reuses
@@ -32,7 +49,7 @@ export interface StreamingPlatform {
 // counts in. Apple TV+ has been "Apple TV" since Apple's October 2025 rename;
 // the slug stays, because it is a URL.
 export const STREAMING_LANDING_PLATFORMS: StreamingPlatform[] = [
-  { id: 8, slug: "netflix", name: "Netflix" },
+  { id: 8, slug: "netflix", name: "Netflix", nameCsLocative: "Netflixu" },
   { id: 337, slug: "disney-plus", name: "Disney+" },
   { id: 9, alternateIds: [119], slug: "prime-video", name: "Amazon Prime Video" },
   { id: 1899, slug: "hbo-max", name: "HBO Max" },

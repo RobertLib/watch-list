@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "static-export",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "out", "--config", "../serve.json", "-l", "4173"],
+      "port": 4173
+    }
+  ]
+}

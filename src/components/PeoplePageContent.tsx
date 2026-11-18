@@ -1,17 +1,19 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { tmdbApi } from "@/lib/tmdb";
 import { createSlug } from "@/lib/utils";
 import { personHref } from "@/lib/routes";
 import { PeopleContent } from "@/components/PeopleContent";
+import { departmentName } from "@/components/PersonGrid";
 import { LoadFailureNotice } from "@/components/LoadFailureNotice";
 import { SnapshotRefreshNotice } from "@/components/SnapshotRefreshNotice";
 import { PeopleSkeleton } from "@/components/skeletons";
 import { useAsyncData } from "@/hooks/useAsyncData";
 import { loadPopularPeople } from "@/lib/listing-sections";
 import type { Person } from "@/types/tmdb";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 
 /**
  * `/people`: whoever TMDB says is popular this week (`loadPopularPeople`).
@@ -32,14 +34,19 @@ export function PeoplePageContent({
     refreshError,
     isRetrying,
   } = useAsyncData(loadPopularPeople, [], snapshot);
+  const locale = useLocale();
+  const t = useT();
 
   if (isLoading) return <PeopleSkeleton />;
 
   if (!people || people.length === 0) {
     return (
       <LoadFailureNotice
-        title="Could not load people"
-        description="TMDB did not answer. Check your connection and try again."
+        title={t("Could not load people", "Osobnosti se nepodařilo načíst")}
+        description={t(
+          "TMDB did not answer. Check your connection and try again.",
+          "TMDB neodpovídá. Zkontrolujte připojení a zkuste to znovu.",
+        )}
         onRetry={reload}
       />
     );
@@ -63,7 +70,7 @@ export function PeoplePageContent({
           <div className="absolute inset-0 scale-110">
             <Image
               src={featuredProfileUrl}
-              alt={`${featured.name} background`}
+              alt={t(`${featured.name} background`, `${featured.name} – pozadí`)}
               fill
               className="object-cover blur-2xl opacity-20"
               aria-hidden="true"
@@ -93,7 +100,7 @@ export function PeoplePageContent({
               </Link>
               <div>
                 <p className="text-blue-400 text-sm font-medium uppercase tracking-widest mb-2">
-                  Most Popular Right Now
+                  {t("Most Popular Right Now", "Teď nejpopulárnější")}
                 </p>
                 {/* Not a heading: this spotlight comes before the page's
                     "Popular People" h1, and an h2 here opened the outline one
@@ -109,7 +116,7 @@ export function PeoplePageContent({
                   </p>
                 </Link>
                 <p className="text-gray-400 mb-3">
-                  {featured.known_for_department}
+                  {departmentName(featured.known_for_department, locale)}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {featured.known_for.slice(0, 3).map((item) => {
@@ -137,14 +144,22 @@ export function PeoplePageContent({
       )}
 
       <div className="container mx-auto px-4 py-8 max-w-6xl">
-        <h1 className="text-3xl font-bold mb-2">Popular People</h1>
+        <h1 className="text-3xl font-bold mb-2">
+          {t("Popular People", "Populární osobnosti")}
+        </h1>
         <p className="text-gray-400 mb-6">
-          The most popular personalities in film and TV this week
+          {t(
+            "The most popular personalities in film and TV this week",
+            "Nejpopulárnější osobnosti filmu a televize tohoto týdne",
+          )}
         </p>
         {refreshError != null && (
           <SnapshotRefreshNotice
             className="mb-6"
-            message="Showing a saved list – this week's could not be loaded."
+            message={t(
+              "Showing a saved list – this week's could not be loaded.",
+              "Zobrazujeme uložený žebříček – ten z tohoto týdne se nepodařilo načíst.",
+            )}
             onRetry={reload}
             isRetrying={isRetrying}
           />

@@ -6,6 +6,7 @@ import { X, Loader2 } from "lucide-react";
 import { Video } from "@/types/tmdb";
 import { useHydrated } from "@/hooks/useHydrated";
 import { isPlayableYouTubeVideo } from "@/lib/trailer";
+import { useT } from "@/i18n/LocaleProvider";
 
 interface VideoOverlayProps {
   isOpen: boolean;
@@ -38,6 +39,7 @@ export function VideoOverlay({
   onClose,
 }: VideoOverlayProps) {
   const hydrated = useHydrated();
+  const t = useT();
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -158,7 +160,10 @@ export function VideoOverlay({
       // Named directly rather than by the iframe's id: the loading and the
       // "not available" branches render no iframe, and a dialog labelled by an
       // element that does not exist has no name at all.
-      aria-label={video ? `Video: ${video.name}` : "Video player"}
+      // "Video: …" reads the same in Czech.
+      aria-label={
+        video ? `Video: ${video.name}` : t("Video player", "Přehrávač videa")
+      }
       onClick={onClose}
     >
       {/* Fit both viewport dimensions while keeping 16:9. Width alone puts the
@@ -175,7 +180,7 @@ export function VideoOverlay({
           type="button"
           onClick={onClose}
           className="absolute top-2 right-2 z-10 p-2 bg-black/70 hover:bg-black/90 rounded-full text-white transition-colors focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-black"
-          aria-label="Close video player"
+          aria-label={t("Close video player", "Zavřít přehrávač videa")}
         >
           <X className="w-6 h-6" aria-hidden="true" />
         </button>
@@ -190,7 +195,9 @@ export function VideoOverlay({
               className="w-8 h-8 text-white animate-spin"
               aria-hidden="true"
             />
-            <span className="sr-only">Loading video...</span>
+            <span className="sr-only">
+              {t("Loading video...", "Načítání videa…")}
+            </span>
           </div>
         ) : video && isPlayableYouTubeVideo(video) ? (
           <iframe
@@ -210,7 +217,7 @@ export function VideoOverlay({
             className="absolute inset-0 flex items-center justify-center text-white"
             role="alert"
           >
-            <p>Video is not available</p>
+            <p>{t("Video is not available", "Video není k dispozici")}</p>
           </div>
         )}
       </div>

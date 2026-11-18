@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -33,6 +33,8 @@ import { getWatchlist, type WatchlistItem } from "@/lib/watchlist";
 import { mediaHref } from "@/lib/routes";
 import { isProfileStoreEvent, withProfileStorage } from "@/lib/profile-storage";
 import { withProfileRosterLock } from "@/lib/profile-roster-lock";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount } from "@/i18n/format";
 
 // How many of the ranked list to show, and to offer as a share link.
 const TOP_N = 10;
@@ -58,6 +60,8 @@ function ProfileWatchlistRanking({ profileId, checkProfile }: {
   checkProfile: (expectedId?: string) => boolean;
 }) {
   const { watchlist, isLoading } = useWatchlist();
+  const locale = useLocale();
+  const t = useT();
   const [ranking, setRanking] = useState<Ranking>({});
   const [hasLoaded, setHasLoaded] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -123,6 +127,15 @@ function ProfileWatchlistRanking({ profileId, checkProfile }: {
     }
   }
 
+  const choiceFailed = t(
+    "Could not save your choice. Please try again.",
+    "Vaši volbu se nepodařilo uložit. Zkuste to prosím znovu.",
+  );
+  const resetFailed = t(
+    "Could not reset your ranking. Please try again.",
+    "Pořadí se nepodařilo vynulovat. Zkuste to prosím znovu.",
+  );
+
   async function choose(winner: WatchlistItem, loser: WatchlistItem, ownerId: string) {
     await mutate(ownerId, () => {
       const latestWatchlist = getWatchlist({ strict: true });
@@ -130,7 +143,13 @@ function ProfileWatchlistRanking({ profileId, checkProfile }: {
         (entry) => entry.id === item.id && entry.mediaType === item.mediaType,
       ))) {
         setRound((current) => current + 1);
-        toast.showToast("Your watchlist changed. Review the current pair and try again.", "info");
+        toast.showToast(
+          t(
+            "Your watchlist changed. Review the current pair and try again.",
+            "Váš seznam se mezitím změnil. Zkontrolujte novou dvojici a zkuste to znovu.",
+          ),
+          "info",
+        );
         return false;
       }
       const winnerKey = mediaItemKey(winner.id, winner.mediaType);
@@ -146,7 +165,7 @@ function ProfileWatchlistRanking({ profileId, checkProfile }: {
       );
 
       if (!saveRanking(updated)) {
-        toast.showToast("Could not save your choice. Please try again.", "error");
+        toast.showToast(choiceFailed, "error");
         return false;
       }
       setRanking(updated);
@@ -160,7 +179,7 @@ function ProfileWatchlistRanking({ profileId, checkProfile }: {
 
       setRound((current) => current + 1);
       return true;
-    }, "Could not save your choice. Please try again.");
+    }, choiceFailed);
   }
 
   const ranked = useMemo(
@@ -191,7 +210,7 @@ function ProfileWatchlistRanking({ profileId, checkProfile }: {
             className="text-lg font-semibold text-white flex items-center gap-2"
           >
             <Swords className="w-5 h-5 text-purple-400" aria-hidden="true" />
-            Which would you rather watch?
+            {t("Which would you rather watch?", "Co byste si pustili radši?")}
           </h2>
           <button
             // Native `disabled` would blur this button in browsers mid-save;
@@ -202,7 +221,7 @@ function ProfileWatchlistRanking({ profileId, checkProfile }: {
             }}
             className="text-sm text-gray-400 hover:text-white aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
           >
-            Skip this pair
+            {t("Skip this pair", "Přeskočit tuto dvojici")}
           </button>
         </div>
 
@@ -240,8 +259,14 @@ function ProfileWatchlistRanking({ profileId, checkProfile }: {
               <span className="truncate">
                 <span className="font-medium">{lastMove.title}</span>{" "}
                 {lastMove.from !== null && lastMove.from !== lastMove.to
-                  ? `moved from #${lastMove.from} to #${lastMove.to}`
-                  : `holds #${lastMove.to}`}
+                  ? t(
+                      `moved from #${lastMove.from} to #${lastMove.to}`,
+                      `postupuje z ${lastMove.from}. na ${lastMove.to}. místo`,
+                    )
+                  : t(
+                      `holds #${lastMove.to}`,
+                      `zůstává na ${lastMove.to}. místě`,
+                    )}
               </span>
             </p>
           )}
@@ -256,10 +281,19 @@ function ProfileWatchlistRanking({ profileId, checkProfile }: {
           </div>
           <p className="text-xs text-gray-500 mt-2">
             {remaining > 0
-              ? `${remaining} more comparison${
-                  remaining === 1 ? "" : "s"
-                } before the order below is worth trusting.`
-              : "Every title has been compared enough. Keep going only if you want to split hairs near the top."}
+              ? t(
+                  `${remaining} more comparison${
+                    remaining === 1 ? "" : "s"
+                  } before the order below is worth trusting.`,
+                  `Ještě ${formatCount(remaining, locale, {
+                    en: ["comparison", "comparisons"],
+                    cs: ["porovnání", "porovnání", "porovnání"],
+                  })} a pořadí níže bude spolehlivé.`,
+                )
+              : t(
+                  "Every title has been compared enough. Keep going only if you want to split hairs near the top.",
+                  "Každý titul už má za sebou dost porovnání. Pokračujte, jen pokud chcete doladit pořadí úplně nahoře.",
+                )}
           </p>
         </div>
       </section>
@@ -270,12 +304,15 @@ function ProfileWatchlistRanking({ profileId, checkProfile }: {
         <div className="rounded-xl border border-green-500/40 bg-green-500/10 p-5 flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="font-semibold text-green-200">
-              Your order is settled
+              {t("Your order is settled", "Vaše pořadí je hotové")}
             </p>
             <p className="text-sm text-gray-300 mt-0.5">
               {ranked[0]?.item.title
-                ? `${ranked[0].item.title} came out on top. The full order is below.`
-                : "The full order is below."}
+                ? t(
+                    `${ranked[0].item.title} came out on top. The full order is below.`,
+                    `Na prvním místě je ${ranked[0].item.title}. Celé pořadí najdete níže.`,
+                  )
+                : t("The full order is below.", "Celé pořadí najdete níže.")}
             </p>
           </div>
           <ShareListButton
@@ -283,7 +320,7 @@ function ProfileWatchlistRanking({ profileId, checkProfile }: {
               id: item.id,
               mediaType: item.mediaType,
             }))}
-            defaultTitle="My top films"
+            defaultTitle={t("My top films", "Můj žebříček")}
           />
         </div>
       )}
@@ -295,7 +332,7 @@ function ProfileWatchlistRanking({ profileId, checkProfile }: {
             className="text-lg font-semibold text-white flex items-center gap-2"
           >
             <Crown className="w-5 h-5 text-yellow-400" aria-hidden="true" />
-            Your top {Math.min(TOP_N, ranked.length)}
+            {t("Your top", "Vaše top")} {Math.min(TOP_N, ranked.length)}
           </h2>
           <div className="flex items-center gap-3">
             <ShareListButton
@@ -303,29 +340,31 @@ function ProfileWatchlistRanking({ profileId, checkProfile }: {
                 id: item.id,
                 mediaType: item.mediaType,
               }))}
-              defaultTitle="My top films"
+              defaultTitle={t("My top films", "Můj žebříček")}
             />
             <ResetButton
               key={profileId}
               isSaving={isSaving}
               onReset={() => mutate(profileId, () => {
                 if (!saveRanking({})) {
-                  toast.showToast("Could not reset your ranking. Please try again.", "error");
+                  toast.showToast(resetFailed, "error");
                   return false;
                 }
                 setRanking({});
                 setLastMove(null);
                 setRound((current) => current + 1);
                 return true;
-              }, "Could not reset your ranking. Please try again.")}
+              }, resetFailed)}
             />
           </div>
         </div>
 
         {remaining > 0 && (
           <p className="text-sm text-gray-500">
-            Provisional – anything you have not compared yet is sitting where it
-            landed on your watchlist, not where it belongs.
+            {t(
+              "Provisional – anything you have not compared yet is sitting where it landed on your watchlist, not where it belongs.",
+              "Zatím jen předběžně – co jste ještě neporovnávali, stojí tam, kde to skončilo na vašem seznamu, ne tam, kam to patří.",
+            )}
           </p>
         )}
 
@@ -355,7 +394,7 @@ function ProfileWatchlistRanking({ profileId, checkProfile }: {
                 </span>
                 <span className="text-xs text-gray-500 shrink-0 tabular-nums">
                   {entry.matches === 0
-                    ? "not compared"
+                    ? t("not compared", "neporovnáno")
                     : `${Math.round(entry.rating)}`}
                 </span>
               </Link>
@@ -369,7 +408,7 @@ function ProfileWatchlistRanking({ profileId, checkProfile }: {
             prefetch={false}
             className="inline-flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300 transition-colors"
           >
-            See the whole list
+            {t("See the whole list", "Zobrazit celý seznam")}
             <ArrowRight className="w-4 h-4" aria-hidden="true" />
           </Link>
         )}
@@ -420,6 +459,7 @@ function ContenderButton({
 }
 
 function ResetButton({ onReset, isSaving }: { onReset: () => Promise<boolean>; isSaving: boolean }) {
+  const t = useT();
   const [confirming, setConfirming] = useState(false);
   const mounted = useRef(true);
   const resetRef = useRef<HTMLButtonElement>(null);
@@ -462,7 +502,7 @@ function ResetButton({ onReset, isSaving }: { onReset: () => Promise<boolean>; i
         className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-white aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
       >
         <RotateCcw className="w-4 h-4" aria-hidden="true" />
-        Reset
+        {t("Reset", "Vynulovat")}
       </button>
     );
   }
@@ -478,7 +518,7 @@ function ResetButton({ onReset, isSaving }: { onReset: () => Promise<boolean>; i
         }}
         className="text-red-400 hover:text-red-300 aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
       >
-        Erase the ranking
+        {t("Erase the ranking", "Smazat pořadí")}
       </button>
       <button
         ref={cancelRef}
@@ -488,29 +528,34 @@ function ResetButton({ onReset, isSaving }: { onReset: () => Promise<boolean>; i
         }}
         className="text-gray-500 hover:text-white aria-disabled:opacity-60 aria-disabled:cursor-wait transition-colors"
       >
-        Cancel
+        {t("Cancel", "Zrušit")}
       </button>
     </span>
   );
 }
 
 function NotEnoughSaved() {
+  const t = useT();
   return (
     <div className="text-center py-16">
       <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gray-800 flex items-center justify-center">
         <Swords className="w-10 h-10 text-gray-600" aria-hidden="true" />
       </div>
-      <h2 className="text-2xl font-bold mb-3">Save two titles first</h2>
+      <h2 className="text-2xl font-bold mb-3">
+        {t("Save two titles first", "Nejdřív si uložte dva tituly")}
+      </h2>
       <p className="text-gray-400 max-w-md mx-auto">
-        This ranks your watchlist by asking which of two you would rather watch.
-        It needs at least a pair to ask about.
+        {t(
+          "This ranks your watchlist by asking which of two you would rather watch. It needs at least a pair to ask about.",
+          "Pořadí vašeho seznamu tu vzniká z otázek, který ze dvou titulů byste si pustili radši. K tomu je potřeba aspoň jedna dvojice.",
+        )}
       </p>
       <Link
         href="/"
         prefetch={false}
         className="mt-6 inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition-colors"
       >
-        Discover Content
+        {t("Discover Content", "Procházet filmy a seriály")}
       </Link>
     </div>
   );

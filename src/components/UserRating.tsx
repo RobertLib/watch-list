@@ -8,10 +8,11 @@ import { useWatchlist } from "@/contexts/WatchlistContext";
 import { useProfileGuard } from "@/hooks/useProfileGuard";
 import { toast } from "@/components/Toast";
 import { MAX_RATING, MIN_RATING } from "@/lib/ratings";
-import { STORAGE_REFUSED_MESSAGE } from "@/lib/media-list";
+import { storageRefusedMessage } from "@/lib/media-list";
 import { clearTitleRating, rateTitleAndMarkWatched } from "@/lib/watched-actions";
 import { cn } from "@/lib/utils";
 import type { MediaItem } from "@/types/tmdb";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 
 const VALUES = Array.from(
   { length: MAX_RATING - MIN_RATING + 1 },
@@ -47,6 +48,8 @@ export function UserRating({
   const { refreshWatched, profileId: watchedProfileId } = useWatched();
   const { refreshWatchlist, profileId: watchlistProfileId } = useWatchlist();
   const { checkProfile } = useProfileGuard();
+  const locale = useLocale();
+  const t = useT();
   const hintId = useId();
   // The score the stars preview instead of the saved one: the star under the
   // pointer, or the one keyboard focus is on.
@@ -68,10 +71,18 @@ export function UserRating({
   const shown = previewed ?? current ?? 0;
   const tabStop = focusedValue ?? current ?? MIN_RATING;
 
+  const storageRefused = storageRefusedMessage(locale);
+
   async function handleRate(value: number) {
     if (saving.current || !checkProfile(profileId)) return;
     if (watchedProfileId !== profileId || watchlistProfileId !== profileId) {
-      toast.showToast("Your active profile changed. Review the current title and try again.", "info");
+      toast.showToast(
+        t(
+          "Your active profile changed. Review the current title and try again.",
+          "Aktivní profil se mezitím změnil. Zkontrolujte titul a zkuste to znovu.",
+        ),
+        "info",
+      );
       return;
     }
 
@@ -82,26 +93,47 @@ export function UserRating({
       refreshWatched();
       refreshWatchlist();
       if (result.status === "profile-unavailable") {
-        toast.showToast("The profile for this action was deleted. Review the current title and try again.", "info");
+        toast.showToast(
+          t(
+            "The profile for this action was deleted. Review the current title and try again.",
+            "Profil, ke kterému akce patřila, byl smazán. Zkontrolujte titul a zkuste to znovu.",
+          ),
+          "info",
+        );
       } else if (result.status === "failed" || result.status === "rating-failed") {
-        toast.showToast(STORAGE_REFUSED_MESSAGE, "error");
+        toast.showToast(storageRefused, "error");
       } else if (result.status === "watched-failed") {
         toast.showToast(
-          `Rated ${value}/10, but could not mark as watched. Check your browser's storage settings.`,
+          t(
+            `Rated ${value}/10, but could not mark as watched. Check your browser's storage settings.`,
+            `Ohodnoceno ${value}/10, ale titul se nepodařilo označit jako zhlédnutý. Zkontrolujte nastavení úložiště v prohlížeči.`,
+          ),
           "error",
         );
       } else if (result.status === "watchlist-failed") {
         toast.showToast(
-          `Rated ${value}/10${result.wasWatched ? "" : " and marked as watched"}, but your browser would not remove it from your watchlist`,
+          t(
+            `Rated ${value}/10${result.wasWatched ? "" : " and marked as watched"}, but your browser would not remove it from your watchlist`,
+            `Ohodnoceno ${value}/10${result.wasWatched ? "" : " a označeno jako zhlédnuté"}, ale prohlížeč titul neodebral ze seznamu`,
+          ),
           "error",
         );
       } else if (result.status === "ok") {
         toast.showToast(
           result.wasWatched
-            ? `Rated ${value}/10${result.wasQueued ? " and removed from your watchlist" : ""}`
+            ? t(
+                `Rated ${value}/10${result.wasQueued ? " and removed from your watchlist" : ""}`,
+                `Ohodnoceno ${value}/10${result.wasQueued ? " a odebráno ze seznamu" : ""}`,
+              )
             : result.wasQueued
-              ? `Rated ${value}/10, marked as watched and removed from your watchlist`
-              : `Rated ${value}/10 and marked as watched`,
+              ? t(
+                  `Rated ${value}/10, marked as watched and removed from your watchlist`,
+                  `Ohodnoceno ${value}/10, označeno jako zhlédnuté a odebráno ze seznamu`,
+                )
+              : t(
+                  `Rated ${value}/10 and marked as watched`,
+                  `Ohodnoceno ${value}/10 a označeno jako zhlédnuté`,
+                ),
           "success",
         );
       }
@@ -120,10 +152,10 @@ export function UserRating({
     setIsSaving(true);
     try {
       if (!(await clearTitleRating(profileId, item.id, item.media_type))) {
-        toast.showToast(STORAGE_REFUSED_MESSAGE, "error");
+        toast.showToast(storageRefused, "error");
         return;
       }
-      toast.showToast("Rating removed", "info");
+      toast.showToast(t("Rating removed", "Hodnocení odebráno"), "info");
       if (hadFocus) {
         quietFocus.current = true;
         ratingButtons.current[0]?.focus();
@@ -165,7 +197,9 @@ export function UserRating({
   return (
     <div className={cn("space-y-2", className)}>
       <div className="flex items-center gap-2">
-        <p className="text-sm font-medium text-gray-300">Your rating</p>
+        <p className="text-sm font-medium text-gray-300">
+          {t("Your rating", "Vaše hodnocení")}
+        </p>
         {current !== null && (
           <>
             <span className="text-sm font-semibold text-yellow-400">
@@ -180,7 +214,7 @@ export function UserRating({
               className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-white aria-disabled:cursor-wait aria-disabled:opacity-60 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
             >
               <X className="w-3 h-3" aria-hidden="true" />
-              Clear
+              {t("Clear", "Smazat")}
             </button>
           </>
         )}
@@ -189,7 +223,10 @@ export function UserRating({
       <div
         role="toolbar"
         aria-busy={isSaving}
-        aria-label={`Rate ${item.title} out of ten`}
+        aria-label={t(
+          `Rate ${item.title} out of ten`,
+          `Ohodnotit ${item.title} na stupnici do deseti`,
+        )}
         className="flex items-center gap-0.5"
         onMouseLeave={() => setPreviewed(null)}
       >
@@ -209,8 +246,8 @@ export function UserRating({
               aria-current={current === value ? "true" : undefined}
               // Unrated, every star says what saving a score also does.
               aria-describedby={current === null ? hintId : undefined}
-              aria-label={`Rate ${value} out of 10`}
-              title={`Rate ${value} out of 10`}
+              aria-label={t(`Rate ${value} out of 10`, `Ohodnotit na ${value} z 10`)}
+              title={t(`Rate ${value} out of 10`, `Ohodnotit na ${value} z 10`)}
               tabIndex={value === tabStop ? 0 : -1}
               onMouseEnter={() => setPreviewed(value)}
               onFocus={() => {
@@ -241,7 +278,10 @@ export function UserRating({
 
       {current === null && (
         <p id={hintId} className="text-xs text-gray-500">
-          Rating a title marks it watched and sharpens your recommendations.
+          {t(
+            "Rating a title marks it watched and sharpens your recommendations.",
+            "Ohodnocený titul se označí jako zhlédnutý a vaše doporučení budou přesnější.",
+          )}
         </p>
       )}
     </div>

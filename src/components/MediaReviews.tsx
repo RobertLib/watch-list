@@ -3,6 +3,9 @@
 import { useState, useRef, useEffect } from "react";
 import { ChevronDown, ChevronUp, Star, User } from "lucide-react";
 import type { Review, ReviewsResponse } from "@/types/tmdb";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { pluralForm } from "@/i18n/format";
+import { INTL_LOCALE, type Locale } from "@/i18n/locale";
 
 const INITIAL_REVIEWS = 3;
 
@@ -63,8 +66,8 @@ function stripMarkdown(text: string): string {
 // as in the browser, and a review posted late in the UTC day would otherwise be
 // dated differently by the two – a hydration mismatch, and the wrong date for
 // half the world besides.
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("en-US", {
+function formatDate(dateStr: string, locale: Locale): string {
+  return new Date(dateStr).toLocaleDateString(INTL_LOCALE[locale], {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -76,6 +79,8 @@ function formatDate(dateStr: string): string {
 const LONG_THRESHOLD = 350;
 
 function ReviewCard({ review }: { review: Review }) {
+  const locale = useLocale();
+  const t = useT();
   const [expanded, setExpanded] = useState(false);
   const [isClamped, setIsClamped] = useState(false);
   const textRef = useRef<HTMLParagraphElement>(null);
@@ -131,7 +136,7 @@ function ReviewCard({ review }: { review: Review }) {
               {review.author}
             </p>
             <p className="text-gray-500 text-xs">
-              {formatDate(review.created_at)}
+              {formatDate(review.created_at, locale)}
             </p>
           </div>
         </div>
@@ -159,11 +164,13 @@ function ReviewCard({ review }: { review: Review }) {
           >
             {expanded ? (
               <>
-                <ChevronUp className="w-3.5 h-3.5" /> Show less
+                <ChevronUp className="w-3.5 h-3.5" />{" "}
+                {t("Show less", "Zobrazit méně")}
               </>
             ) : (
               <>
-                <ChevronDown className="w-3.5 h-3.5" /> Read more
+                <ChevronDown className="w-3.5 h-3.5" />{" "}
+                {t("Read more", "Číst dál")}
               </>
             )}
           </button>
@@ -174,7 +181,7 @@ function ReviewCard({ review }: { review: Review }) {
           rel="noopener noreferrer"
           className="text-gray-500 text-sm hover:text-gray-300 transition-colors ml-auto"
         >
-          Full review →
+          {t("Full review →", "Celá recenze →")}
         </a>
       </div>
     </article>
@@ -185,7 +192,25 @@ interface MediaReviewsProps {
   reviews: ReviewsResponse | undefined;
 }
 
+/**
+ * "Show all 7 reviews". Czech agrees "all" with the count as well as the noun:
+ * "všechny 4 recenze", "všech 7 recenzí".
+ */
+function showAllReviews(count: number, locale: Locale): string {
+  if (locale !== "cs") return `Show all ${count} reviews`;
+  return pluralForm(count, locale, {
+    en: ["", ""],
+    cs: [
+      `Zobrazit ${count} recenzi`,
+      `Zobrazit všechny ${count} recenze`,
+      `Zobrazit všech ${count} recenzí`,
+    ],
+  });
+}
+
 export function MediaReviews({ reviews }: MediaReviewsProps) {
+  const locale = useLocale();
+  const t = useT();
   const [showAll, setShowAll] = useState(false);
 
   if (!reviews?.results?.length) return null;
@@ -198,7 +223,7 @@ export function MediaReviews({ reviews }: MediaReviewsProps) {
   return (
     <section className="mt-12 mb-12">
       <h2 className="text-2xl font-bold mb-6">
-        User Reviews
+        {t("User Reviews", "Recenze uživatelů")}
         {reviews.total_results > 0 && (
           <span className="text-gray-500 text-base font-normal ml-2">
             ({reviews.total_results})
@@ -219,12 +244,13 @@ export function MediaReviews({ reviews }: MediaReviewsProps) {
         >
           {showAll ? (
             <>
-              <ChevronUp className="w-4 h-4" /> Show fewer reviews
+              <ChevronUp className="w-4 h-4" />{" "}
+              {t("Show fewer reviews", "Zobrazit méně recenzí")}
             </>
           ) : (
             <>
-              <ChevronDown className="w-4 h-4" /> Show all{" "}
-              {reviews.results.length} reviews
+              <ChevronDown className="w-4 h-4" />{" "}
+              {showAllReviews(reviews.results.length, locale)}
             </>
           )}
         </button>

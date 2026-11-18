@@ -1,4 +1,5 @@
 import { getRegionDataByCode, isValidRegionCode } from "./regions-data";
+import type { Locale } from "@/i18n/locale";
 
 export type Region = string;
 
@@ -13,13 +14,14 @@ export function getRegionCode(region: Region): string {
   return DEFAULT_REGION_CODE;
 }
 
-export function getRegionName(region: Region): string {
+export function getRegionName(region: Region, locale: Locale = "en"): string {
   // Resolved through the data rather than from a literal of its own. The two
   // disagreed: an unknown code answered "United States" while "US" itself
   // answered "United States of America", so the selector named a different
   // country depending on how it got there.
   const regionData =
-    getRegionDataByCode(region) ?? getRegionDataByCode(DEFAULT_REGION_CODE);
+    getRegionDataByCode(region, locale) ??
+    getRegionDataByCode(DEFAULT_REGION_CODE, locale);
 
   return regionData?.name ?? DEFAULT_REGION_CODE;
 }

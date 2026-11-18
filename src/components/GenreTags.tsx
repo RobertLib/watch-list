@@ -4,6 +4,8 @@ import { useMemo, useSyncExternalStore } from "react";
 import { useGenres } from "@/contexts/GenresContext";
 import { Genre } from "@/types/tmdb";
 import { cn } from "@/lib/utils";
+import { genreName } from "@/lib/genre-catalog";
+import { useLocale } from "@/i18n/LocaleProvider";
 
 interface GenreTagsProps {
   // Can accept either genre_ids or complete genres
@@ -24,6 +26,7 @@ export function GenreTags({
   variant = "detail",
 }: GenreTagsProps) {
   const { movieGenres, tvGenres } = useGenres();
+  const locale = useLocale();
   const isClient = useSyncExternalStore(
     () => () => {},
     () => true,
@@ -79,7 +82,9 @@ export function GenreTags({
     <div className={cn(baseClasses, variantClasses[variant], className)}>
       {displayGenres.map((genre) => (
         <span key={genre.id} className={tagClasses[variant]}>
-          {genre.name}
+          {/* By id, whichever language the list arrived in: the same genre
+              then carries the same label on a card and on the detail page. */}
+          {genreName(genre, locale)}
         </span>
       ))}
     </div>

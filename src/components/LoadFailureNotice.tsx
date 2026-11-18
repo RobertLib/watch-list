@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, RefreshCw } from "lucide-react";
+import { useT } from "@/i18n/LocaleProvider";
 
 /**
  * "We asked TMDB and got nothing back", rendered inside a page that did load.
@@ -21,8 +22,8 @@ import { AlertTriangle, RefreshCw } from "lucide-react";
  * shown under a page heading of its own passes `headingLevel={2}`.
  */
 export function LoadFailureNotice({
-  title = "Could not load this section",
-  description = "TMDB did not answer. It may be a connection problem, or the service may be busy.",
+  title,
+  description,
   onRetry,
   compact = false,
   headingLevel = compact ? 2 : 1,
@@ -33,6 +34,7 @@ export function LoadFailureNotice({
   compact?: boolean;
   headingLevel?: 1 | 2;
 }) {
+  const t = useT();
   const Heading = headingLevel === 1 ? "h1" : "h2";
 
   return (
@@ -58,10 +60,15 @@ export function LoadFailureNotice({
       <Heading
         className={compact ? "text-xl font-bold mb-2" : "text-3xl font-bold mb-3"}
       >
-        {title}
+        {title ??
+          t("Could not load this section", "Tuto část se nepodařilo načíst")}
       </Heading>
       <p className="text-gray-400 max-w-md mx-auto leading-relaxed">
-        {description}
+        {description ??
+          t(
+            "TMDB did not answer. It may be a connection problem, or the service may be busy.",
+            "Databáze TMDB neodpověděla. Může jít o potíže s připojením, nebo je služba přetížená.",
+          )}
       </p>
 
       {onRetry && (
@@ -71,7 +78,7 @@ export function LoadFailureNotice({
           className="mt-6 inline-flex items-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 rounded-lg font-semibold transition-colors"
         >
           <RefreshCw className="w-4 h-4" aria-hidden="true" />
-          Try again
+          {t("Try again", "Zkusit znovu")}
         </button>
       )}
     </div>

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { Star, Tv, Film, ChevronDown } from "lucide-react";
 import { getImageUrl } from "@/lib/tmdb-image";
 import { releaseYear } from "@/lib/dates";
@@ -10,6 +10,9 @@ import { createSlug } from "@/lib/utils";
 import { creditRoleLabel, type PersonMovieWork, type PersonTVWork } from "@/lib/person-credits";
 import { movieHref, tvHref } from "@/lib/routes";
 import { useLocalDay } from "@/hooks/useLocalDay";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount, pluralForm, type PluralForms, formatRating } from "@/i18n/format";
+import type { Locale } from "@/i18n/locale";
 
 interface PersonFilmographyProps {
   movieCredits: PersonMovieWork[];
@@ -27,6 +30,37 @@ function getYear(date: string | null | undefined): number {
 
 const INITIAL_SHOW = 10;
 
+const MOVIES: PluralForms = {
+  en: ["movie", "movies"],
+  cs: ["film", "filmy", "filmů"],
+};
+const TV_SHOWS: PluralForms = {
+  en: ["TV show", "TV shows"],
+  cs: ["seriál", "seriály", "seriálů"],
+};
+const EPISODES: PluralForms = {
+  en: ["ep.", "ep."],
+  cs: ["epizoda", "epizody", "epizod"],
+};
+
+/**
+ * "Zobrazit všech 24 filmů" – Czech agrees "all" with the count as well as the
+ * noun ("všechny 3 filmy"). English keeps the sentence it has always had.
+ */
+function showAllLabel(
+  count: number,
+  english: string,
+  forms: PluralForms,
+  locale: Locale,
+): string {
+  if (locale !== "cs") return english;
+  const all = pluralForm(count, locale, {
+    en: ["", "all "],
+    cs: ["", "všechny ", "všech "],
+  });
+  return `Zobrazit ${all}${formatCount(count, locale, forms)}`;
+}
+
 export function PersonFilmography({
   movieCredits,
   tvCredits,
@@ -36,6 +70,8 @@ export function PersonFilmography({
   const [showAllMovies, setShowAllMovies] = useState(false);
   const [showAllTV, setShowAllTV] = useState(false);
   const today = useLocalDay();
+  const locale = useLocale();
+  const t = useT();
 
   const movies = [...movieCredits].sort((a, b) => {
     if (sort === "year")
@@ -63,46 +99,48 @@ export function PersonFilmography({
     <section>
       {/* Header row: media filters and sort */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-        <h2 className="text-xl font-bold">Filmography</h2>
+        <h2 className="text-xl font-bold">{t("Filmography", "Filmografie")}</h2>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Media filter buttons */}
           <div
             className="flex rounded-lg overflow-hidden border border-gray-700 text-sm"
             role="group"
-            aria-label="Filter filmography by media type"
+            aria-label={t("Filter filmography by media type", "Filtrovat filmografii podle typu")}
           >
             {(
               [
-                { key: "all", label: "All" },
-                { key: "movies", label: `Movies (${movies.length})` },
-                { key: "tv", label: `TV (${tvShows.length})` },
+                { key: "all", label: t("All", "Vše") },
+                { key: "movies", label: `${t("Movies", "Filmy")} (${movies.length})` },
+                { key: "tv", label: `${t("TV", "Seriály")} (${tvShows.length})` },
               ] as { key: Tab; label: string }[]
-            ).map((t) => (
+            ).map((option) => (
               <button
-                key={t.key}
+                key={option.key}
                 type="button"
-                aria-pressed={tab === t.key}
-                onClick={() => setTab(t.key)}
+                aria-pressed={tab === option.key}
+                onClick={() => setTab(option.key)}
                 className={`px-3 py-1.5 transition-colors ${
-                  tab === t.key
+                  tab === option.key
                     ? "bg-blue-600 text-white"
                     : "bg-gray-800 text-gray-300 hover:bg-gray-700"
                 }`}
               >
-                {t.label}
+                {option.label}
               </button>
             ))}
           </div>
           {/* Sort */}
           <select
-            aria-label="Sort filmography"
+            aria-label={t("Sort filmography", "Řadit filmografii")}
             value={sort}
             onChange={(e) => setSort(e.target.value as SortKey)}
             className="bg-gray-800 border border-gray-700 text-gray-300 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-blue-500"
           >
-            <option value="year">By Year</option>
-            <option value="rating">By Rating</option>
-            <option value="popularity">By Popularity</option>
+            <option value="year">{t("By Year", "Podle roku")}</option>
+            <option value="rating">{t("By Rating", "Podle hodnocení")}</option>
+            <option value="popularity">
+              {t("By Popularity", "Podle popularity")}
+            </option>
           </select>
         </div>
       </div>
@@ -112,7 +150,7 @@ export function PersonFilmography({
         <div className="mb-8">
           {tab === "all" && (
             <h3 className="flex items-center gap-2 text-base font-semibold text-gray-300 mb-3">
-              <Film className="w-4 h-4" /> Movies
+              <Film className="w-4 h-4" /> {t("Movies", "Filmy")}
             </h3>
           )}
           <div className="space-y-2">
@@ -121,7 +159,7 @@ export function PersonFilmography({
               const isCurrent = year === currentYear;
               const isUpcoming =
                 today && movie.release_date && movie.release_date > today;
-              const roleLabel = creditRoleLabel(movie);
+              const roleLabel = creditRoleLabel(movie, locale);
               return (
                 <Link
                   key={movie.id}
@@ -144,7 +182,7 @@ export function PersonFilmography({
                   <span className="w-12 shrink-0 text-sm text-gray-500 text-right">
                     {isUpcoming ? (
                       <span className="text-blue-400 text-xs font-medium">
-                        Soon
+                        {t("Soon", "Brzy")}
                       </span>
                     ) : isCurrent ? (
                       <span className="text-green-400 text-xs font-medium">
@@ -169,7 +207,7 @@ export function PersonFilmography({
                   {movie.vote_average > 0 && (
                     <span className="flex items-center gap-1 text-xs text-yellow-400 shrink-0">
                       <Star className="w-3 h-3 fill-yellow-400" />
-                      {movie.vote_average.toFixed(1)}
+                      {formatRating(movie.vote_average, locale)}
                     </span>
                   )}
                 </Link>
@@ -185,8 +223,13 @@ export function PersonFilmography({
                 className={`w-4 h-4 transition-transform ${showAllMovies ? "rotate-180" : ""}`}
               />
               {showAllMovies
-                ? "Show fewer movies"
-                : `Show all ${movies.length} movies`}
+                ? t("Show fewer movies", "Zobrazit méně filmů")
+                : showAllLabel(
+                    movies.length,
+                    `Show all ${movies.length} movies`,
+                    MOVIES,
+                    locale,
+                  )}
             </button>
           )}
         </div>
@@ -197,14 +240,14 @@ export function PersonFilmography({
         <div>
           {tab === "all" && (
             <h3 className="flex items-center gap-2 text-base font-semibold text-gray-300 mb-3">
-              <Tv className="w-4 h-4" /> TV Shows
+              <Tv className="w-4 h-4" /> {t("TV Shows", "Seriály")}
             </h3>
           )}
           <div className="space-y-2">
             {visibleTV.map((show) => {
               const year = getYear(show.first_air_date);
               const isCurrent = year === currentYear;
-              const roleLabel = creditRoleLabel(show);
+              const roleLabel = creditRoleLabel(show, locale);
               return (
                 <Link
                   key={show.id}
@@ -240,14 +283,18 @@ export function PersonFilmography({
                     <p className="text-gray-500 text-xs truncate">
                       {roleLabel}
                       {roleLabel && show.episode_count ? " · " : ""}
-                      {show.episode_count ? `${show.episode_count} ep.` : ""}
+                      {show.episode_count
+                        ? locale === "cs"
+                          ? formatCount(show.episode_count, locale, EPISODES)
+                          : `${show.episode_count} ep.`
+                        : ""}
                     </p>
                   </div>
                   {/* Rating */}
                   {show.vote_average > 0 && (
                     <span className="flex items-center gap-1 text-xs text-yellow-400 shrink-0">
                       <Star className="w-3 h-3 fill-yellow-400" />
-                      {show.vote_average.toFixed(1)}
+                      {formatRating(show.vote_average, locale)}
                     </span>
                   )}
                 </Link>
@@ -263,15 +310,22 @@ export function PersonFilmography({
                 className={`w-4 h-4 transition-transform ${showAllTV ? "rotate-180" : ""}`}
               />
               {showAllTV
-                ? "Show fewer TV shows"
-                : `Show all ${tvShows.length} TV shows`}
+                ? t("Show fewer TV shows", "Zobrazit méně seriálů")
+                : showAllLabel(
+                    tvShows.length,
+                    `Show all ${tvShows.length} TV shows`,
+                    TV_SHOWS,
+                    locale,
+                  )}
             </button>
           )}
         </div>
       )}
 
       {movies.length === 0 && tvShows.length === 0 && (
-        <p className="text-gray-400 py-8 text-center">No credits available.</p>
+        <p className="text-gray-400 py-8 text-center">
+          {t("No credits available.", "Filmografie zatím není k dispozici.")}
+        </p>
       )}
     </section>
   );

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X, Check, Heart } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/LocaleProvider";
 
 type ToastType = "success" | "error" | "info";
 
@@ -78,6 +79,7 @@ interface DismissTimer {
 }
 
 export function ToastContainer() {
+  const t = useT();
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   /**
@@ -109,7 +111,7 @@ export function ToastContainer() {
       timersRef.current.delete(id);
     }
 
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    setToasts((prev) => prev.filter((toast) => toast.id !== id));
   }, []);
 
   // Timers are replaced rather than edited in place: each pause or resume
@@ -221,7 +223,7 @@ export function ToastContainer() {
       <button
         onClick={() => removeToast(toast.id)}
         className="shrink-0 p-1 hover:bg-white/20 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-white focus:ring-opacity-50"
-        aria-label="Dismiss notification"
+        aria-label={t("Dismiss notification", "Zavřít oznámení")}
       >
         <X className="w-3 h-3" aria-hidden="true" />
       </button>
@@ -246,7 +248,7 @@ export function ToastContainer() {
       ref={containerRef}
       className="fixed top-20 right-4 left-4 md:right-4 md:left-auto z-50 md:max-w-96"
       role="region"
-      aria-label="Notifications"
+      aria-label={t("Notifications", "Oznámení")}
       onMouseEnter={() => {
         hoveredRef.current = true;
         syncPause();

@@ -4,13 +4,20 @@ import { useState, useRef, useEffect, useId } from "react";
 import { Share2, Link as LinkIcon, X, Check } from "lucide-react";
 import { toast } from "@/components/Toast";
 import { useTransientFlag } from "@/hooks/useTransientFlag";
+import { useT } from "@/i18n/LocaleProvider";
 
 interface ShareButtonProps {
   title: string;
   url: string;
 }
 
+/**
+ * `url` is shared as given: the caller passes the page's own address in the
+ * page's language (`absoluteMediaUrl(…, locale)`), so a share from a Czech
+ * page links to the Czech page.
+ */
 export function ShareButton({ title, url }: ShareButtonProps) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [copied, markCopied] = useTransientFlag(2000);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -83,7 +90,10 @@ export function ShareButton({ title, url }: ShareButtonProps) {
       await navigator.clipboard.writeText(url);
       markCopied();
     } catch {
-      toast.showToast("Could not copy the link", "error");
+      toast.showToast(
+        t("Could not copy the link", "Odkaz se nepodařilo zkopírovat"),
+        "error",
+      );
     }
   }
 
@@ -138,7 +148,7 @@ export function ShareButton({ title, url }: ShareButtonProps) {
         ref={triggerRef}
         onClick={handleShare}
         className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors"
-        aria-label="Share"
+        aria-label={t("Share", "Sdílet")}
         // Describes the fallback panel below. Where the native sheet opens
         // instead it stays false – nothing of ours expanded. The panel exists
         // only while open, so it is referenced only then.
@@ -146,7 +156,7 @@ export function ShareButton({ title, url }: ShareButtonProps) {
         aria-controls={open ? panelId : undefined}
       >
         <Share2 className="w-4 h-4" aria-hidden="true" />
-        Share
+        {t("Share", "Sdílet")}
       </button>
 
       {open && (
@@ -162,7 +172,7 @@ export function ShareButton({ title, url }: ShareButtonProps) {
               setOpen(false);
             }}
             className="absolute top-2 right-2 text-gray-400 hover:text-white"
-            aria-label="Close"
+            aria-label={t("Close", "Zavřít")}
           >
             <X className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
@@ -189,7 +199,9 @@ export function ShareButton({ title, url }: ShareButtonProps) {
             ) : (
               <LinkIcon className="w-4 h-4" />
             )}
-            {copied ? "Copied!" : "Copy link"}
+            {copied
+              ? t("Copied!", "Zkopírováno!")
+              : t("Copy link", "Kopírovat odkaz")}
           </button>
         </div>
       )}

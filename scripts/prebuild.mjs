@@ -91,6 +91,20 @@ const LISTS = {
  */
 const LIMITS = { movie: 650, tv: 325, person: 600 };
 
+/**
+ * How many of those the Czech tree (`/cs/…`) prerenders too: the first of each
+ * list, so the best-known titles, under slugs made from their Czech names.
+ *
+ * Far fewer, because the Czech tree also doubles everything else – genres,
+ * moods and their platform landings, about 120 MB – and the two trees share
+ * the one gigabyte: roughly 665 MB for English, 120 MB for the rest of the
+ * Czech tree, and these at about 270 KB a page. A person's page is left out
+ * (TMDB rarely has a Czech biography, so the page would mostly repeat the
+ * English one) and links to them reach the `/cs/person?id=` page instead.
+ * Raise these only with `scripts/postbuild.mjs`'s total in view.
+ */
+const CS_LIMITS = { movie: 150, tv: 75, person: 0 };
+
 
 const MAX_IN_FLIGHT = 6;
 const RETRIES = 4;
@@ -115,7 +129,10 @@ nextEnv.loadEnvConfig(fileURLToPath(new URL("..", import.meta.url)), false);
 const token = process.env.NEXT_PUBLIC_TMDB_API_TOKEN;
 
 if (!token) {
-  writeFileSync(OUTPUT, JSON.stringify({ movie: [], tv: [], person: [] }));
+  writeFileSync(
+    OUTPUT,
+    JSON.stringify({ movie: [], tv: [], person: [], cs: { movie: [], tv: [], person: [] } }),
+  );
   console.log("prebuild: no TMDB token – no title pages will be prerendered.");
 } else {
   const result = {};
@@ -163,9 +180,33 @@ if (!token) {
   );
   result.person = rankPeople(credited, LIMITS.person);
 
+  // The Czech tree's titles, each under its Czech name – the name the Czech
+  // pages show, and so the slug their links are built from. TMDB answers a
+  // title with no Czech translation with its original name, which is what the
+  // browser will see too. A title gone since it was listed is simply skipped.
+  const czech = await mapLimit(
+    [
+      ...result.movie.slice(0, CS_LIMITS.movie).map(({ id }) => ({ kind: "movie", id })),
+      ...result.tv.slice(0, CS_LIMITS.tv).map(({ id }) => ({ kind: "tv", id })),
+    ],
+    MAX_IN_FLIGHT,
+    async ({ kind, id }) => {
+      const answer = await tmdb(`/${kind}/${id}`, { language: "cs-CZ" }, { missingIsNull: true });
+      const name = answer?.title ?? answer?.name;
+      return typeof name === "string" ? { kind, id, name } : null;
+    },
+  );
+  result.cs = {
+    movie: czech.filter((entry) => entry?.kind === "movie").map(({ id, name }) => ({ id, name })),
+    tv: czech.filter((entry) => entry?.kind === "tv").map(({ id, name }) => ({ id, name })),
+    // A person's name is the same in both languages.
+    person: result.person.slice(0, CS_LIMITS.person),
+  };
+
   writeFileSync(OUTPUT, JSON.stringify(result));
   console.log(
-    `prebuild: prerendering ${result.movie.length} films, ${result.tv.length} series and ${result.person.length} people.`,
+    `prebuild: prerendering ${result.movie.length} films, ${result.tv.length} series and ${result.person.length} people` +
+      ` (in Czech: ${result.cs.movie.length} films, ${result.cs.tv.length} series, ${result.cs.person.length} people).`,
   );
 }
 

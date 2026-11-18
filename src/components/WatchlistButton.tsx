@@ -7,10 +7,11 @@ import { useTransientFlag } from "@/hooks/useTransientFlag";
 import { useProfileGuard } from "@/hooks/useProfileGuard";
 import { useWatchlist } from "@/contexts/WatchlistContext";
 import { toast } from "@/components/Toast";
-import { STORAGE_REFUSED_MESSAGE } from "@/lib/media-list";
+import { storageRefusedMessage } from "@/lib/media-list";
 import { isInWatchlist as isStoredInWatchlist } from "@/lib/watchlist";
 import { withProfileStorage } from "@/lib/profile-storage";
 import { MediaItem } from "@/types/tmdb";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 
 interface WatchlistButtonProps {
   item: MediaItem;
@@ -25,6 +26,8 @@ export function WatchlistButton({
 }: WatchlistButtonProps) {
   const { addItem, removeItem, isInWatchlist, refreshWatchlist, profileId } = useWatchlist();
   const { checkProfile } = useProfileGuard();
+  const locale = useLocale();
+  const t = useT();
   const [isAnimating, animate] = useTransientFlag(300);
   const saving = useRef(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -39,6 +42,8 @@ export function WatchlistButton({
     ? isInWatchlist(item.id, item.media_type as "movie" | "tv")
     : false;
 
+  const storageRefused = storageRefusedMessage(locale);
+
   const handleClick = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -47,7 +52,13 @@ export function WatchlistButton({
     const current = withProfileStorage(profileId, () => {
       if (isStoredInWatchlist(item.id, item.media_type) !== inWatchlist) {
         refreshWatchlist();
-        toast.showToast("Your watchlist changed. Review the current title and try again.", "info");
+        toast.showToast(
+          t(
+            "Your watchlist changed. Review the current title and try again.",
+            "Váš seznam se mezitím změnil. Zkontrolujte titul a zkuste to znovu.",
+          ),
+          "info",
+        );
         return false;
       }
       return true;
@@ -62,18 +73,36 @@ export function WatchlistButton({
       if (inWatchlist) {
         const result = await removeItem(item.id, item.media_type as "movie" | "tv");
         if (result === "ok") {
-          toast.showToast(`Removed "${item.title}" from watchlist`, "success");
+          toast.showToast(
+            t(
+              `Removed "${item.title}" from watchlist`,
+              `Odebráno ze seznamu: „${item.title}“`,
+            ),
+            "success",
+          );
         } else {
-          toast.showToast(STORAGE_REFUSED_MESSAGE, "error");
+          toast.showToast(storageRefused, "error");
         }
       } else {
         const result = await addItem(item);
         if (result === "ok") {
-          toast.showToast(`Added "${item.title}" to watchlist`, "success");
+          toast.showToast(
+            t(
+              `Added "${item.title}" to watchlist`,
+              `Přidáno na seznam: „${item.title}“`,
+            ),
+            "success",
+          );
         } else if (result === "duplicate") {
-          toast.showToast(`"${item.title}" is already in your watchlist`, "info");
+          toast.showToast(
+            t(
+              `"${item.title}" is already in your watchlist`,
+              `„${item.title}“ už na seznamu máte`,
+            ),
+            "info",
+          );
         } else {
-          toast.showToast(STORAGE_REFUSED_MESSAGE, "error");
+          toast.showToast(storageRefused, "error");
         }
       }
     } finally {
@@ -122,16 +151,22 @@ export function WatchlistButton({
       aria-label={
         isMounted
           ? inWatchlist
-            ? `Remove ${item.title} from watchlist`
-            : `Add ${item.title} to watchlist`
-          : "Toggle watchlist"
+            ? t(
+                `Remove ${item.title} from watchlist`,
+                `Odebrat ${item.title} ze seznamu`,
+              )
+            : t(
+                `Add ${item.title} to watchlist`,
+                `Přidat ${item.title} na seznam`,
+              )
+          : t("Toggle watchlist", "Přidat na seznam, nebo odebrat")
       }
       title={
         isMounted
           ? inWatchlist
-            ? "Remove from watchlist"
-            : "Add to watchlist"
-          : "Watchlist"
+            ? t("Remove from watchlist", "Odebrat ze seznamu")
+            : t("Add to watchlist", "Přidat na seznam")
+          : t("Watchlist", "Seznam")
       }
     >
       <div className="relative">

@@ -5,6 +5,8 @@ import Image from "next/image";
 import { X, ChevronLeft, ChevronRight, Images } from "lucide-react";
 import { getImageUrl, type ImageSize } from "@/lib/tmdb-image";
 import type { TMDBImage } from "@/types/tmdb";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount, type PluralForms } from "@/i18n/format";
 
 interface MediaGalleryProps {
   backdrops: TMDBImage[];
@@ -42,6 +44,7 @@ function Lightbox({
   title: string;
   onClose: () => void;
 }) {
+  const t = useT();
   const [index, setIndex] = useState(startIndex);
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -117,7 +120,7 @@ function Lightbox({
       className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
       role="dialog"
       aria-modal="true"
-      aria-label={`${title} image gallery`}
+      aria-label={t(`${title} image gallery`, `Galerie obrázků – ${title}`)}
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -128,7 +131,7 @@ function Lightbox({
         type="button"
         className="absolute top-4 right-4 z-10 text-white/70 hover:text-white"
         onClick={onClose}
-        aria-label="Close"
+        aria-label={t("Close", "Zavřít")}
       >
         <X className="w-8 h-8" />
       </button>
@@ -151,7 +154,7 @@ function Lightbox({
             e.stopPropagation();
             prev();
           }}
-          aria-label="Previous"
+          aria-label={t("Previous", "Předchozí")}
         >
           <ChevronLeft className="w-8 h-8" />
         </button>
@@ -164,7 +167,7 @@ function Lightbox({
       >
         <Image
           src={getImageUrl(img.file_path, LIGHTBOX_SIZE[kind])}
-          alt={`${title} — image ${index + 1}`}
+          alt={imageLabel(title, index, t)}
           fill
           className="object-contain"
           sizes="(max-width: 1024px) 100vw, 1024px"
@@ -180,7 +183,7 @@ function Lightbox({
             e.stopPropagation();
             next();
           }}
-          aria-label="Next"
+          aria-label={t("Next", "Další")}
         >
           <ChevronRight className="w-8 h-8" />
         </button>
@@ -191,7 +194,24 @@ function Lightbox({
 
 const MAX_DISPLAY = 18;
 
+/** "Fight Club — image 3", one image's name in the grid and the lightbox. */
+function imageLabel(
+  title: string,
+  index: number,
+  t: (en: string, cs: string) => string,
+): string {
+  return t(`${title} — image ${index + 1}`, `${title} – obrázek ${index + 1}`);
+}
+
+/** The tab's noun, agreed with a count: "25 backdrops", "25 záběrů". */
+const TAB_NOUN: Record<Tab, PluralForms> = {
+  backdrops: { en: ["backdrop", "backdrops"], cs: ["záběr", "záběry", "záběrů"] },
+  posters: { en: ["poster", "posters"], cs: ["plakát", "plakáty", "plakátů"] },
+};
+
 export function MediaGallery({ backdrops, posters, title }: MediaGalleryProps) {
+  const locale = useLocale();
+  const t = useT();
   const [tab, setTab] = useState<Tab>("backdrops");
   const [lightbox, setLightbox] = useState<{
     images: TMDBImage[];
@@ -219,32 +239,38 @@ export function MediaGallery({ backdrops, posters, title }: MediaGalleryProps) {
     <div className="mt-8">
       <h2 className="text-2xl font-bold mb-4 text-white flex items-center gap-2">
         <Images className="w-6 h-6 text-gray-400" />
-        Gallery
+        {t("Gallery", "Galerie")}
       </h2>
 
       {/* Tabs – toggle buttons rather than a tablist: there is no arrow-key
           roving or panel to label, just "which set is showing". aria-pressed is
           what tells a screen reader that, since the colour alone did not. */}
       {hasBackdrops && hasPosters && (
-        <div className="flex gap-2 mb-4" role="group" aria-label="Image type">
-          {(["backdrops", "posters"] as Tab[]).map((t) => (
+        <div
+          className="flex gap-2 mb-4"
+          role="group"
+          aria-label={t("Image type", "Typ obrázků")}
+        >
+          {(["backdrops", "posters"] as Tab[]).map((kind) => (
             <button
-              key={t}
+              key={kind}
               type="button"
-              aria-pressed={activeTab === t}
+              aria-pressed={activeTab === kind}
               onClick={() => {
-                setTab(t);
+                setTab(kind);
                 setShowAll(false);
               }}
               className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                activeTab === t
+                activeTab === kind
                   ? "bg-blue-600 text-white"
                   : "bg-gray-800 text-gray-300 hover:bg-gray-700"
               }`}
             >
-              {t === "backdrops" ? "Backdrops" : "Posters"}
+              {kind === "backdrops"
+                ? t("Backdrops", "Záběry")
+                : t("Posters", "Plakáty")}
               <span className="ml-1.5 text-xs opacity-70">
-                {t === "backdrops" ? backdrops.length : posters.length}
+                {kind === "backdrops" ? backdrops.length : posters.length}
               </span>
             </button>
           ))}
@@ -266,12 +292,12 @@ export function MediaGallery({ backdrops, posters, title }: MediaGalleryProps) {
             onClick={() => setLightbox({ images, kind: activeTab, index: i })}
             className="relative overflow-hidden rounded-lg bg-gray-800 hover:opacity-90 transition-opacity group"
             style={{ aspectRatio: `${img.width}/${img.height}` }}
-            aria-label={`${title} — image ${i + 1}`}
+            aria-label={imageLabel(title, i, t)}
             aria-haspopup="dialog"
           >
             <Image
               src={getImageUrl(img.file_path, GRID_SIZE[activeTab])}
-              alt={`${title} — image ${i + 1}`}
+              alt={imageLabel(title, i, t)}
               fill
               className="object-cover group-hover:scale-105 transition-transform duration-200"
               sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 300px"
@@ -285,7 +311,12 @@ export function MediaGallery({ backdrops, posters, title }: MediaGalleryProps) {
           onClick={() => setShowAll((v) => !v)}
           className="mt-3 text-blue-400 text-sm hover:underline flex items-center gap-1"
         >
-          {showAll ? "Show fewer" : `Show all ${images.length} ${activeTab}`}
+          {showAll
+            ? t("Show fewer", "Zobrazit méně")
+            : locale === "cs"
+              ? // Only shown past MAX_DISPLAY, so always "všech" + genitive.
+                `Zobrazit všech ${formatCount(images.length, locale, TAB_NOUN[activeTab])}`
+              : `Show all ${images.length} ${activeTab}`}
         </button>
       )}
 

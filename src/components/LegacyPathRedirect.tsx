@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect } from "react";
-import { collectionHref, genreHref, titleQueryHref } from "@/lib/routes";
+import {
+  collectionHref,
+  genreHref,
+  prefixLocale,
+  titleQueryHref,
+} from "@/lib/routes";
+import { localeFromPathname, stripLocale } from "@/i18n/locale";
 import { findGenreById, genreSlug } from "@/lib/genre-catalog";
 import { findStreamingPlatform } from "@/lib/streaming-landing";
 import { extractIdFromSlug } from "@/lib/utils";
@@ -232,8 +238,12 @@ async function lookupLegacyTitle(kind: LegacyEntity, id: number): Promise<string
 export function LegacyPathRedirect() {
   useEffect(() => {
     let cancelled = false;
-    void resolveLegacyTarget(window.location.pathname, lookupLegacyTitle).then((target) => {
-      if (!cancelled && target) window.location.replace(target);
+    // The Czech tree's old paths are the English ones under `/cs`: resolved
+    // without the prefix, and sent back into the tree they came from.
+    const pathname = window.location.pathname;
+    const locale = localeFromPathname(pathname);
+    void resolveLegacyTarget(stripLocale(pathname), lookupLegacyTitle).then((target) => {
+      if (!cancelled && target) window.location.replace(prefixLocale(target, locale));
     });
     return () => {
       cancelled = true;

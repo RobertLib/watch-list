@@ -14,6 +14,8 @@
  * leaves the reader to work out.
  */
 
+import type { Locale } from "@/i18n/locale";
+import { formatCount, formatList } from "@/i18n/format";
 import { findGenreById } from "./genre-catalog";
 import { releaseYear } from "./dates";
 import { likeResults } from "./title-details";
@@ -154,8 +156,24 @@ export function isIndexableLikePage(page: LikePageData | null): boolean {
 }
 
 /** "Movies" or "Shows" – the word the page's heading and address use. */
-export function likeNoun(mediaType: MediaType): string {
+export function likeNoun(mediaType: MediaType, locale: Locale = "en"): string {
+  if (locale === "cs") return mediaType === "movie" ? "Filmy" : "Seriály";
   return mediaType === "movie" ? "Movies" : "Shows";
+}
+
+/**
+ * The page's heading: "Movies like Inception", "Filmy jako Počátek". Czech
+ * says "jako" rather than "podobné": "podobné" would want the title in the
+ * dative, which a title from TMDB cannot be put into.
+ */
+export function likeHeading(
+  mediaType: MediaType,
+  title: string,
+  locale: Locale = "en",
+): string {
+  return locale === "cs"
+    ? `${likeNoun(mediaType, locale)} jako ${title}`
+    : `${likeNoun(mediaType, locale)} like ${title}`;
 }
 
 /** "adventure, drama and science fiction". */
@@ -168,7 +186,9 @@ function listWords(words: string[]): string {
  * The page's opening sentence, written from the title's own data: how many,
  * what they share, and what the title is about.
  */
-export function likeIntroduction(page: LikePageData): string {
+export function likeIntroduction(page: LikePageData, locale: Locale = "en"): string {
+  if (locale === "cs") return likeIntroductionCs(page);
+
   const noun = page.mediaType === "movie" ? "films" : "series";
   const genres = page.genres.slice(0, 3).map((genre) => genre.name.toLowerCase());
   const year = page.year ? ` (${page.year})` : "";
@@ -184,4 +204,33 @@ export function likeIntroduction(page: LikePageData): string {
       : "";
 
   return `${count} ${noun} to watch after ${page.title}${year}${shared}${about} starting with the closest match.`;
+}
+
+/**
+ * The same introduction in Czech, which is built differently rather than
+ * translated phrase by phrase.
+ *
+ * The title follows "po filmu" / "po seriálu", where the noun takes the case
+ * and the name – which no code can decline – stays as it is. And the keywords
+ * are left out: TMDB has them in English only, and an English list in the
+ * middle of a Czech sentence reads as a mistake rather than as information.
+ */
+function likeIntroductionCs(page: LikePageData): string {
+  const isMovie = page.mediaType === "movie";
+  const count = formatCount(page.items.length, "cs", {
+    en: isMovie ? ["film", "films"] : ["series", "series"],
+    cs: isMovie ? ["film", "filmy", "filmů"] : ["seriál", "seriály", "seriálů"],
+  });
+  const after = isMovie ? "po filmu" : "po seriálu";
+  const genres = page.genres.slice(0, 3).map((genre) => genre.name.toLowerCase());
+  const year = page.year ? ` (${page.year})` : "";
+
+  const shared =
+    genres.length > 1
+      ? ` se stejnou kombinací žánrů: ${formatList(genres, "cs")}`
+      : genres.length === 1
+        ? ` ze stejného žánru: ${genres[0]}`
+        : "";
+
+  return `${count} ke zhlédnutí ${after} ${page.title}${year}${shared}. Seřazeno od nejpodobnějšího.`;
 }

@@ -8,7 +8,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import Image from "next/image";
 import { useWatchlist } from "@/contexts/WatchlistContext";
 import { useWatched } from "@/contexts/WatchedContext";
@@ -19,7 +19,7 @@ import { LoadFailureNotice } from "@/components/LoadFailureNotice";
 import { ShareListButton } from "@/components/ShareListButton";
 import { WatchlistControls } from "@/components/WatchlistControls";
 import { toast } from "@/components/Toast";
-import { STORAGE_REFUSED_MESSAGE } from "@/lib/media-list";
+import { storageRefusedMessage } from "@/lib/media-list";
 import { useProfileGuard } from "@/hooks/useProfileGuard";
 import { useViewMode } from "@/hooks/useViewMode";
 import { useRatings } from "@/hooks/useRatings";
@@ -54,11 +54,42 @@ import {
 } from "@/lib/watchlist-view";
 import { sanitizeAvailabilityRefs, type WatchlistAvailability } from "@/lib/watchlist-availability";
 import type { MediaItem } from "@/types/tmdb";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount, formatNumber, type PluralForms } from "@/i18n/format";
 
 type Tab = "to-watch" | "watched";
 
 // In display order – which is also arrow-key order for the tab list.
 const TABS: readonly Tab[] = ["to-watch", "watched"];
+
+// The Czech counts below agree in case and number with what follows them, so
+// each carries its whole phrase; the English sentences stay as they were.
+const WATCHED_TITLES: PluralForms = {
+  en: ["title you already saw", "titles you already saw"],
+  cs: ["zhlédnutý titul", "zhlédnuté tituly", "zhlédnutých titulů"],
+};
+const TITLES_TO_WATCH: PluralForms = {
+  en: ["item to watch", "items to watch"],
+  cs: ["titul ke zhlédnutí", "tituly ke zhlédnutí", "titulů ke zhlédnutí"],
+};
+// "U 1 uloženého titulu…", "u 5 uložených titulů…" – the genitive after "u".
+const FAILED_TITLES: PluralForms = {
+  en: ["saved title", "saved titles"],
+  cs: ["uloženého titulu", "uložených titulů", "uložených titulů"],
+};
+// "Zbývá ověřit ještě 1 uložený titul / 2 uložené tituly / 5 uložených titulů."
+const UNCHECKED_TITLES: PluralForms = {
+  en: ["saved title", "saved titles"],
+  cs: ["uložený titul", "uložené tituly", "uložených titulů"],
+};
+const HIDDEN_TITLES: PluralForms = {
+  en: ["more title not shown", "more titles not shown"],
+  cs: [
+    "další titul zatím není zobrazený",
+    "další tituly zatím nejsou zobrazené",
+    "dalších titulů zatím není zobrazeno",
+  ],
+};
 
 function ToolLink({
   href,
@@ -165,6 +196,8 @@ function readTabFromFragment(): Tab {
 }
 
 export function WatchlistPageContent() {
+  const locale = useLocale();
+  const t = useT();
   const { checkProfile } = useProfileGuard("list");
   const {
     watchlist,
@@ -412,18 +445,23 @@ export function WatchlistPageContent() {
   const groups = useMemo(
     () =>
       wantsAvailability
-        ? groupByAvailability(shownItems, availability.byKey, {
-            hasSelectedProviders: availability.hasSelectedProviders,
-            region: availability.region,
-          })
+        ? groupByAvailability(
+            shownItems,
+            availability.byKey,
+            {
+              hasSelectedProviders: availability.hasSelectedProviders,
+              region: availability.region,
+            },
+            locale,
+          )
         : null,
-    [wantsAvailability, shownItems, availability],
+    [wantsAvailability, shownItems, availability, locale],
   );
 
   if (isLoading) {
     return (
       <div className="container mx-auto px-4 py-8">
-        <h1 className="sr-only">My Watchlist</h1>
+        <h1 className="sr-only">{t("My Watchlist", "Můj seznam")}</h1>
         <LoadingSpinner />
       </div>
     );
@@ -438,11 +476,14 @@ export function WatchlistPageContent() {
             <div className="w-24 h-24 mx-auto mb-4 rounded-full bg-gray-800 flex items-center justify-center">
               <Star className="w-12 h-12 text-gray-600" />
             </div>
-            <h1 className="text-3xl font-bold mb-4">Your Watchlist is Empty</h1>
+            <h1 className="text-3xl font-bold mb-4">
+              {t("Your Watchlist is Empty", "Váš seznam je prázdný")}
+            </h1>
             <p className="text-gray-400 text-lg max-w-md mx-auto">
-              Start adding movies and TV shows you want to watch by clicking the
-              heart icon on any media card, and use the eye icon to remember
-              what you have already seen.
+              {t(
+                "Start adding movies and TV shows you want to watch by clicking the heart icon on any media card, and use the eye icon to remember what you have already seen.",
+                "Filmy a seriály, které chcete vidět, si přidáte ikonou srdce na kterékoli kartě. Ikonou oka si zase poznamenáte, co už jste viděli.",
+              )}
             </p>
           </div>
           <Link
@@ -450,7 +491,7 @@ export function WatchlistPageContent() {
             prefetch={false}
             className="inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition-colors"
           >
-            Discover Content
+            {t("Discover Content", "Procházet filmy a seriály")}
           </Link>
         </div>
       </div>
@@ -507,8 +548,14 @@ export function WatchlistPageContent() {
     if (!checkProfile(profileId)) return;
 
     const question = isWatchedTab
-      ? "Are you sure you want to clear your entire watched list?"
-      : "Are you sure you want to clear your entire watchlist?";
+      ? t(
+          "Are you sure you want to clear your entire watched list?",
+          "Opravdu chcete vymazat všechny zhlédnuté tituly?",
+        )
+      : t(
+          "Are you sure you want to clear your entire watchlist?",
+          "Opravdu chcete vymazat celý svůj seznam?",
+        );
     if (!confirm(question)) return;
 
     // The same profile must still be active after the blocking dialog closes.
@@ -518,7 +565,10 @@ export function WatchlistPageContent() {
     setIsClearing(true);
     try {
       if (!(await (isWatchedTab ? clearWatched() : clearWatchlist())) && checkProfile(profileId)) {
-        toast.showToast(STORAGE_REFUSED_MESSAGE, "error");
+        toast.showToast(
+          storageRefusedMessage(locale),
+          "error",
+        );
       }
     } finally {
       clearPending.current = false;
@@ -570,11 +620,16 @@ export function WatchlistPageContent() {
             {item.myRating !== null && (
               <span
                 className="pointer-events-none absolute bottom-2 left-2 z-10 inline-flex items-center gap-1 rounded-md bg-black/80 px-1.5 py-0.5 text-xs font-semibold text-yellow-400"
-                title={`You rated this ${item.myRating}/10`}
+                title={t(
+                  `You rated this ${item.myRating}/10`,
+                  `Vaše hodnocení: ${item.myRating}/10`,
+                )}
               >
                 <Star className="w-3 h-3 fill-current" aria-hidden="true" />
                 {item.myRating}
-                <span className="sr-only">out of 10, your rating</span>
+                <span className="sr-only">
+                  {t("out of 10, your rating", "z 10, vaše hodnocení")}
+                </span>
               </span>
             )}
           </div>
@@ -588,15 +643,23 @@ export function WatchlistPageContent() {
     <div className="container mx-auto px-4 py-8">
       <div className="flex flex-col items-start gap-4 mb-6 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold mb-2">My Watchlist</h1>
+          <h1 className="text-3xl font-bold mb-2">
+            {t("My Watchlist", "Můj seznam")}
+          </h1>
           <p className="text-gray-400">
-            {tab === "watched"
-              ? `${watched.length} ${
-                  watched.length === 1 ? "title" : "titles"
-                } you already saw`
-              : `${watchlist.length} ${
-                  watchlist.length === 1 ? "item" : "items"
-                } to watch`}
+            {locale === "cs"
+              ? formatCount(
+                  tab === "watched" ? watched.length : watchlist.length,
+                  locale,
+                  tab === "watched" ? WATCHED_TITLES : TITLES_TO_WATCH,
+                )
+              : tab === "watched"
+                ? `${watched.length} ${
+                    watched.length === 1 ? "title" : "titles"
+                  } you already saw`
+                : `${watchlist.length} ${
+                    watchlist.length === 1 ? "item" : "items"
+                  } to watch`}
           </p>
         </div>
 
@@ -608,7 +671,7 @@ export function WatchlistPageContent() {
               className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg font-semibold transition-colors shrink-0"
             >
               <CalendarDays className="w-4 h-4" aria-hidden="true" />
-              Calendar
+              {t("Calendar", "Kalendář")}
             </Link>
             <ShareListButton
               items={visibleItems.map((item) => ({
@@ -616,7 +679,9 @@ export function WatchlistPageContent() {
                 mediaType: item.mediaType,
               }))}
               defaultTitle={
-                tab === "watched" ? "What I have watched" : "My watchlist"
+                tab === "watched"
+                  ? t("What I have watched", "Moje zhlédnuté tituly")
+                  : t("My watchlist", "Můj seznam")
               }
             />
             <button
@@ -627,7 +692,7 @@ export function WatchlistPageContent() {
               className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 aria-disabled:opacity-50 aria-disabled:cursor-wait rounded-lg font-semibold transition-colors shrink-0"
             >
               <Trash2 className="w-4 h-4" />
-              Clear All
+              {t("Clear All", "Vymazat vše")}
             </button>
           </div>
         )}
@@ -638,25 +703,45 @@ export function WatchlistPageContent() {
           not where anyone looks while standing in front of their own list. */}
       {hasItemsOnTab && (
         <nav
-          aria-label="Watchlist tools"
+          aria-label={t("Watchlist tools", "Nástroje seznamu")}
           className="flex gap-2 overflow-x-auto pb-1 mb-6"
         >
-          <ToolLink href="/tonight" icon={Dices} label="Pick for tonight" />
+          <ToolLink
+            href="/tonight"
+            icon={Dices}
+            label={t("Pick for tonight", "Vybrat na dnešní večer")}
+          />
           <ToolLink
             href="/watchlist/ranking"
             icon={Swords}
-            label="Rank these"
+            label={t("Rank these", "Seřadit seznam")}
           />
-          <ToolLink href="/lists" icon={ListPlus} label="Your lists" />
-          <ToolLink href="/ratings" icon={Star} label="What I rated" />
-          <ToolLink href="/match" icon={Users} label="Compare with a friend" />
-          <ToolLink href="/stats" icon={BarChart3} label="Your stats" />
+          <ToolLink
+            href="/lists"
+            icon={ListPlus}
+            label={t("Your lists", "Vaše seznamy")}
+          />
+          <ToolLink
+            href="/ratings"
+            icon={Star}
+            label={t("What I rated", "Moje hodnocení")}
+          />
+          <ToolLink
+            href="/match"
+            icon={Users}
+            label={t("Compare with a friend", "Porovnat seznamy")}
+          />
+          <ToolLink
+            href="/stats"
+            icon={BarChart3}
+            label={t("Your stats", "Vaše statistiky")}
+          />
         </nav>
       )}
 
       <div
         role="tablist"
-        aria-label="Watchlist sections"
+        aria-label={t("Watchlist sections", "Části seznamu")}
         className="flex items-center gap-1 border-b border-gray-800 mb-8"
         onKeyDown={handleTabListKeyDown}
       >
@@ -665,7 +750,7 @@ export function WatchlistPageContent() {
           activeTab={tab}
           onSelect={selectTab}
           icon={<Heart className="w-4 h-4" aria-hidden="true" />}
-          label="To Watch"
+          label={t("To Watch", "Ke zhlédnutí")}
           count={watchlist.length}
           // The same red the watchlist carries in the navigation counter
           countClassName="bg-red-600"
@@ -675,7 +760,7 @@ export function WatchlistPageContent() {
           activeTab={tab}
           onSelect={selectTab}
           icon={<Eye className="w-4 h-4" aria-hidden="true" />}
-          label="Watched"
+          label={t("Watched", "Zhlédnuto")}
           count={watched.length}
           countClassName="bg-green-600"
         />
@@ -704,20 +789,39 @@ export function WatchlistPageContent() {
               <>
                 {isAvailabilityPending ? (
                   <p role="status" className="text-sm text-gray-400 mb-6">
-                    Checking streaming availability…
+                    {t(
+                      "Checking streaming availability…",
+                      "Ověřujeme dostupnost na streamovacích službách…",
+                    )}
                   </p>
                 ) : availability.failedKeys.length > 0 && (
                   <LoadFailureNotice
-                    title="Could not check streaming availability"
-                    description={`Availability could not be checked for ${availability.failedKeys.length} saved ${availability.failedKeys.length === 1 ? "title" : "titles"}. Try again to check them.${availability.checked > 0 ? " Confirmed results are still shown below." : ""}`}
+                    title={t(
+                      "Could not check streaming availability",
+                      "Dostupnost na streamovacích službách se nepodařilo ověřit",
+                    )}
+                    description={t(
+                      `Availability could not be checked for ${availability.failedKeys.length} saved ${availability.failedKeys.length === 1 ? "title" : "titles"}. Try again to check them.${availability.checked > 0 ? " Confirmed results are still shown below." : ""}`,
+                      `U ${formatCount(availability.failedKeys.length, locale, FAILED_TITLES)} se dostupnost nepodařilo ověřit. Zkuste to znovu.${availability.checked > 0 ? " Výsledky, které se ověřit podařilo, zůstávají zobrazené níže." : ""}`,
+                    )}
                     onRetry={retryAvailability}
                     compact
                   />
                 )}
                 {!isAvailabilityPending && uncheckedAvailabilityCount > 0 && (
                   <p className="text-sm text-gray-500 mb-6" role="note">
-                    {uncheckedAvailabilityCount} more saved {uncheckedAvailabilityCount === 1 ? "title has" : "titles have"} not been checked.
-                    {" "}Availability is checked for a limited number of titles at a time.
+                    {locale === "cs" ? (
+                      <>
+                        Zbývá ověřit ještě{" "}
+                        {formatCount(uncheckedAvailabilityCount, locale, UNCHECKED_TITLES)}.
+                        {" "}Dostupnost se ověřuje jen u omezeného počtu titulů najednou.
+                      </>
+                    ) : (
+                      <>
+                        {uncheckedAvailabilityCount} more saved {uncheckedAvailabilityCount === 1 ? "title has" : "titles have"} not been checked.
+                        {" "}Availability is checked for a limited number of titles at a time.
+                      </>
+                    )}
                   </p>
                 )}
               </>
@@ -725,7 +829,10 @@ export function WatchlistPageContent() {
 
             {visibleItems.length === 0 ? (
               <p className="text-gray-400 py-12 text-center">
-                Nothing here matches those filters.
+                {t(
+                  "Nothing here matches those filters.",
+                  "Těmto filtrům tu nic neodpovídá.",
+                )}
               </p>
             ) : (
               <>
@@ -893,6 +1000,7 @@ function ShowMoreButton({
   hiddenCount: number;
   onShowMore: () => void;
 }) {
+  const locale = useLocale();
   const nextBatch = Math.min(hiddenCount, PAGE_SIZE);
 
   return (
@@ -907,16 +1015,27 @@ function ShowMoreButton({
         )}
       >
         <ChevronDown className="w-4 h-4" aria-hidden="true" />
-        Show {nextBatch} more
+        {locale === "cs" ? (
+          <>Zobrazit ještě {formatNumber(nextBatch, locale)}</>
+        ) : (
+          <>Show {nextBatch} more</>
+        )}
       </button>
       <p className="text-sm text-gray-500">
-        {hiddenCount} more {hiddenCount === 1 ? "title" : "titles"} not shown
+        {locale === "cs" ? (
+          formatCount(hiddenCount, locale, HIDDEN_TITLES)
+        ) : (
+          <>
+            {hiddenCount} more {hiddenCount === 1 ? "title" : "titles"} not shown
+          </>
+        )}
       </p>
     </div>
   );
 }
 
 function EmptyTab({ tab }: { tab: Tab }) {
+  const t = useT();
   return (
     <div className="text-center py-16">
       <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-800 flex items-center justify-center">
@@ -928,8 +1047,14 @@ function EmptyTab({ tab }: { tab: Tab }) {
       </div>
       <p className="text-gray-400 max-w-md mx-auto">
         {tab === "watched"
-          ? "Nothing marked as watched yet. Use the eye icon on any poster to remember what you have seen – it leaves your watchlist and stops showing up in your recommendations."
-          : "Nothing waiting to be watched. Add titles with the heart icon on any poster."}
+          ? t(
+              "Nothing marked as watched yet. Use the eye icon on any poster to remember what you have seen – it leaves your watchlist and stops showing up in your recommendations.",
+              "Zatím tu nic zhlédnutého není. Ikonou oka na kterémkoli plakátu si poznamenáte, co už jste viděli – titul tím zmizí ze seznamu a přestane se vám objevovat v doporučeních.",
+            )
+          : t(
+              "Nothing waiting to be watched. Add titles with the heart icon on any poster.",
+              "Na zhlédnutí tu nic nečeká. Tituly si přidáte ikonou srdce na kterémkoli plakátu.",
+            )}
       </p>
       {tab === "to-watch" && (
         <Link
@@ -937,7 +1062,7 @@ function EmptyTab({ tab }: { tab: Tab }) {
           prefetch={false}
           className="mt-6 inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition-colors"
         >
-          Discover Content
+          {t("Discover Content", "Procházet filmy a seriály")}
         </Link>
       )}
     </div>

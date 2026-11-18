@@ -2,14 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { Check, Clock, Play } from "lucide-react";
 import { getContinueWatching } from "@/lib/api";
 import { useEpisodeProgress } from "@/contexts/EpisodeProgressContext";
 import { toast } from "@/components/Toast";
 import { LoadFailureNotice } from "@/components/LoadFailureNotice";
 import { useLocalDay } from "@/hooks/useLocalDay";
-import { STORAGE_REFUSED_MESSAGE } from "@/lib/media-list";
+import { storageRefusedMessage } from "@/lib/media-list";
 import { todayLocal } from "@/lib/dates";
 import { getImageUrl } from "@/lib/tmdb-image";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,7 @@ import type { UpNextEpisode } from "@/lib/continue-watching";
 import { getEpisodeProgress, type ShowRef } from "@/lib/episode-progress";
 import { getActiveProfileId } from "@/lib/profiles";
 import { tvHref } from "@/lib/routes";
+import { useT, useLocale } from "@/i18n/LocaleProvider";
 
 // Ticking several episodes in a row should cost one request, not one per click.
 const REFRESH_DELAY_MS = 500;
@@ -28,11 +29,13 @@ const REFRESH_DELAY_MS = 500;
  * home page itself stays statically rendered, exactly like the recommendations.
  */
 export function ContinueWatching() {
+  const locale = useLocale();
   // The owner must stay with the loaded progress and its write callbacks until
   // the context refreshes, even if another tab already changed the active pointer.
   const { shows, profileId, isLoading, setSeasonWatched, isEpisodeWatched } =
     useEpisodeProgress();
   const today = useLocalDay();
+  const t = useT();
 
   const seeds = useMemo(
     () =>
@@ -117,7 +120,10 @@ export function ContinueWatching() {
   if (failed) {
     return (
       <LoadFailureNotice
-        title="Could not load Continue Watching"
+        title={t(
+          "Could not load Continue Watching",
+          "Řadu Pokračovat ve sledování se nepodařilo načíst",
+        )}
         onRetry={() => setAttempt((current) => current + 1)}
         compact
       />
@@ -135,11 +141,13 @@ export function ContinueWatching() {
           id="continue-watching-heading"
           className="text-2xl font-bold text-white"
         >
-          Continue Watching
+          {t("Continue Watching", "Pokračovat ve sledování")}
         </h2>
         <p className="text-sm text-gray-400 mt-1">
-          Pick up where you left off – tick an episode and the next one takes its
-          place.
+          {t(
+            "Pick up where you left off – tick an episode and the next one takes its place.",
+            "Navažte tam, kde jste skončili – odškrtněte epizodu a na její místo přijde další.",
+          )}
         </p>
       </div>
 
@@ -179,7 +187,7 @@ export function ContinueWatching() {
               } catch (error) {
                 console.error("Error reading episode progress before marking watched:", error);
               }
-              toast.showToast(STORAGE_REFUSED_MESSAGE, "error");
+              toast.showToast(storageRefusedMessage(locale), "error");
             }}
           />
         ))}
@@ -205,6 +213,7 @@ function UpNextCard({
   isWatched: boolean;
   onMarkWatched: () => Promise<void>;
 }) {
+  const t = useT();
   const saving = useRef(false);
   const [isSaving, setIsSaving] = useState(false);
   const code = `S${String(episode.seasonNumber).padStart(2, "0")}E${String(
@@ -245,7 +254,7 @@ function UpNextCard({
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-gray-600 text-sm">
-              No image
+              {t("No image", "Bez obrázku")}
             </div>
           )}
 
@@ -274,7 +283,10 @@ function UpNextCard({
             aria-valuenow={episode.watchedCount}
             aria-valuemin={0}
             aria-valuemax={episode.airedCount}
-            aria-label={`${episode.showName} progress`}
+            aria-label={t(
+              `${episode.showName} progress`,
+              `${episode.showName} – postup ve sledování`,
+            )}
           >
             <div
               className="h-full rounded-full bg-green-500 transition-[width] duration-300"
@@ -300,7 +312,7 @@ function UpNextCard({
             className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-medium text-white transition-colors"
           >
             <Play className="w-3.5 h-3.5" aria-hidden="true" />
-            Details
+            {t("Details", "Podrobnosti")}
           </Link>
           <button
             onClick={async () => {
@@ -321,12 +333,18 @@ function UpNextCard({
             className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 aria-disabled:opacity-60 aria-disabled:cursor-default text-sm font-medium text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
             aria-label={
               isWatched
-                ? `${episode.showName} ${code} is watched`
-                : `Mark ${episode.showName} ${code} as watched`
+                ? t(
+                    `${episode.showName} ${code} is watched`,
+                    `${episode.showName} ${code} – zhlédnuto`,
+                  )
+                : t(
+                    `Mark ${episode.showName} ${code} as watched`,
+                    `Označit ${episode.showName} ${code} jako zhlédnuté`,
+                  )
             }
           >
             <Check className="w-4 h-4" aria-hidden="true" />
-            Watched
+            {t("Watched", "Zhlédnuto")}
           </button>
         </div>
       </div>

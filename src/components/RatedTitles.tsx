@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { Star, X } from "lucide-react";
 import { getTitlesResolutionByRefs } from "@/lib/api";
 import { LoadFailureNotice } from "@/components/LoadFailureNotice";
@@ -12,7 +12,7 @@ import { useProfileGuard } from "@/hooks/useProfileGuard";
 import { useWatched } from "@/contexts/WatchedContext";
 import { useWatchlist } from "@/contexts/WatchlistContext";
 import { toast } from "@/components/Toast";
-import { STORAGE_REFUSED_MESSAGE } from "@/lib/media-list";
+import { storageRefusedMessage } from "@/lib/media-list";
 import {
   MAX_RATED_SHOWN,
   RATED_SORT_LABELS,
@@ -25,6 +25,16 @@ import { getImageUrl } from "@/lib/tmdb-image";
 import { cn, createSlug, mediaItemKey } from "@/lib/utils";
 import type { MediaItem } from "@/types/tmdb";
 import { mediaHref } from "@/lib/routes";
+import { formatTmdbDate } from "@/lib/dates";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount, formatNumber } from "@/i18n/format";
+
+/** "1. 5. 2024" – the day a score was given, the way a Czech reader writes it. */
+const CS_RATED_DATE: Intl.DateTimeFormatOptions = {
+  day: "numeric",
+  month: "numeric",
+  year: "numeric",
+};
 
 /**
  * Everything the viewer has scored, with the score.
@@ -41,6 +51,8 @@ import { mediaHref } from "@/lib/routes";
 export function RatedTitles() {
   const { ratings, unrate, profileId } = useRatings();
   const { checkProfile } = useProfileGuard();
+  const locale = useLocale();
+  const t = useT();
   const { watched } = useWatched();
   const { watchlist } = useWatchlist();
   const [sort, setSort] = useState<RatedSort>("score");
@@ -136,25 +148,50 @@ export function RatedTitles() {
       {failed && (
         <LoadFailureNotice
           compact
-          title="Could not load title details"
-          description="Your saved scores are shown below. Names and posters are shown where available. Check your connection and try again."
+          title={t("Could not load title details", "Podrobnosti titulů se nepodařilo načíst")}
+          description={t(
+            "Your saved scores are shown below. Names and posters are shown where available. Check your connection and try again.",
+            "Vaše uložená hodnocení najdete níže, názvy a plakáty u nich tam, kde jsou k dispozici. Zkontrolujte připojení a zkuste to znovu.",
+          )}
           onRetry={() => setAttempt((n) => n + 1)}
         />
       )}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <p className="text-gray-400">
-          {summary.total} rated
-          {summary.series > 0 &&
-            ` · ${summary.films} film${summary.films === 1 ? "" : "s"}, ${
-              summary.series
-            } series`}
-          {summary.average !== null &&
-            ` · you average ${summary.average.toFixed(1)}`}
-        </p>
+        {locale === "cs" ? (
+          <p className="text-gray-400">
+            {formatCount(summary.total, locale, {
+              en: ["rated", "rated"],
+              cs: ["ohodnocený titul", "ohodnocené tituly", "ohodnocených titulů"],
+            })}
+            {summary.series > 0 &&
+              ` · ${formatCount(summary.films, locale, {
+                en: ["film", "films"],
+                cs: ["film", "filmy", "filmů"],
+              })}, ${formatCount(summary.series, locale, {
+                en: ["series", "series"],
+                cs: ["seriál", "seriály", "seriálů"],
+              })}`}
+            {summary.average !== null &&
+              ` · průměrně dáváte ${formatNumber(summary.average, locale, {
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 1,
+              })}`}
+          </p>
+        ) : (
+          <p className="text-gray-400">
+            {summary.total} rated
+            {summary.series > 0 &&
+              ` · ${summary.films} film${summary.films === 1 ? "" : "s"}, ${
+                summary.series
+              } series`}
+            {summary.average !== null &&
+              ` · you average ${summary.average.toFixed(1)}`}
+          </p>
+        )}
 
         <div className="flex items-center gap-3">
           <label htmlFor="rated-sort" className="sr-only">
-            Order
+            {t("Order", "Řazení")}
           </label>
           <select
             id="rated-sort"
@@ -164,7 +201,7 @@ export function RatedTitles() {
           >
             {(Object.keys(RATED_SORT_LABELS) as RatedSort[]).map((option) => (
               <option key={option} value={option}>
-                {RATED_SORT_LABELS[option]}
+                {RATED_SORT_LABELS[option][locale]}
               </option>
             ))}
           </select>
@@ -174,7 +211,7 @@ export function RatedTitles() {
               id: ref.id,
               mediaType: ref.mediaType,
             }))}
-            defaultTitle="Films I have rated"
+            defaultTitle={t("Films I have rated", "Moje hodnocení")}
           />
         </div>
       </div>
@@ -186,7 +223,8 @@ export function RatedTitles() {
           const saved = savedTitles[key];
           // A title TMDB no longer knows still has a score, and hiding the row
           // would make the count above look wrong.
-          const title = card?.title ?? saved?.title ?? `Title ${ref.id}`;
+          const title =
+            card?.title ?? saved?.title ?? t(`Title ${ref.id}`, `Titul ${ref.id}`);
           const posterPath = card?.poster_path ?? saved?.posterPath;
           const releaseDate = card?.release_date ?? saved?.releaseDate;
 
@@ -215,9 +253,15 @@ export function RatedTitles() {
                     {title}
                   </p>
                   <p className="text-xs text-gray-500">
-                    {ref.mediaType === "movie" ? "Film" : "Series"}
+                    {ref.mediaType === "movie" ? "Film" : t("Series", "Seriál")}
                     {releaseDate && ` · ${releaseDate.slice(0, 4)}`}
-                    {ref.ratedAt && ` · rated ${ref.ratedAt.slice(0, 10)}`}
+                    {ref.ratedAt &&
+                      (locale === "cs"
+                        ? ` · ohodnoceno ${
+                            formatTmdbDate(ref.ratedAt.slice(0, 10), CS_RATED_DATE, locale) ??
+                            ref.ratedAt.slice(0, 10)
+                          }`
+                        : ` · rated ${ref.ratedAt.slice(0, 10)}`)}
                   </p>
                 </div>
               </Link>
@@ -243,7 +287,10 @@ export function RatedTitles() {
                   setRemoving(new Set(pendingRemovals.current));
                   try {
                     if (!(await unrate(ref.id, ref.mediaType)) && checkProfile(profileId)) {
-                      toast.showToast(STORAGE_REFUSED_MESSAGE, "error");
+                      toast.showToast(
+                        storageRefusedMessage(locale),
+                        "error",
+                      );
                     }
                   } finally {
                     pendingRemovals.current.delete(key);
@@ -251,7 +298,10 @@ export function RatedTitles() {
                   }
                 }}
                 disabled={removing.has(key)}
-                aria-label={`Remove your score for ${title}`}
+                aria-label={t(
+                  `Remove your score for ${title}`,
+                  `Odebrat vaše hodnocení titulu ${title}`,
+                )}
                 className="p-1.5 shrink-0 rounded-lg text-gray-500 hover:text-red-300 hover:bg-white/10 disabled:opacity-50 transition-colors"
               >
                 <X className="w-4 h-4" aria-hidden="true" />
@@ -263,8 +313,18 @@ export function RatedTitles() {
 
       {refs.length > MAX_RATED_SHOWN && (
         <p className="text-sm text-gray-500">
-          Showing the first {MAX_RATED_SHOWN} of {refs.length}. Each one costs a
-          lookup, so the page stops there.
+          {locale === "cs" ? (
+            <>
+              Zobrazujeme prvních {formatNumber(MAX_RATED_SHOWN, locale)} z{" "}
+              {formatNumber(refs.length, locale)}. Každý titul stojí jeden dotaz,
+              a tak stránka končí tady.
+            </>
+          ) : (
+            <>
+              Showing the first {MAX_RATED_SHOWN} of {refs.length}. Each one costs a
+              lookup, so the page stops there.
+            </>
+          )}
         </p>
       )}
     </div>
@@ -272,23 +332,27 @@ export function RatedTitles() {
 }
 
 function NothingRated() {
+  const t = useT();
   return (
     <div className="text-center py-16">
       <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gray-800 flex items-center justify-center">
         <Star className="w-10 h-10 text-gray-600" aria-hidden="true" />
       </div>
-      <h2 className="text-2xl font-bold mb-3">You have not rated anything</h2>
+      <h2 className="text-2xl font-bold mb-3">
+        {t("You have not rated anything", "Zatím jste nic neohodnotili")}
+      </h2>
       <p className="text-gray-400 max-w-md mx-auto">
-        Score anything out of ten from its page. Your scores stay in this browser,
-        show up here, and pull your recommendations towards what you actually
-        liked.
+        {t(
+          "Score anything out of ten from its page. Your scores stay in this browser, show up here, and pull your recommendations towards what you actually liked.",
+          "Cokoli můžete ohodnotit na jeho stránce, na stupnici do deseti. Hodnocení zůstávají v tomto prohlížeči, objeví se tady a posunou vaše doporučení k tomu, co se vám opravdu líbilo.",
+        )}
       </p>
       <Link
         href="/"
         prefetch={false}
         className="mt-6 inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition-colors"
       >
-        Discover Content
+        {t("Discover Content", "Procházet filmy a seriály")}
       </Link>
     </div>
   );

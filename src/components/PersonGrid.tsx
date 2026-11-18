@@ -1,13 +1,42 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { User } from "lucide-react";
 import { createSlug } from "@/lib/utils";
 import { isPlainPrimaryClick } from "@/lib/plain-click";
 import { getImageUrl } from "@/lib/tmdb-image";
 import type { Person } from "@/types/tmdb";
 import { personHref } from "@/lib/routes";
+import { useLocale } from "@/i18n/LocaleProvider";
+import type { Locale } from "@/i18n/locale";
+
+/**
+ * TMDB's `known_for_department`, which it sends in English whatever language
+ * was asked for. Its own fixed list; anything else is shown as it came.
+ */
+const CZECH_DEPARTMENTS: Record<string, string> = {
+  Acting: "Herectví",
+  Directing: "Režie",
+  Writing: "Scénář",
+  Production: "Produkce",
+  Sound: "Zvuk",
+  Camera: "Kamera",
+  Editing: "Střih",
+  Art: "Výprava",
+  Crew: "Štáb",
+  "Visual Effects": "Vizuální efekty",
+  "Costume & Make-Up": "Kostýmy a masky",
+  Lighting: "Osvětlení",
+  Creator: "Tvorba",
+};
+
+/** A person's department in the page's language: "Acting", „Herectví“. */
+export function departmentName(department: string, locale: Locale): string {
+  return locale === "cs"
+    ? (CZECH_DEPARTMENTS[department] ?? department)
+    : department;
+}
 
 /**
  * A grid of people, shared by the search page and the search overlay so the two
@@ -21,6 +50,8 @@ export function PersonGrid({
   /** Lets the overlay close itself when a result is chosen. */
   onSelect?: () => void;
 }) {
+  const locale = useLocale();
+
   if (people.length === 0) return null;
 
   return (
@@ -60,7 +91,7 @@ export function PersonGrid({
           </p>
           {person.known_for_department && (
             <p className="text-xs text-gray-500">
-              {person.known_for_department}
+              {departmentName(person.known_for_department, locale)}
             </p>
           )}
         </Link>

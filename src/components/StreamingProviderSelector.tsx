@@ -5,6 +5,8 @@ import Image from "next/image";
 import { Check, Tv, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getRegionCode } from "@/lib/region";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount, pluralForm } from "@/i18n/format";
 import {
   getRegionalStreamingProviders,
   MAX_PROVIDERS_SHOWN,
@@ -35,7 +37,11 @@ export function StreamingProviderSelector({
   const [providers, setProviders] = useState<StreamingProvider[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadedRegion, setLoadedRegion] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Whether the catalogue failed; the sentence is written at render, in the
+  // page's language, so the effect below need not depend on it.
+  const [error, setError] = useState(false);
+  const locale = useLocale();
+  const t = useT();
 
   // Latest props for the region effect, which must only re-run on region change
   const latestRef = useRef(onUpdate);
@@ -50,7 +56,7 @@ export function StreamingProviderSelector({
     async function fetchProviders() {
       try {
         setIsLoading(true);
-        setError(null);
+        setError(false);
         const nextProviders = await getRegionalStreamingProviders(
           getRegionCode(region),
         );
@@ -69,7 +75,7 @@ export function StreamingProviderSelector({
       } catch (err) {
         if (cancelled) return;
         console.error("Error fetching streaming providers:", err);
-        setError("Failed to load streaming platforms");
+        setError(true);
       } finally {
         if (!cancelled) {
           setLoadedRegion(region);
@@ -104,7 +110,9 @@ export function StreamingProviderSelector({
         aria-live="polite"
       >
         <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-        <span className="ml-3 text-gray-400">Loading platforms...</span>
+        <span className="ml-3 text-gray-400">
+          {t("Loading platforms...", "Načítání streamovacích služeb…")}
+        </span>
       </div>
     );
   }
@@ -112,7 +120,9 @@ export function StreamingProviderSelector({
   if (error) {
     return (
       <div className="py-8 text-center">
-        <p className="text-red-400">{error}</p>
+        <p className="text-red-400">
+          {t("Failed to load streaming platforms", "Streamovací služby se nepodařilo načíst")}
+        </p>
         <button
           type="button"
           aria-disabled={disabled || undefined}
@@ -121,7 +131,7 @@ export function StreamingProviderSelector({
           }}
           className="mt-4 rounded-md bg-gray-700 px-4 py-2 text-white transition-colors hover:bg-gray-600 aria-disabled:cursor-wait aria-disabled:opacity-50"
         >
-          Try Again
+          {t("Try Again", "Zkusit znovu")}
         </button>
       </div>
     );
@@ -147,8 +157,19 @@ export function StreamingProviderSelector({
           aria-live="polite"
         >
           {selectedCount === 0
-            ? "Nothing picked yet, so everything is shown"
-            : `${selectedCount} platform${selectedCount !== 1 ? "s" : ""} picked`}
+            ? t(
+                "Nothing picked yet, so everything is shown",
+                "Zatím nemáte nic vybráno, takže se zobrazuje vše",
+              )
+            : locale === "cs"
+              ? `${pluralForm(selectedCount, locale, {
+                  en: ["picked", "picked"],
+                  cs: ["Vybrána", "Vybrány", "Vybráno"],
+                })} ${formatCount(selectedCount, locale, {
+                  en: ["platform", "platforms"],
+                  cs: ["streamovací služba", "streamovací služby", "streamovacích služeb"],
+                })}`
+              : `${selectedCount} platform${selectedCount !== 1 ? "s" : ""} picked`}
         </p>
 
         <div className="flex gap-2">
@@ -163,7 +184,7 @@ export function StreamingProviderSelector({
               )
             }
           >
-            Popular
+            {t("Popular", "Oblíbené")}
           </QuickAction>
           <QuickAction
             disabled={disabled}
@@ -171,13 +192,13 @@ export function StreamingProviderSelector({
               onUpdate(() => displayedProviders.map((provider) => provider.provider_id), region)
             }
           >
-            Select all
+            {t("Select all", "Vybrat vše")}
           </QuickAction>
           <QuickAction
             onClick={() => onUpdate(() => [], region)}
             disabled={disabled || selectedCount === 0}
           >
-            Clear
+            {t("Clear", "Zrušit výběr")}
           </QuickAction>
         </div>
       </div>

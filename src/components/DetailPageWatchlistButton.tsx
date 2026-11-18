@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import { WatchlistButton } from "@/components/WatchlistButton";
 import { useWatchlist } from "@/contexts/WatchlistContext";
 import { MediaItem } from "@/types/tmdb";
+import { useT } from "@/i18n/LocaleProvider";
 
 interface DetailPageWatchlistButtonProps {
   id: number;
@@ -23,6 +24,7 @@ export function DetailPageWatchlistButton({
   mediaType,
 }: DetailPageWatchlistButtonProps) {
   const { isInWatchlist } = useWatchlist();
+  const t = useT();
   // Prevent hydration mismatch by not showing state-dependent content on server
   const isMounted = useSyncExternalStore(
     () => () => {},
@@ -51,9 +53,9 @@ export function DetailPageWatchlistButton({
       <span className="ml-3 text-sm text-gray-300">
         {isMounted
           ? inWatchlist
-            ? "Remove from Watchlist"
-            : "Add to Watchlist"
-          : "Watchlist"}
+            ? t("Remove from Watchlist", "Odebrat ze seznamu")
+            : t("Add to Watchlist", "Přidat na seznam")
+          : t("Watchlist", "Seznam")}
       </span>
     </div>
   );

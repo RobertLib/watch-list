@@ -1,12 +1,13 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { Play, Info } from "lucide-react";
 import { MediaItem } from "@/types/tmdb";
 import { VideoOverlay } from "./VideoOverlay";
 import { useVideoOverlay } from "@/hooks/useVideoOverlay";
 import { createSlug } from "@/lib/utils";
 import { mediaHref } from "@/lib/routes";
+import { useT } from "@/i18n/LocaleProvider";
 
 interface HeroButtonsProps {
   featuredItem: MediaItem;
@@ -14,13 +15,14 @@ interface HeroButtonsProps {
 
 export function HeroButtons({ featuredItem }: HeroButtonsProps) {
   const { isOpen, video, isLoading, openVideo, closeVideo } = useVideoOverlay();
+  const t = useT();
 
   // Get the correct title for both movies and TV shows
   const title =
     featuredItem.title ||
     ("name" in featuredItem
       ? (featuredItem as { name: string }).name
-      : "Unknown Title");
+      : t("Unknown Title", "Neznámý titul"));
 
   const handlePlayClick = async () => {
     const mediaType = featuredItem.media_type === "movie" ? "movie" : "tv";
@@ -43,21 +45,24 @@ export function HeroButtons({ featuredItem }: HeroButtonsProps) {
           onClick={handlePlayClick}
           disabled={isLoading}
           className="flex items-center justify-center gap-2 bg-white text-black px-4 sm:px-6 lg:px-8 py-2.5 sm:py-3 rounded-md font-semibold hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-black"
-          aria-label={`Play trailer for ${title}`}
+          aria-label={`${t("Play trailer for", "Přehrát trailer:")} ${title}`}
           aria-busy={isLoading}
         >
           <Play className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
-          {isLoading ? "Loading..." : "Play"}
+          {isLoading ? t("Loading...", "Načítání…") : t("Play", "Přehrát")}
         </button>
 
         <Link
           href={detailHref}
           prefetch={false}
           className="flex items-center justify-center gap-2 bg-gray-600/70 text-white px-4 sm:px-6 lg:px-8 py-2.5 sm:py-3 rounded-md font-semibold hover:bg-gray-600/90 transition-colors backdrop-blur-sm text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-black"
-          aria-label={`View more information about ${title}`}
+          aria-label={`${t(
+            "View more information about",
+            "Více informací o titulu",
+          )} ${title}`}
         >
           <Info className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
-          More Info
+          {t("More Info", "Více informací")}
         </Link>
       </div>
 

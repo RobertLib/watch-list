@@ -21,11 +21,11 @@ import {
  * `npm run build` left in `.next/cache`, if any; the server and the browser
  * read the same one, so the links still agree with each other.
  */
-function prerenderedTitleIds(): string {
+function prerenderedTitleIds(locale: "en" | "cs"): string {
   return encodePrerenderedTitles({
-    movie: prerenderedTitles("movie"),
-    tv: prerenderedTitles("tv"),
-    person: prerenderedTitles("person"),
+    movie: prerenderedTitles("movie", locale),
+    tv: prerenderedTitles("tv", locale),
+    person: prerenderedTitles("person", locale),
   });
 }
 
@@ -34,10 +34,10 @@ function prerenderedTitleIds(): string {
  * the same reason: a title page links to one only where the build wrote it,
  * and the prerendered HTML and the hydrating browser have to agree on that.
  */
-function likePageTitleIds(): string {
+function likePageTitleIds(locale: "en" | "cs"): string {
   return encodeLikePageIds({
-    movie: likePageTitles("movie").map(({ id }) => id),
-    tv: likePageTitles("tv").map(({ id }) => id),
+    movie: likePageTitles("movie", locale).map(({ id }) => id),
+    tv: likePageTitles("tv", locale).map(({ id }) => id),
   });
 }
 
@@ -58,9 +58,18 @@ function likePageTitleIds(): string {
  */
 const nextConfig: NextConfig = {
   output: "export",
+  experimental: {
+    // Two root layouts – the English tree and the Czech one under `/cs` – leave
+    // no single layout a 404 could render in, so the page for a URL matching
+    // no route is `app/global-not-found.tsx`, a whole document of its own.
+    globalNotFound: true,
+  },
   env: {
-    PRERENDERED_TITLE_IDS: prerenderedTitleIds(),
-    LIKE_PAGE_TITLE_IDS: likePageTitleIds(),
+    PRERENDERED_TITLE_IDS: prerenderedTitleIds("en"),
+    LIKE_PAGE_TITLE_IDS: likePageTitleIds("en"),
+    // The Czech tree's own, smaller list, under the slugs of the Czech names.
+    PRERENDERED_TITLE_IDS_CS: prerenderedTitleIds("cs"),
+    LIKE_PAGE_TITLE_IDS_CS: likePageTitleIds("cs"),
   },
   images: {
     // No optimiser exists in a static export, so next/image serves TMDB URLs

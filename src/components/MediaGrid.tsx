@@ -5,6 +5,7 @@ import { MemoizedMediaCard } from "./MediaCard";
 import { MemoizedMediaListRow } from "./MediaListRow";
 import { useViewMode } from "@/hooks/useViewMode";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/LocaleProvider";
 
 // Count columns from the space this listing actually has: comparison lists can
 // occupy only half the page even on a wide viewport.
@@ -33,9 +34,10 @@ export function MediaGrid({
   loading = false,
   className,
   size = "medium",
-  emptyMessage = "No items found.",
+  emptyMessage,
   forceShowOverlay = false,
 }: MediaGridProps) {
+  const t = useT();
   // A stored preference shared by every listing on the page, so switching the
   // layout in one section switches all of them.
   const { viewMode } = useViewMode();
@@ -66,7 +68,9 @@ export function MediaGrid({
   if (!items.length) {
     return (
       <div className="text-center py-8">
-        <p className="text-gray-400">{emptyMessage}</p>
+        <p className="text-gray-400">
+          {emptyMessage ?? t("No items found.", "Nic jsme nenašli.")}
+        </p>
       </div>
     );
   }

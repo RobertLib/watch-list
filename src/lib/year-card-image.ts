@@ -130,7 +130,7 @@ export function drawYearCard(context: CanvasRenderingContext2D, card: YearCard):
     y += 84;
     context.fillStyle = "#93c5fd";
     context.font = font(700, 34);
-    context.fillText("MOSTLY", MARGIN, y);
+    context.fillText(card.genresHeading.toUpperCase(), MARGIN, y);
 
     const labelWidth = 330;
     const barMax = inner - labelWidth;

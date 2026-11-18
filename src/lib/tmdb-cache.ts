@@ -16,6 +16,7 @@
  */
 
 import { fetchJsonWithRetry } from "./fetch-with-retry";
+import { INTL_LOCALE, currentLocale } from "@/i18n/locale";
 import type {
   MovieDetails,
   SeasonDetails,
@@ -55,6 +56,43 @@ export const TMDB_CONFIG = {
     };
   },
 } as const;
+
+/**
+ * A TMDB URL in the page's language.
+ *
+ * English is TMDB's default and is left as it was, so the cache keys an
+ * English visitor already holds stay valid. A Czech page asks for `cs-CZ`:
+ * titles, overviews and genre names come back translated, and where TMDB has
+ * no Czech translation it answers with the original title and an empty
+ * overview (`tmdb.ts` fills those from the English translation where it can).
+ *
+ * Two of the appended sections are filtered by that language rather than
+ * translated, and would come back nearly empty: trailers and images exist
+ * mostly in English or with no language at all. So a Czech request takes
+ * Czech first and then those. A URL that already names its language – the
+ * English reviews a Czech page asks for on purpose – is left alone.
+ *
+ * Applied in `cachedFetchJson`, the one door every request goes through, so the
+ * language is part of the cache key and no caller has to remember it.
+ */
+export function localizeTmdbUrl(url: string): string {
+  const locale = currentLocale();
+  if (locale === "en" || !url.startsWith(TMDB_CONFIG.BASE_URL)) return url;
+
+  const parsed = new URL(url);
+  if (parsed.searchParams.has("language")) return url;
+  parsed.searchParams.set("language", INTL_LOCALE[locale]);
+
+  const append = parsed.searchParams.get("append_to_response") ?? "";
+  const sections = new Set(append.split(","));
+  if (sections.has("videos") || parsed.pathname.endsWith("/videos")) {
+    parsed.searchParams.set("include_video_language", `${locale},en,null`);
+  }
+  if (sections.has("images") || parsed.pathname.endsWith("/images")) {
+    parsed.searchParams.set("include_image_language", `${locale},en,null`);
+  }
+  return parsed.toString();
+}
 
 /** Common cache lifetimes, in seconds, named for what they are about. */
 export const TTL = {
@@ -285,11 +323,12 @@ export function tmdbFetchJson<T>(
  * body – so only a getter that owns the URL's format may pass one.
  */
 function cachedFetchJson<T>(
-  url: string,
+  requestedUrl: string,
   ttlSeconds: number,
   options: TMDBRequestOptions,
   select?: (data: unknown) => T,
 ): Promise<T> {
+  const url = localizeTmdbUrl(requestedUrl);
   if (options.signal?.aborted) return Promise.reject(options.signal.reason);
   const priority = options.priority ?? "foreground";
   if (ttlSeconds > 0) {

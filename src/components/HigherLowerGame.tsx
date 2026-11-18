@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import {
   ArrowDown,
   ArrowUp,
@@ -34,9 +34,25 @@ import {
   type DuelFilm,
   type RatedFilm,
 } from "@/lib/rating-duel-data";
-import { absoluteUrl, movieHref } from "@/lib/routes";
+import { absoluteLocalizedUrl, localizeHref, movieHref } from "@/lib/routes";
 import { shareText } from "@/lib/share-text";
 import { useTransientFlag } from "@/hooks/useTransientFlag";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatNumber } from "@/i18n/format";
+import type { Locale } from "@/i18n/locale";
+
+/**
+ * A TMDB score to one decimal: "7.5", or "7,5" on a Czech page. English keeps
+ * `toFixed`, which is what it has always printed.
+ */
+function formatScore(score: number, locale: Locale): string {
+  return locale === "en"
+    ? score.toFixed(1)
+    : formatNumber(score, locale, {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+      });
+}
 
 type Phase =
   | "loading"
@@ -61,6 +77,8 @@ type Phase =
  * the browser, so the game relies on the player's honour.
  */
 export function HigherLowerGame() {
+  const locale = useLocale();
+  const t = useT();
   const [champion, setChampion] = useState<RatedFilm | null>(null);
   const [challenger, setChallenger] = useState<DuelFilm | null>(null);
   const [revealed, setRevealed] = useState<number | null>(null);
@@ -209,7 +227,13 @@ export function HigherLowerGame() {
       if (!isCurrent()) return;
 
       if (!result) {
-        toast.showToast("Could not settle that round – try again", "error");
+        toast.showToast(
+          t(
+            "Could not settle that round – try again",
+            "Kolo se nepodařilo vyhodnotit – zkuste to znovu",
+          ),
+          "error",
+        );
         setPhase("playing");
         return;
       }
@@ -244,8 +268,14 @@ export function HigherLowerGame() {
       if (saved === "refused" || saved === "unavailable") {
         toast.showToast(
           saved === "refused"
-            ? "Your browser would not save this round. Check its storage settings; you can keep playing."
-            : "Could not safely save this round. You can keep playing; another round will retry the save.",
+            ? t(
+                "Your browser would not save this round. Check its storage settings; you can keep playing.",
+                "Prohlížeč toto kolo neuložil. Zkontrolujte nastavení úložiště; hrát můžete dál.",
+              )
+            : t(
+                "Could not safely save this round. You can keep playing; another round will retry the save.",
+                "Kolo se nepodařilo bezpečně uložit. Hrát můžete dál – s dalším kolem se uložení zkusí znovu.",
+              ),
           "error",
         );
       }
@@ -253,7 +283,13 @@ export function HigherLowerGame() {
     } catch (error) {
       if (!isCurrent()) return;
       console.error("Error resolving the round:", error);
-      toast.showToast("Could not settle that round – try again", "error");
+      toast.showToast(
+        t(
+          "Could not settle that round – try again",
+          "Kolo se nepodařilo vyhodnotit – zkuste to znovu",
+        ),
+        "error",
+      );
       setPhase("playing");
     } finally {
       if (pendingRoundVersion.current === version) pendingRoundVersion.current = null;
@@ -315,15 +351,21 @@ export function HigherLowerGame() {
       <div className="max-w-3xl mx-auto text-center py-16 space-y-4">
         <p className="text-gray-400">
           {phase === "next-error"
-            ? "Could not load the next film just now. Your streak is still intact."
-            : "Could not load a pair of films just now."}
+            ? t(
+                "Could not load the next film just now. Your streak is still intact.",
+                "Další film se teď nepodařilo načíst. Vaše série ale trvá dál.",
+              )
+            : t(
+                "Could not load a pair of films just now.",
+                "Dvojici filmů se teď nepodařilo načíst.",
+              )}
         </p>
         <button
           onClick={phase === "next-error" ? loadNextChallenger : restart}
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-colors"
         >
           <RotateCcw className="w-4 h-4" aria-hidden="true" />
-          Try again
+          {t("Try again", "Zkusit znovu")}
         </button>
       </div>
     );
@@ -341,12 +383,13 @@ export function HigherLowerGame() {
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-center justify-between text-sm">
         <span className="text-gray-400">
-          Streak <span className="text-white font-semibold">{streak}</span>
+          {t("Streak", "Série")}{" "}
+          <span className="text-white font-semibold">{streak}</span>
         </span>
         {record.best > 0 && (
           <span className="flex items-center gap-1.5 text-gray-400">
             <Trophy className="w-4 h-4" aria-hidden="true" />
-            best {record.best}
+            {t("best", "rekord")} {formatNumber(record.best, locale)}
           </span>
         )}
       </div>
@@ -366,20 +409,39 @@ export function HigherLowerGame() {
           that mounts already holding its text is not. */}
       <p role="status" className="sr-only">
         {phase === "revealed" && challenger && revealed !== null
-          ? `Correct. ${challenger.title} scored ${revealed.toFixed(1)}. Streak ${streak}.`
+          ? t(
+              `Correct. ${challenger.title} scored ${revealed.toFixed(1)}. Streak ${streak}.`,
+              `Správně. „${challenger.title}“ má hodnocení ${formatScore(revealed, locale)}. Série ${streak}.`,
+            )
           : phase === "over" && challenger && revealed !== null
-            ? `That one went the other way. ${challenger.title} scored ${revealed.toFixed(1)}. You got ${streak} right${beatBest ? " – a new best" : ""}.`
+            ? t(
+                `That one went the other way. ${challenger.title} scored ${revealed.toFixed(1)}. You got ${streak} right${beatBest ? " – a new best" : ""}.`,
+                `Tentokrát vedle. „${challenger.title}“ má hodnocení ${formatScore(revealed, locale)}. Správných odpovědí v řadě: ${streak}${beatBest ? " – nový rekord" : ""}.`,
+              )
             : phase === "complete"
-              ? `You have seen every film in the game. Final score ${streak}${beatBest ? " – a new best" : ""}.`
+              ? t(
+                  `You have seen every film in the game. Final score ${streak}${beatBest ? " – a new best" : ""}.`,
+                  `Viděli jste všechny filmy ve hře. Konečné skóre ${streak}${beatBest ? " – nový rekord" : ""}.`,
+                )
               : ""}
       </p>
 
       {(phase === "playing" || phase === "judging") && challenger && (
         <div className="space-y-3">
           <p className="text-center text-gray-400 text-sm">
-            Did <span className="text-white">{challenger.title}</span> score
-            higher or lower than{" "}
-            <span className="text-white">{champion.title}</span>?
+            {locale === "cs" ? (
+              <>
+                Má <span className="text-white">{challenger.title}</span> vyšší,
+                nebo nižší hodnocení než{" "}
+                <span className="text-white">{champion.title}</span>?
+              </>
+            ) : (
+              <>
+                Did <span className="text-white">{challenger.title}</span> score
+                higher or lower than{" "}
+                <span className="text-white">{champion.title}</span>?
+              </>
+            )}
           </p>
           {/* Kept on screen while the round is settled, aria-disabled rather
               than disabled: native disabled blurs the button just pressed,
@@ -393,7 +455,7 @@ export function HigherLowerGame() {
               className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-green-600 hover:bg-green-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-green-400 aria-disabled:opacity-60 aria-disabled:cursor-wait"
             >
               <ArrowUp className="w-4 h-4" aria-hidden="true" />
-              Higher
+              {t("Higher", "Vyšší")}
             </button>
             <button
               onClick={() => guess("lower")}
@@ -401,7 +463,7 @@ export function HigherLowerGame() {
               className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-red-600 hover:bg-red-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 aria-disabled:opacity-60 aria-disabled:cursor-wait"
             >
               <ArrowDown className="w-4 h-4" aria-hidden="true" />
-              Lower
+              {t("Lower", "Nižší")}
             </button>
           </div>
         </div>
@@ -415,13 +477,15 @@ export function HigherLowerGame() {
 
       {phase === "revealed" && (
         <div className="text-center space-y-3">
-          <p className="text-green-300 font-semibold">Correct.</p>
+          <p className="text-green-300 font-semibold">
+            {t("Correct.", "Správně!")}
+          </p>
           <button
             ref={nextRoundRef}
             onClick={next}
             className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
           >
-            Next round
+            {t("Next round", "Další kolo")}
           </button>
         </div>
       )}
@@ -429,11 +493,14 @@ export function HigherLowerGame() {
       {phase === "complete" && (
         <div className="rounded-xl border border-green-500/40 bg-green-500/10 p-5 text-center space-y-3">
           <p className="text-green-300 font-semibold">
-            That was every film in the game.
+            {t(
+              "That was every film in the game.",
+              "To byly všechny filmy ve hře.",
+            )}
           </p>
           <p className="text-gray-400 text-sm">
-            Final score {streak}
-            {beatBest && " – a new best."}
+            {t("Final score", "Konečné skóre")} {streak}
+            {beatBest && t(" – a new best.", " – nový rekord!")}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <button
@@ -442,7 +509,7 @@ export function HigherLowerGame() {
               className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
             >
               <RotateCcw className="w-4 h-4" aria-hidden="true" />
-              Play again
+              {t("Play again", "Hrát znovu")}
             </button>
             <ShareRunButton streak={streak} beatBest={beatBest} />
           </div>
@@ -452,11 +519,15 @@ export function HigherLowerGame() {
       {phase === "over" && (
         <div className="rounded-xl border border-gray-700 bg-gray-900/60 p-5 text-center space-y-3">
           <p className="text-red-300 font-semibold">
-            That one went the other way.
+            {t("That one went the other way.", "Tentokrát vedle.")}
           </p>
           <p className="text-gray-400 text-sm">
-            You got {streak} right
-            {beatBest && " – a new best."}
+            {locale === "cs"
+              ? streak === 0
+                ? "Tentokrát bez jediné trefy"
+                : `Trefili jste ${streak}× za sebou`
+              : <>You got {streak} right</>}
+            {beatBest && t(" – a new best.", " – nový rekord!")}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <button
@@ -465,7 +536,7 @@ export function HigherLowerGame() {
               className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
             >
               <RotateCcw className="w-4 h-4" aria-hidden="true" />
-              Play again
+              {t("Play again", "Hrát znovu")}
             </button>
             <ShareRunButton streak={streak} beatBest={beatBest} />
           </div>
@@ -487,6 +558,8 @@ function ShareRunButton({
   streak: number;
   beatBest: boolean;
 }) {
+  const locale = useLocale();
+  const t = useT();
   const [copied, markCopied] = useTransientFlag(2000);
 
   if (streak === 0) return null;
@@ -494,14 +567,17 @@ function ShareRunButton({
   async function share() {
     const url =
       typeof window === "undefined"
-        ? absoluteUrl("/daily/higher-lower")
-        : `${window.location.origin}/daily/higher-lower`;
+        ? absoluteLocalizedUrl("/daily/higher-lower", locale)
+        : `${window.location.origin}${localizeHref("/daily/higher-lower", locale)}`;
     const outcome = await shareText(
-      buildHigherLowerShareText(streak, beatBest, url),
+      buildHigherLowerShareText(streak, beatBest, url, locale),
     );
     if (outcome === "copied") markCopied();
     else if (outcome === "failed") {
-      toast.showToast("Could not copy your result", "error");
+      toast.showToast(
+        t("Could not copy your result", "Výsledek se nepodařilo zkopírovat"),
+        "error",
+      );
     }
   }
 
@@ -515,7 +591,9 @@ function ShareRunButton({
       ) : (
         <Share2 className="w-4 h-4" aria-hidden="true" />
       )}
-      {copied ? "Copied" : "Share result"}
+      {copied
+        ? t("Copied", "Zkopírováno")
+        : t("Share result", "Sdílet výsledek")}
     </button>
   );
 }
@@ -530,6 +608,7 @@ function FilmCard({
   rating: number | null;
   highlight?: boolean;
 }) {
+  const locale = useLocale();
   const artwork = film.backdropPath ?? film.posterPath;
 
   return (
@@ -578,7 +657,7 @@ function FilmCard({
             <span className="text-gray-500">?</span>
           ) : (
             <span className="text-white font-semibold tabular-nums">
-              {rating.toFixed(1)}
+              {formatScore(rating, locale)}
             </span>
           )}
         </p>

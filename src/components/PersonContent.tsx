@@ -2,7 +2,7 @@
 
 import { Suspense } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { useSearchParams } from "next/navigation";
 import { tmdbApi } from "@/lib/tmdb";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
@@ -27,30 +27,52 @@ import {
 } from "@/lib/title-details";
 import { formatTmdbDate, releaseYear, yearsBetween } from "@/lib/dates";
 import { personMovieWorks, personTVWorks } from "@/lib/person-credits";
+import { departmentName } from "@/components/PersonGrid";
 import {
-  SITE_URL,
+  absoluteLocalizedUrl,
   absoluteMediaUrl,
-  absoluteUrl,
   movieHref,
   personHref,
   tvHref,
 } from "@/lib/routes";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount, pluralForm, formatRating } from "@/i18n/format";
+import { t as translate, type Locale } from "@/i18n/locale";
 
-function formatGender(gender: number): string {
+function formatGender(gender: number, locale: Locale): string {
   switch (gender) {
     case 1:
-      return "Female";
+      return translate(locale, "Female", "Žena");
     case 2:
-      return "Male";
+      return translate(locale, "Male", "Muž");
     case 3:
-      return "Non-binary";
+      return translate(locale, "Non-binary", "Nebinární");
     default:
-      return "Unknown";
+      return translate(locale, "Unknown", "Neuvedeno");
   }
 }
 
-function formatDate(dateStr: string | null): string {
-  return formatTmdbDate(dateStr) ?? "Unknown";
+function formatDate(dateStr: string | null, locale: Locale): string {
+  return (
+    formatTmdbDate(dateStr, undefined, locale) ??
+    translate(locale, "Unknown", "Neznámé")
+  );
+}
+
+/** "(42 years old)" / "(42 let)". */
+function ageNote(age: string, locale: Locale): string {
+  if (locale !== "cs") return `(${age} years old)`;
+  const years = Number(age);
+  return `(${age} ${pluralForm(years, locale, {
+    en: ["year", "years"],
+    cs: ["rok", "roky", "let"],
+  })})`;
+}
+
+/** "(aged 42)" / "(ve věku 42 let)" – the age at death, in the genitive. */
+function agedNote(age: string, locale: Locale): string {
+  if (locale !== "cs") return `(aged ${age})`;
+  return `(ve věku ${age} ${Number(age) === 1 ? "roku" : "let"})`;
 }
 
 /**
@@ -108,6 +130,8 @@ function PersonDetail({
   snapshot: PersonPageData | null;
 }) {
   const id = extractIdFromSlug(slug);
+  const locale = useLocale();
+  const t = useT();
   const today = useLocalDay();
 
   const { data, isLoading, error, reload, refreshError, isRetrying } = useAsyncData(
@@ -128,10 +152,13 @@ function PersonDetail({
     [data?.details.id],
   );
 
-  useDocumentTitle(data ? personPageTitle(data.details) : null);
+  useDocumentTitle(data ? personPageTitle(data.details, locale) : null);
   useCanonicalUrl(
     data
-      ? absoluteUrl(personHref(createSlug(data.details.name, data.details.id)))
+      ? absoluteLocalizedUrl(
+          personHref(createSlug(data.details.name, data.details.id)),
+          locale,
+        )
       : null,
   );
 
@@ -144,8 +171,11 @@ function PersonDetail({
   if (error && !isNotFoundError(error)) {
     return (
       <LoadFailureNotice
-        title="Could not load this person"
-        description="TMDB did not answer. It may be a connection problem, or the service may be busy – the page is probably still there."
+        title={t("Could not load this person", "Osobnost se nepodařilo načíst")}
+        description={t(
+          "TMDB did not answer. It may be a connection problem, or the service may be busy – the page is probably still there.",
+          "TMDB neodpovídá. Může jít o potíže s připojením, nebo je služba přetížená – stránka tam nejspíš pořád je.",
+        )}
         onRetry={reload}
       />
     );
@@ -157,10 +187,13 @@ function PersonDetail({
   if (!data || isNotFoundError(refreshError)) {
     return (
       <NotFoundNotice
-        title="Person not found"
-        description="We could not find that person. They may have been removed from TMDB, or the link may be incomplete."
+        title={t("Person not found", "Osobnost nenalezena")}
+        description={t(
+          "We could not find that person. They may have been removed from TMDB, or the link may be incomplete.",
+          "Tuto osobnost jsme nenašli. Možná byla z TMDB odstraněna, nebo je odkaz neúplný.",
+        )}
         backHref="/people"
-        backLabel="Browse people"
+        backLabel={t("Browse people", "Procházet osobnosti")}
       />
     );
   }
@@ -168,7 +201,15 @@ function PersonDetail({
   const { details, movieCredits, tvCredits } = data;
   const movies = personMovieWorks(movieCredits);
   const tvShows = personTVWorks(tvCredits);
-  const pageUrl = absoluteUrl(personHref(createSlug(details.name, details.id)));
+  const pageUrl = absoluteLocalizedUrl(
+    personHref(createSlug(details.name, details.id)),
+    locale,
+  );
+  // TMDB sends the department in English in either language; named as the
+  // people search names it (`PersonGrid`), so the two never disagree.
+  const knownFor = details.known_for_department
+    ? departmentName(details.known_for_department, locale)
+    : null;
 
   const age = calculateAge(details.birthday, details.deathday, today);
 
@@ -247,7 +288,7 @@ function PersonDetail({
           release_date: details.birthday ?? undefined,
           deathDate: details.deathday ?? undefined,
           birthPlace: details.place_of_birth ?? undefined,
-          jobTitle: details.known_for_department ?? undefined,
+          jobTitle: knownFor ?? undefined,
           sameAs: details.imdb_id
             ? `https://www.imdb.com/name/${details.imdb_id}`
             : undefined,
@@ -265,35 +306,45 @@ function PersonDetail({
                 ? absoluteMediaUrl(
                     "movie",
                     createSlug((w.item as { title: string }).title, w.item.id),
+                    locale,
                   )
                 : absoluteMediaUrl(
                     "tv",
                     createSlug((w.item as { name: string }).name, w.item.id),
+                    locale,
                   ),
           })),
         }}
+        locale={locale}
       />
       <StructuredData
         type="BreadcrumbList"
         data={{
           breadcrumbItems: [
-            { name: "Home", url: SITE_URL },
-            { name: "People", url: absoluteUrl("/people") },
+            { name: t("Home", "Domů"), url: absoluteLocalizedUrl("/", locale) },
+            {
+              name: t("People", "Osobnosti"),
+              url: absoluteLocalizedUrl("/people", locale),
+            },
             { name: details.name, url: pageUrl },
           ],
         }}
+        locale={locale}
       />
       <div className="container mx-auto px-4 py-8 max-w-6xl">
         <Breadcrumbs
           items={[
-            { label: "People", href: "/people" },
+            { label: t("People", "Osobnosti"), href: "/people" },
             { label: details.name, href: "#" },
           ]}
         />
         {refreshError != null && (
           <SnapshotRefreshNotice
             className="mt-4"
-            message="Showing a saved copy of this page – the latest details could not be loaded."
+            message={t(
+              "Showing a saved copy of this page – the latest details could not be loaded.",
+              "Zobrazujeme uloženou kopii stránky – aktuální údaje se nepodařilo načíst.",
+            )}
             onRetry={reload}
             isRetrying={isRetrying}
           />
@@ -316,35 +367,41 @@ function PersonDetail({
             {/* Personal Info */}
             <div className="bg-gray-800 rounded-lg p-4 space-y-3">
               <h2 className="text-lg font-bold border-b border-gray-700 pb-2">
-                Personal Info
+                {t("Personal Info", "Osobní údaje")}
               </h2>
 
               {/* A <dl>, which every <dt>/<dd> pair below needs: outside one
                   they are invalid markup, and a screen reader loses the
                   term–value pairing that makes "Born" go with the date. */}
               <dl className="space-y-3">
-                {details.known_for_department && (
+                {knownFor && (
                   <div>
-                    <dt className="text-gray-400 text-sm">Known For</dt>
-                    <dd className="text-white">{details.known_for_department}</dd>
+                    <dt className="text-gray-400 text-sm">
+                      {t("Known For", "Obor")}
+                    </dt>
+                    <dd className="text-white">{knownFor}</dd>
                   </div>
                 )}
 
                 <div>
-                  <dt className="text-gray-400 text-sm">Gender</dt>
-                  <dd className="text-white">{formatGender(details.gender)}</dd>
+                  <dt className="text-gray-400 text-sm">{t("Gender", "Pohlaví")}</dt>
+                  <dd className="text-white">
+                    {formatGender(details.gender, locale)}
+                  </dd>
                 </div>
 
                 {details.birthday && (
                   <div>
                     <dt className="text-gray-400 text-sm">
-                      {details.deathday ? "Born" : "Birthday"}
+                      {details.deathday
+                        ? t("Born", "Narození")
+                        : t("Birthday", "Datum narození")}
                     </dt>
                     <dd className="text-white">
-                      {formatDate(details.birthday)}
+                      {formatDate(details.birthday, locale)}
                       {age && !details.deathday && (
                         <span className="text-gray-400 ml-1">
-                          ({age} years old)
+                          {ageNote(age, locale)}
                         </span>
                       )}
                     </dd>
@@ -353,11 +410,15 @@ function PersonDetail({
 
                 {details.deathday && (
                   <div>
-                    <dt className="text-gray-400 text-sm">Day of Death</dt>
+                    <dt className="text-gray-400 text-sm">
+                      {t("Day of Death", "Úmrtí")}
+                    </dt>
                     <dd className="text-white">
-                      {formatDate(details.deathday)}
+                      {formatDate(details.deathday, locale)}
                       {age && (
-                        <span className="text-gray-400 ml-1">(aged {age})</span>
+                        <span className="text-gray-400 ml-1">
+                          {agedNote(age, locale)}
+                        </span>
                       )}
                     </dd>
                   </div>
@@ -365,14 +426,18 @@ function PersonDetail({
 
                 {details.place_of_birth && (
                   <div>
-                    <dt className="text-gray-400 text-sm">Place of Birth</dt>
+                    <dt className="text-gray-400 text-sm">
+                      {t("Place of Birth", "Místo narození")}
+                    </dt>
                     <dd className="text-white">{details.place_of_birth}</dd>
                   </div>
                 )}
 
                 {careerStart && (
                   <div>
-                    <dt className="text-gray-400 text-sm">Career</dt>
+                    <dt className="text-gray-400 text-sm">
+                      {t("Career", "Kariéra")}
+                    </dt>
                     <dd className="text-white">
                       {careerStart}
                       {careerEnd && careerEnd !== careerStart
@@ -384,17 +449,33 @@ function PersonDetail({
 
                 {(movies.length > 0 || tvShows.length > 0) && (
                   <div>
-                    <dt className="text-gray-400 text-sm">Credits</dt>
+                    <dt className="text-gray-400 text-sm">
+                      {t("Credits", "Filmografie")}
+                    </dt>
                     <dd className="text-white">
                       {movies.length > 0 && (
-                        <span>{movies.length} movies</span>
+                        <span>
+                          {locale === "cs"
+                            ? formatCount(movies.length, locale, {
+                                en: ["movie", "movies"],
+                                cs: ["film", "filmy", "filmů"],
+                              })
+                            : `${movies.length} movies`}
+                        </span>
                       )}
                       {movies.length > 0 &&
                         tvShows.length > 0 && (
                           <span className="text-gray-500 mx-1">·</span>
                         )}
                       {tvShows.length > 0 && (
-                        <span>{tvShows.length} TV shows</span>
+                        <span>
+                          {locale === "cs"
+                            ? formatCount(tvShows.length, locale, {
+                                en: ["TV show", "TV shows"],
+                                cs: ["seriál", "seriály", "seriálů"],
+                              })
+                            : `${tvShows.length} TV shows`}
+                        </span>
                       )}
                     </dd>
                   </div>
@@ -402,7 +483,9 @@ function PersonDetail({
 
                 {aliases.length > 0 && (
                   <div>
-                    <dt className="text-gray-400 text-sm mb-1">Also Known As</dt>
+                    <dt className="text-gray-400 text-sm mb-1">
+                      {t("Also Known As", "Další jména")}
+                    </dt>
                     <dd className="space-y-1">
                       {aliases.map((alias) => (
                         <div key={alias} className="text-white text-sm">
@@ -421,10 +504,8 @@ function PersonDetail({
             <h1 className="text-4xl md:text-5xl font-bold mb-1">
               {details.name}
             </h1>
-            {details.known_for_department && (
-              <p className="text-blue-400 font-medium mb-4">
-                {details.known_for_department}
-              </p>
+            {knownFor && (
+              <p className="text-blue-400 font-medium mb-4">{knownFor}</p>
             )}
 
             {details.biography && (
@@ -434,7 +515,9 @@ function PersonDetail({
             {/* Known For */}
             {knownForCombined.length > 0 && (
               <section className="mb-8">
-                <h2 className="text-xl font-bold mb-4">Known For</h2>
+                <h2 className="text-xl font-bold mb-4">
+                  {t("Known For", "Nejznámější tituly")}
+                </h2>
                 <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
                   {knownForCombined.map(({ type, item }) => {
                     const title =
@@ -469,7 +552,7 @@ function PersonDetail({
                             loading="eager"
                           />
                           <div className="absolute top-1 right-1 bg-black/70 rounded px-1 py-0.5 text-xs text-yellow-400 flex items-center gap-0.5">
-                            ★ {item.vote_average.toFixed(1)}
+                            ★ {formatRating(item.vote_average, locale)}
                           </div>
                         </div>
                         <p className="text-xs font-semibold text-white group-hover:text-blue-400 transition-colors leading-tight line-clamp-2">

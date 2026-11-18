@@ -1,15 +1,38 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import Image from "next/image";
 import { Film, Tv, Eye, ArrowRight } from "lucide-react";
 import { useWatchlist } from "@/contexts/WatchlistContext";
 import { useWatched } from "@/contexts/WatchedContext";
 import { getImageUrl } from "@/lib/tmdb-image";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount, pluralForm, type PluralForms } from "@/i18n/format";
+
+// The saved count's English sentence stays as written, so only its Czech half
+// is read; the nouns after the bold counts below go through `pluralForm` whole.
+const SAVED_TITLES: PluralForms = {
+  en: ["title saved", "titles saved"],
+  cs: ["uložený titul", "uložené tituly", "uložených titulů"],
+};
+const MOVIES: PluralForms = {
+  en: ["movie", "movies"],
+  cs: ["film", "filmy", "filmů"],
+};
+const TV_SHOWS: PluralForms = {
+  en: ["TV show", "TV shows"],
+  cs: ["seriál", "seriály", "seriálů"],
+};
+const WATCHED: PluralForms = {
+  en: ["watched", "watched"],
+  cs: ["zhlédnutý", "zhlédnuté", "zhlédnutých"],
+};
 
 export function HomeWatchlistPanel() {
   const { watchlist, isLoading } = useWatchlist();
   const { watched } = useWatched();
+  const locale = useLocale();
+  const t = useT();
 
   if (isLoading) return null;
   if (watchlist.length === 0) return null;
@@ -35,10 +58,16 @@ export function HomeWatchlistPanel() {
             id="watchlist-summary-heading"
             className="text-lg font-semibold text-white leading-tight"
           >
-            Your Watchlist
+            {t("Your Watchlist", "Váš seznam")}
           </h2>
           <p className="text-sm text-gray-400">
-            {watchlist.length} title{watchlist.length !== 1 ? "s" : ""} saved
+            {locale === "cs" ? (
+              formatCount(watchlist.length, locale, SAVED_TITLES)
+            ) : (
+              <>
+                {watchlist.length} title{watchlist.length !== 1 ? "s" : ""} saved
+              </>
+            )}
           </p>
         </div>
 
@@ -47,7 +76,7 @@ export function HomeWatchlistPanel() {
           prefetch={false}
           className="flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300 transition-colors shrink-0 mt-0.5"
         >
-          View all
+          {t("View all", "Zobrazit vše")}
           <ArrowRight className="h-4 w-4" aria-hidden="true" />
         </Link>
       </div>
@@ -104,7 +133,7 @@ export function HomeWatchlistPanel() {
                 <span className="font-semibold text-white">
                   {movies.length}
                 </span>{" "}
-                movie{movies.length !== 1 ? "s" : ""}
+                {pluralForm(movies.length, locale, MOVIES)}
               </span>
             </Link>
           )}
@@ -119,7 +148,7 @@ export function HomeWatchlistPanel() {
                 <span className="font-semibold text-white">
                   {tvShows.length}
                 </span>{" "}
-                TV show{tvShows.length !== 1 ? "s" : ""}
+                {pluralForm(tvShows.length, locale, TV_SHOWS)}
               </span>
             </Link>
           )}
@@ -134,7 +163,7 @@ export function HomeWatchlistPanel() {
                 <span className="font-semibold text-white">
                   {watched.length}
                 </span>{" "}
-                watched
+                {pluralForm(watched.length, locale, WATCHED)}
               </span>
             </Link>
           )}

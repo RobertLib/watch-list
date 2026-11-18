@@ -20,6 +20,7 @@
  */
 
 import { DEFAULT_REGION } from "./settings";
+import { DEFAULT_REGION_FOR, currentLocale, type Locale } from "@/i18n/locale";
 import { mergeCastByPerson } from "./media-converters";
 import { tmdbApi } from "./tmdb";
 import { releaseYearSuffix } from "./dates";
@@ -87,16 +88,29 @@ export function likeResults<T extends Movie | TVShow>(details: {
  * searching a title's name on a site like this one want, and the snippet says
  * it before they click.
  */
-export function moviePageTitle(movie: { title: string; release_date?: string | null }): string {
-  return `${movie.title}${releaseYearSuffix(movie.release_date)} – Where to Watch`;
+export function moviePageTitle(
+  movie: { title: string; release_date?: string | null },
+  locale: Locale = "en",
+): string {
+  return `${movie.title}${releaseYearSuffix(movie.release_date)} – ${
+    locale === "cs" ? "Kde sledovat" : "Where to Watch"
+  }`;
 }
 
-export function tvPageTitle(show: { name: string; first_air_date?: string | null }): string {
-  return `${show.name}${releaseYearSuffix(show.first_air_date)} – Where to Watch`;
+export function tvPageTitle(
+  show: { name: string; first_air_date?: string | null },
+  locale: Locale = "en",
+): string {
+  return `${show.name}${releaseYearSuffix(show.first_air_date)} – ${
+    locale === "cs" ? "Kde sledovat" : "Where to Watch"
+  }`;
 }
 
-export function personPageTitle(person: { name: string }): string {
-  return `${person.name} – Movies & TV Shows`;
+export function personPageTitle(
+  person: { name: string },
+  locale: Locale = "en",
+): string {
+  return `${person.name} – ${locale === "cs" ? "filmy a seriály" : "Movies & TV Shows"}`;
 }
 
 /** Everything a person's page renders from. */
@@ -121,6 +135,15 @@ export async function loadPersonPage(id: number): Promise<PersonPageData> {
  * region sees their own once the browser has loaded the title.
  */
 export const SNAPSHOT_REGION = DEFAULT_REGION;
+
+/**
+ * The snapshot region of a page in `locale` – each tree's default region, so a
+ * Czech page's snapshot carries the Czech providers. At build time the locale
+ * is the one the load runs under (see `build-time-tmdb.ts`).
+ */
+export function snapshotRegion(locale: Locale = currentLocale()): string {
+  return DEFAULT_REGION_FOR[locale];
+}
 
 /** Cast cards shown, as `MovieCast`/`TVCast` count them. */
 const CAST_SHOWN = 12;
@@ -197,8 +220,9 @@ function trimProviders(
   providers: WatchProvidersResponse | undefined,
 ): WatchProvidersResponse | undefined {
   if (!providers) return undefined;
-  const own = providers.results[SNAPSHOT_REGION];
-  return { ...providers, results: own ? { [SNAPSHOT_REGION]: own } : {} };
+  const region = snapshotRegion();
+  const own = providers.results[region];
+  return { ...providers, results: own ? { [region]: own } : {} };
 }
 
 /** Only the names: `LanguageSupport` lists languages, not their overviews. */
@@ -266,7 +290,7 @@ export function movieSnapshot(details: MovieDetails): MovieDetails {
     release_dates: details.release_dates && {
       ...details.release_dates,
       results: details.release_dates.results.filter(
-        (result) => result.iso_3166_1 === SNAPSHOT_REGION,
+        (result) => result.iso_3166_1 === snapshotRegion(),
       ),
     },
   };
@@ -286,7 +310,7 @@ export function tvSnapshot(details: TVShowDetails): TVShowDetails {
     content_ratings: details.content_ratings && {
       ...details.content_ratings,
       results: details.content_ratings.results.filter(
-        (entry) => entry.iso_3166_1 === SNAPSHOT_REGION,
+        (entry) => entry.iso_3166_1 === snapshotRegion(),
       ),
     },
   };

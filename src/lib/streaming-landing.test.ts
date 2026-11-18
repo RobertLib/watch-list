@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   STREAMING_LANDING_PLATFORMS,
   findStreamingPlatform,
+  onPlatform,
   streamingPlatformProviderFilter,
 } from "./streaming-landing";
 
@@ -59,11 +60,20 @@ describe("streamingPlatformProviderFilter", () => {
 
 describe("findStreamingPlatform", () => {
   it("finds a platform by its slug", () => {
-    expect(findStreamingPlatform("netflix")).toEqual({
+    expect(findStreamingPlatform("netflix")).toMatchObject({
       id: 8,
       slug: "netflix",
       name: "Netflix",
     });
+  });
+
+  it("says where a platform streams in either language", () => {
+    const netflix = findStreamingPlatform("netflix")!;
+    const disney = findStreamingPlatform("disney-plus")!;
+    expect(onPlatform(netflix, "en")).toBe("on Netflix");
+    // Czech declines the one brand that takes it, and leaves the rest alone.
+    expect(onPlatform(netflix, "cs")).toBe("na Netflixu");
+    expect(onPlatform(disney, "cs")).toBe("na Disney+");
   });
 
   it("answers undefined for a slug it does not serve", () => {

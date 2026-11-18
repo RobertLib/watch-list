@@ -3,6 +3,7 @@
 import { createProfileStoreSnapshot, getProfileStorageOwner, isProfileStoreEvent, publishProfileStorageChange, readProfileStore, writeProfileStore } from "./profile-storage";
 
 import { MAX_GUESSES, daysBetween, isDayString } from "./daily-puzzle";
+import { t, type Locale } from "@/i18n/locale";
 
 /**
  * The player's side of the daily puzzle: today's guesses, and the streak that
@@ -723,6 +724,7 @@ export function buildShareText(
   status: DailyStatus,
   url: string,
   isArchive = false,
+  locale: Locale = "en",
 ): string {
   const squares = guesses
     .map((guess) => (guess.correct ? "🟩" : "🟥"))
@@ -730,7 +732,8 @@ export function buildShareText(
   const score = status === "won" ? `${guesses.length}/${MAX_GUESSES}` : `X/${MAX_GUESSES}`;
   // Said outright, because a shared archive result posted next to today's would
   // otherwise read as a claim about today.
-  const suffix = isArchive ? " (archive)" : "";
+  const suffix = isArchive ? t(locale, " (archive)", " (z archivu)") : "";
+  const name = t(locale, "WatchList Daily", "WatchList – denní hádanka");
 
-  return `🎬 WatchList Daily #${puzzleNumber}${suffix} ${score}\n${squares}\n${url}`;
+  return `🎬 ${name} #${puzzleNumber}${suffix} ${score}\n${squares}\n${url}`;
 }

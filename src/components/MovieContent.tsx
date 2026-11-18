@@ -1,8 +1,9 @@
 "use client";
 
+import { catalogGenreSlug } from "@/lib/genre-catalog";
 import { Suspense } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { useSearchParams } from "next/navigation";
 import { tmdbApi } from "@/lib/tmdb";
 import { GenreTags } from "@/components/GenreTags";
@@ -41,9 +42,9 @@ import { getMovieWikipediaContent } from "@/lib/wikipedia";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
 import {
   MOVIE_APPENDED_SECTIONS,
-  SNAPSHOT_REGION,
   likeResults,
   moviePageTitle,
+  snapshotRegion,
 } from "@/lib/title-details";
 import type { MovieDetails as MovieDetailsData } from "@/types/tmdb";
 import { releaseYear } from "@/lib/dates";
@@ -51,15 +52,24 @@ import { resolveRegionProviders } from "@/lib/media-converters";
 import { resolveMovieCertification } from "@/lib/media-certification";
 import { getRegionCode, getRegionName } from "@/lib/region";
 import {
+  absoluteLocalizedUrl,
   absoluteMediaUrl,
-  absoluteUrl,
   genreHref,
   likeHref,
   personHref,
-  SITE_URL,
 } from "@/lib/routes";
+import { crewJobLabel } from "@/lib/person-credits";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatNumber, formatRating } from "@/i18n/format";
+import type { Locale } from "@/i18n/locale";
 
-function formatRuntime(minutes: number | null): string {
+function formatRuntime(minutes: number | null, locale: Locale): string {
+  if (locale === "cs") {
+    if (!minutes) return "Délka neznámá";
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return hours > 0 ? `${hours} h ${mins} min` : `${mins} min`;
+  }
   if (!minutes) return "Unknown runtime";
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
@@ -105,6 +115,8 @@ function MovieDetail({
   snapshot: MovieDetailsData | null;
 }) {
   const id = extractIdFromSlug(slug);
+  const locale = useLocale();
+  const t = useT();
   const { region } = useSettings();
   // The day the providers below were read: the snapshot's own date while the
   // page shows the build's copy, today once the browser has loaded its own.
@@ -128,10 +140,10 @@ function MovieDetail({
   );
 
   useDocumentTitle(
-    data ? moviePageTitle(data) : null,
+    data ? moviePageTitle(data, locale) : null,
   );
   useCanonicalUrl(
-    data ? absoluteMediaUrl("movie", createSlug(data.title, data.id)) : null,
+    data ? absoluteMediaUrl("movie", createSlug(data.title, data.id), locale) : null,
   );
 
   if (isLoading) return <MediaDetailSkeleton />;
@@ -143,8 +155,11 @@ function MovieDetail({
   if (error && !isNotFoundError(error)) {
     return (
       <LoadFailureNotice
-        title="Could not load this film"
-        description="TMDB did not answer. It may be a connection problem, or the service may be busy – the film is probably still there."
+        title={t("Could not load this film", "Film se nepodařilo načíst")}
+        description={t(
+          "TMDB did not answer. It may be a connection problem, or the service may be busy – the film is probably still there.",
+          "TMDB neodpovídá. Může jít o potíže s připojením, nebo je služba přetížená – film tam nejspíš pořád je.",
+        )}
         onRetry={reload}
       />
     );
@@ -156,10 +171,13 @@ function MovieDetail({
   if (!data || isNotFoundError(refreshError)) {
     return (
       <NotFoundNotice
-        title="Movie not found"
-        description="We could not find that film. It may have been removed from TMDB, or the link may be incomplete."
+        title={t("Movie not found", "Film nenalezen")}
+        description={t(
+          "We could not find that film. It may have been removed from TMDB, or the link may be incomplete.",
+          "Tento film jsme nenašli. Možná byl z TMDB odstraněn, nebo je odkaz neúplný.",
+        )}
         backHref="/movies"
-        backLabel="Browse movies"
+        backLabel={t("Browse movies", "Procházet filmy")}
       />
     );
   }
@@ -178,12 +196,13 @@ function MovieDetail({
   // Watch" section costs no request of its own – and follows the region setting
   // without refetching, because every region is already in the payload.
   //
-  // A build's snapshot carries one region's providers (`SNAPSHOT_REGION`), so
-  // for a visitor anywhere else it says nothing yet – which is not the same as
-  // saying the title is unavailable there, and must not be shown as that.
+  // A build's snapshot carries one region's providers (`snapshotRegion` – the
+  // page's own language's default region, so a Czech page's snapshot knows CZ),
+  // so for a visitor anywhere else it says nothing yet – which is not the same
+  // as saying the title is unavailable there, and must not be shown as that.
   const providersKnown =
     details.snapshot_date === undefined ||
-    getRegionCode(region) === SNAPSHOT_REGION;
+    getRegionCode(region) === snapshotRegion(locale);
   const watchProviders = providersKnown
     ? resolveRegionProviders(details["watch/providers"], getRegionCode(region))
     : null;
@@ -212,19 +231,20 @@ function MovieDetail({
   );
 
   const canonicalSlug = createSlug(details.title, details.id);
-  const pageUrl = absoluteMediaUrl("movie", canonicalSlug);
+  const pageUrl = absoluteMediaUrl("movie", canonicalSlug, locale);
 
   const breadcrumbItems = [
-    { name: "Home", url: SITE_URL },
-    { name: "Movies", url: absoluteUrl("/movies") },
+    { name: t("Home", "Domů"), url: absoluteLocalizedUrl("/", locale) },
+    { name: t("Movies", "Filmy"), url: absoluteLocalizedUrl("/movies", locale) },
   ];
 
   if (details.genres && details.genres.length > 0) {
     const primaryGenre = details.genres[0];
     breadcrumbItems.push({
       name: primaryGenre.name,
-      url: absoluteUrl(
-        genreHref("movie", createSlug(primaryGenre.name, primaryGenre.id)),
+      url: absoluteLocalizedUrl(
+        genreHref("movie", catalogGenreSlug("movie", primaryGenre)),
+        locale,
       ),
     });
   }
@@ -256,8 +276,13 @@ function MovieDetail({
           contentRating: certification?.rating,
           inLanguage: details.spoken_languages?.[0]?.english_name || undefined,
         }}
+        locale={locale}
       />
-      <StructuredData type="BreadcrumbList" data={{ breadcrumbItems }} />
+      <StructuredData
+        type="BreadcrumbList"
+        data={{ breadcrumbItems }}
+        locale={locale}
+      />
 
       {/* Hero Section with Backdrop */}
       <div className="relative">
@@ -284,7 +309,10 @@ function MovieDetail({
           {refreshError != null && (
             <SnapshotRefreshNotice
               className="mt-4 max-w-6xl xl:max-w-7xl"
-              message="Showing a saved copy of this film – the latest details could not be loaded."
+              message={t(
+                "Showing a saved copy of this film – the latest details could not be loaded.",
+                "Zobrazujeme uloženou kopii filmu – aktuální údaje se nepodařilo načíst.",
+              )}
               onRetry={reload}
               isRetrying={isRetrying}
             />
@@ -320,16 +348,20 @@ function MovieDetail({
 
               <div className="flex flex-wrap items-center gap-4 mb-6">
                 <span className="text-lg">
-                  {releaseYear(details.release_date) ?? "N/A"}
+                  {releaseYear(details.release_date) ?? t("N/A", "neuvedeno")}
                 </span>
                 <span>•</span>
-                <span>{formatRuntime(details.runtime)}</span>
+                <span>{formatRuntime(details.runtime, locale)}</span>
                 <span>•</span>
                 <div className="flex items-center gap-2">
                   <span className="text-yellow-400">★</span>
-                  <span>{details.vote_average?.toFixed(1)}</span>
+                  <span>
+                    {details.vote_average != null &&
+                      formatRating(details.vote_average, locale)}
+                  </span>
                   <span className="text-gray-300">
-                    ({details.vote_count.toLocaleString("en-US")} ratings)
+                    ({formatNumber(details.vote_count, locale)}{" "}
+                    {t("ratings", "hodnocení")})
                   </span>
                 </div>
               </div>
@@ -338,7 +370,9 @@ function MovieDetail({
 
               {details.overview && (
                 <div className="mt-6">
-                  <h2 className="text-xl font-semibold mb-3">Overview</h2>
+                  <h2 className="text-xl font-semibold mb-3">
+                    {t("Overview", "Obsah")}
+                  </h2>
                   <p className="text-gray-200 leading-relaxed">
                     {details.overview}
                   </p>
@@ -351,7 +385,9 @@ function MovieDetail({
               <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                 {director && (
                   <div>
-                    <h3 className="font-semibold">Director</h3>
+                    <h3 className="font-semibold">
+                      {crewJobLabel("Director", locale)}
+                    </h3>
                     <Link
                       href={personHref(createSlug(director.name, director.id))}
                       prefetch={false}
@@ -363,7 +399,7 @@ function MovieDetail({
                 )}
                 {writers.length > 0 && (
                   <div>
-                    <h3 className="font-semibold">Writers</h3>
+                    <h3 className="font-semibold">{t("Writers", "Scénář")}</h3>
                     <p className="text-gray-300">
                       {writers.map(
                         (w: { id: number; name: string }, i: number) => (
@@ -428,7 +464,7 @@ function MovieDetail({
             <WhereToWatch
               providers={watchProviders}
               title={details.title}
-              regionName={getRegionName(region)}
+              regionName={getRegionName(region, locale)}
               checkedOn={details.snapshot_date ?? today}
             />
             <MovieCast credits={credits} />
@@ -448,7 +484,9 @@ function MovieDetail({
             <SimilarMovies
               similar={similar}
               title={details.title}
-              allHref={likeHref("movie", canonicalSlug)}
+              // Each language has its own list of "like" pages – Czech's is
+              // its own, smaller one – so the link is looked up in the page's.
+              allHref={likeHref("movie", canonicalSlug, locale)}
             />
           </div>
 

@@ -8,7 +8,8 @@ import { findGenreById, genreSlug } from "@/lib/genre-catalog";
 import { findStreamingPlatform } from "@/lib/streaming-landing";
 import { findMood } from "@/lib/moods";
 import { sanitizeWatchProvidersFilter } from "@/lib/watch-provider-settings";
-import { genreHref, moodHref } from "@/lib/routes";
+import { genreHref, moodHref, prefixLocale } from "@/lib/routes";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 import { extractIdFromSlug } from "@/lib/utils";
 import type { MediaType } from "@/types/tmdb";
 
@@ -66,16 +67,20 @@ export function legacyMoodQueryTarget(params: URLSearchParams): string | null {
 }
 
 export function LegacyGenreQueryRedirect({ mediaType }: { mediaType: MediaType }) {
+  const t = useT();
   return (
     <Suspense fallback={<RedirectPending />}>
       <QueryRedirect
         target={(params) => legacyGenreQueryTarget(mediaType, params)}
         notFound={
           <NotFoundNotice
-            title="Genre not found"
-            description="That genre does not exist, or the link is incomplete."
+            title={t("Genre not found", "Žánr nenalezen")}
+            description={t(
+              "That genre does not exist, or the link is incomplete.",
+              "Takový žánr neexistuje, nebo je odkaz neúplný.",
+            )}
             backHref="/genres"
-            backLabel="Browse genres"
+            backLabel={t("Browse genres", "Procházet žánry")}
           />
         }
       />
@@ -84,16 +89,20 @@ export function LegacyGenreQueryRedirect({ mediaType }: { mediaType: MediaType }
 }
 
 export function LegacyMoodQueryRedirect() {
+  const t = useT();
   return (
     <Suspense fallback={<RedirectPending />}>
       <QueryRedirect
         target={legacyMoodQueryTarget}
         notFound={
           <NotFoundNotice
-            title="Mood not found"
-            description="That is not one of the moods on offer. Pick another kind of evening."
+            title={t("Mood not found", "Nálada nenalezena")}
+            description={t(
+              "That is not one of the moods on offer. Pick another kind of evening.",
+              "Takovou náladu v nabídce nemáme. Vyberte si jiný druh večera.",
+            )}
             backHref="/moods"
-            backLabel="All moods"
+            backLabel={t("All moods", "Všechny nálady")}
           />
         }
       />
@@ -110,12 +119,15 @@ function QueryRedirect({
 }) {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const locale = useLocale();
   const href = target(new URLSearchParams(searchParams.toString()));
 
-  // Replace, so Back skips the old address instead of bouncing off it.
+  // Replace, so Back skips the old address instead of bouncing off it. The
+  // target is an English genre or mood path; a Czech page's old address goes
+  // to the same page in the Czech tree.
   useEffect(() => {
-    if (href) router.replace(href);
-  }, [href, router]);
+    if (href) router.replace(prefixLocale(href, locale));
+  }, [href, router, locale]);
 
   return href ? <RedirectPending /> : notFound;
 }

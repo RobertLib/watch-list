@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useSyncExternalStore } from "react";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { Flame, History, Trophy } from "lucide-react";
 import {
   effectiveStreak,
@@ -12,9 +12,12 @@ import {
   type DayOutcome,
 } from "@/lib/daily-game";
 import { badgesFor, TOTAL_BADGES } from "@/lib/daily-badges";
-import { recentDays } from "@/lib/daily-puzzle";
+import { formatPuzzleDay, recentDays } from "@/lib/daily-puzzle";
 import { useUtcDay } from "@/hooks/useUtcDay";
 import { cn } from "@/lib/utils";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount, formatNumber, pluralForm } from "@/i18n/format";
+import type { Locale } from "@/i18n/locale";
 
 // Eight weeks. Far enough back to show a run worth protecting, close enough that
 // every square still means something to the person looking at it.
@@ -29,13 +32,23 @@ const OUTCOME_STYLE: Record<DayOutcome, string> = {
   missed: "bg-gray-800",
 };
 
-const OUTCOME_LABEL: Record<DayOutcome, string> = {
-  won: "solved",
-  lost: "played, not solved",
-  "archive-won": "caught up later",
-  "archive-lost": "caught up later, not solved",
-  today: "today, not played yet",
-  missed: "not played",
+const OUTCOME_LABEL: Record<Locale, Record<DayOutcome, string>> = {
+  en: {
+    won: "solved",
+    lost: "played, not solved",
+    "archive-won": "caught up later",
+    "archive-lost": "caught up later, not solved",
+    today: "today, not played yet",
+    missed: "not played",
+  },
+  cs: {
+    won: "vyřešeno",
+    lost: "hráno, nevyřešeno",
+    "archive-won": "dohnáno později",
+    "archive-lost": "dohnáno později, nevyřešeno",
+    today: "dnes, zatím nehráno",
+    missed: "nehráno",
+  },
 };
 
 /**
@@ -63,10 +76,32 @@ function capitalize(text: string): string {
  * and then report lifetime totals, which stop agreeing with the grid as soon as
  * anyone has played for longer than eight weeks.
  */
-function describeCalendar(outcomes: DayOutcome[]): string {
+function describeCalendar(
+  outcomes: DayOutcome[],
+  locale: Locale = "en",
+): string {
   const count = (...kinds: DayOutcome[]) =>
     outcomes.filter((outcome) => kinds.includes(outcome)).length;
   const days = outcomes.length;
+
+  if (locale === "cs") {
+    // Each count after its word, so none of them has to agree with a noun.
+    const last = pluralForm(days, locale, {
+      en: ["", ""],
+      cs: ["poslední", "poslední", "posledních"],
+    });
+    const span = formatCount(days, locale, {
+      en: ["day", "days"],
+      cs: ["den", "dny", "dní"],
+    });
+    return (
+      `Výsledky denních hádanek za ${last} ${span}: ` +
+      `vyřešeno ${count("won")}, nevyřešeno ${count("lost")}, ` +
+      `dohnáno později ${count("archive-won")}, ` +
+      `dohnáno, ale nevyřešeno ${count("archive-lost")}, ` +
+      `nehráno ${count("missed", "today")}.`
+    );
+  }
 
   return (
     `Daily puzzle results for the last ${days} day${days === 1 ? "" : "s"}: ` +
@@ -85,6 +120,8 @@ function describeCalendar(outcomes: DayOutcome[]): string {
  * a gap can be filled in from the archive.
  */
 export function DailyStreakPanel() {
+  const locale = useLocale();
+  const t = useT();
   const state = useSyncExternalStore(
     subscribeToGameState,
     getGameStateSnapshot,
@@ -99,7 +136,7 @@ export function DailyStreakPanel() {
   );
 
   const outcomes = days.map((day) => outcomeForDay(state, day, today));
-  const badges = useMemo(() => badgesFor(state), [state]);
+  const badges = useMemo(() => badgesFor(state, locale), [state, locale]);
   const earned = badges.filter((badge) => badge.earned);
   const streak = effectiveStreak(state, today);
   const winRate =
@@ -121,7 +158,7 @@ export function DailyStreakPanel() {
           id="daily-record-heading"
           className="text-lg font-semibold text-white"
         >
-          Your record
+          {t("Your record", "Vaše statistiky")}
         </h2>
         <div className="flex items-center gap-4 text-sm">
           {streak > 0 && (
@@ -133,11 +170,20 @@ export function DailyStreakPanel() {
           {state.bestStreak > 0 && (
             <span className="flex items-center gap-1.5 text-gray-400">
               <Trophy className="w-4 h-4" aria-hidden="true" />
-              best {state.bestStreak}
+              {t("best", "rekord")} {formatNumber(state.bestStreak, locale)}
             </span>
           )}
           <span className="text-gray-400">
-            {state.played} played · {winRate}% solved
+            {locale === "cs" ? (
+              <>
+                odehráno {formatNumber(state.played, locale)} · vyřešeno{" "}
+                {formatNumber(winRate, locale)} %
+              </>
+            ) : (
+              <>
+                {state.played} played · {winRate}% solved
+              </>
+            )}
           </span>
         </div>
       </div>
@@ -146,14 +192,14 @@ export function DailyStreakPanel() {
         <div
           className="grid grid-flow-col grid-rows-7 gap-1 justify-start"
           role="img"
-          aria-label={describeCalendar(outcomes)}
+          aria-label={describeCalendar(outcomes, locale)}
         >
           {days.map((day, index) => {
             const outcome = outcomes[index];
             return (
               <span
                 key={day}
-                title={`${day} – ${OUTCOME_LABEL[outcome]}`}
+                title={`${formatPuzzleDay(day, locale)} – ${OUTCOME_LABEL[locale][outcome]}`}
                 className={cn("h-3 w-3 rounded-sm", OUTCOME_STYLE[outcome])}
               />
             );
@@ -165,7 +211,7 @@ export function DailyStreakPanel() {
             <Legend
               key={outcome}
               className={OUTCOME_STYLE[outcome]}
-              label={capitalize(OUTCOME_LABEL[outcome])}
+              label={capitalize(OUTCOME_LABEL[locale][outcome])}
             />
           ))}
         </div>
@@ -174,7 +220,7 @@ export function DailyStreakPanel() {
       <div>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-medium text-gray-300">
-            Badges{" "}
+            {t("Badges", "Odznaky")}{" "}
             <span className="text-gray-500">
               {earned.length}/{TOTAL_BADGES}
             </span>
@@ -185,7 +231,7 @@ export function DailyStreakPanel() {
             className="inline-flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300 transition-colors"
           >
             <History className="w-4 h-4" aria-hidden="true" />
-            Archive
+            {t("Archive", "Archiv")}
           </Link>
         </div>
 

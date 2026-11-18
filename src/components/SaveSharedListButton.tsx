@@ -1,13 +1,20 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { Check, Heart } from "lucide-react";
 import { useProfileGuard } from "@/hooks/useProfileGuard";
 import { useWatchlist } from "@/contexts/WatchlistContext";
 import { toast } from "@/components/Toast";
-import { STORAGE_REFUSED_MESSAGE } from "@/lib/media-list";
+import { storageRefusedMessage } from "@/lib/media-list";
 import type { MediaItem } from "@/types/tmdb";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount, type PluralForms } from "@/i18n/format";
+
+const TITLES: PluralForms = {
+  en: ["title", "titles"],
+  cs: ["titul", "tituly", "titulů"],
+};
 
 /**
  * "Save all to my watchlist" for a shared list.
@@ -19,6 +26,8 @@ import type { MediaItem } from "@/types/tmdb";
 export function SaveSharedListButton({ items }: { items: MediaItem[] }) {
   const { addItems, isInWatchlist, isLoading, profileId } = useWatchlist();
   const { checkProfile } = useProfileGuard("list");
+  const locale = useLocale();
+  const t = useT();
   const saving = useRef(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -52,8 +61,11 @@ export function SaveSharedListButton({ items }: { items: MediaItem[] }) {
       if (refused > 0) {
         toast.showToast(
           added === 0
-            ? STORAGE_REFUSED_MESSAGE
-            : `Added ${added} title${added === 1 ? "" : "s"} to your watchlist, but could not save ${refused} title${refused === 1 ? "" : "s"}. Check your browser's storage settings.`,
+            ? storageRefusedMessage(locale)
+            : t(
+                `Added ${added} title${added === 1 ? "" : "s"} to your watchlist, but could not save ${refused} title${refused === 1 ? "" : "s"}. Check your browser's storage settings.`,
+                `Přidáno na seznam: ${formatCount(added, locale, TITLES)}. Uložit se nepodařilo: ${formatCount(refused, locale, TITLES)}. Zkontrolujte nastavení úložiště v prohlížeči.`,
+              ),
           "error",
         );
         return;
@@ -61,8 +73,11 @@ export function SaveSharedListButton({ items }: { items: MediaItem[] }) {
 
       toast.showToast(
         added > 0
-          ? `Added ${added} title${added === 1 ? "" : "s"} to your watchlist`
-          : "Those are already on your watchlist",
+          ? t(
+              `Added ${added} title${added === 1 ? "" : "s"} to your watchlist`,
+              `Přidáno na seznam: ${formatCount(added, locale, TITLES)}`,
+            )
+          : t("Those are already on your watchlist", "Všechny už na seznamu máte"),
         added > 0 ? "success" : "info",
       );
     } finally {
@@ -87,8 +102,11 @@ export function SaveSharedListButton({ items }: { items: MediaItem[] }) {
           <Heart className="w-4 h-4" aria-hidden="true" />
         )}
         {alreadyHaveAll
-          ? "All on your watchlist"
-          : `Save ${missing.length} to my watchlist`}
+          ? t("All on your watchlist", "Vše už máte na seznamu")
+          : t(
+              `Save ${missing.length} to my watchlist`,
+              `Přidat na můj seznam (${missing.length})`,
+            )}
       </button>
 
       <Link
@@ -96,7 +114,7 @@ export function SaveSharedListButton({ items }: { items: MediaItem[] }) {
         prefetch={false}
         className="text-sm text-gray-400 hover:text-white transition-colors underline underline-offset-4"
       >
-        View my watchlist
+        {t("View my watchlist", "Zobrazit můj seznam")}
       </Link>
     </div>
   );

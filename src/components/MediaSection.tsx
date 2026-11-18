@@ -25,7 +25,8 @@ export function MediaSection({
   loading = false,
   className,
   size = "medium",
-  emptyMessage = "No items found.",
+  // Left to `MediaGrid`, which says it in the page's language.
+  emptyMessage,
   showViewToggle = false,
 }: MediaSectionProps) {
   return (

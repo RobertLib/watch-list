@@ -6,6 +6,7 @@ import { MediaSection } from "./MediaSection";
 import { SnapshotAwareLoadMore, type SnapshotState } from "./AsyncDiscoverySection";
 import { convertMovieToMediaItem } from "@/lib/media-converters";
 import { MAX_TMDB_PAGE, sanitizePage } from "@/lib/discover-filters";
+import { useT } from "@/i18n/LocaleProvider";
 
 interface PaginatedMovieSectionProps {
   title: string;
@@ -33,6 +34,7 @@ export function PaginatedMovieSection({
     Math.min(initialTotalPages, MAX_TMDB_PAGE),
   );
   const hasNextPage = currentPage < totalPages;
+  const t = useT();
 
   const loadMore = async () => {
     if (currentPage >= totalPages) {
@@ -65,11 +67,11 @@ export function PaginatedMovieSection({
         title={title}
         items={mediaItems}
         size="medium"
-        emptyMessage="No movies found."
+        emptyMessage={t("No movies found.", "Nenašli jsme žádné filmy.")}
       />
       {hasNextPage && movies.length > 0 && (
         <SnapshotAwareLoadMore snapshot={snapshot} onLoadMore={loadMore}>
-          Load More Movies
+          {t("Load More Movies", "Načíst další filmy")}
         </SnapshotAwareLoadMore>
       )}
     </div>

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import {
   Clock,
   Dices,
@@ -37,6 +37,15 @@ import { getImageUrl } from "@/lib/tmdb-image";
 import { cn, mediaItemKey } from "@/lib/utils";
 import type { MediaItem } from "@/types/tmdb";
 import { mediaHref } from "@/lib/routes";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { INTL_LOCALE } from "@/i18n/locale";
+import { formatCount, formatNumber, pluralForm, type PluralForms, formatRating } from "@/i18n/format";
+
+/** "title" in the genitive Czech puts after "u" and "z": u 1 titulu, u 5 titulů. */
+const TITLES_GENITIVE: PluralForms = {
+  en: ["title", "titles"],
+  cs: ["titulu", "titulů", "titulů"],
+};
 
 /**
  * One title, chosen for the evening in front of you.
@@ -47,6 +56,8 @@ import { mediaHref } from "@/lib/routes";
  * is what the person was already stuck in.
  */
 export function TonightPicker() {
+  const locale = useLocale();
+  const t = useT();
   const { watchlist, isLoading: isWatchlistLoading } = useWatchlist();
   const settingsKey = useSettingsKey();
   const day = useLocalDay();
@@ -178,8 +189,8 @@ export function TonightPicker() {
     const available = availableGenres(savedCandidates);
     // Keep the selected genre visible when its titles fail during a retry.
     if (filters.genre && !available.includes(filters.genre)) available.push(filters.genre);
-    return available.sort((a, b) => a.localeCompare(b));
-  }, [savedCandidates, filters.genre]);
+    return available.sort((a, b) => a.localeCompare(b, INTL_LOCALE[locale]));
+  }, [savedCandidates, filters.genre, locale]);
 
   // The pick the visitor marked watched from its own card. Marking it takes it
   // off the watchlist, which used to blank the page and draw a different title
@@ -257,8 +268,11 @@ export function TonightPicker() {
   if (failed) {
     return (
       <LoadFailureNotice
-        title="Could not pick anything tonight"
-        description="TMDB did not answer, so there was nothing to choose between. Your watchlist is untouched – it is saved in this browser, not there."
+        title={t("Could not pick anything tonight", "Na dnešní večer se nepodařilo nic vybrat")}
+        description={t(
+          "TMDB did not answer, so there was nothing to choose between. Your watchlist is untouched – it is saved in this browser, not there.",
+          "TMDB neodpovídá, takže nebylo z čeho vybírat. Váš seznam zůstal beze změny – je uložený v tomto prohlížeči, ne tam.",
+        )}
         onRetry={retryLoad}
         // The page around this already has its "Tonight" h1.
         headingLevel={2}
@@ -280,7 +294,12 @@ export function TonightPicker() {
 
       {awaitingCount > 0 && (
         <p className="text-sm text-gray-400" role="status">
-          Checking {awaitingCount} newly saved {awaitingCount === 1 ? "title" : "titles"}…
+          {locale === "cs"
+            ? `Ověřujeme ${formatCount(awaitingCount, locale, {
+                en: ["title", "titles"],
+                cs: ["nově uložený titul", "nově uložené tituly", "nově uložených titulů"],
+              })}…`
+            : `Checking ${awaitingCount} newly saved ${awaitingCount === 1 ? "title" : "titles"}…`}
         </p>
       )}
 
@@ -303,11 +322,13 @@ export function TonightPicker() {
       {(savedFailedRefs.length > 0 || uncheckedCount > 0) && (
         <LoadFailureNotice
           title={savedFailedRefs.length > 0
-            ? "Some title details could not be loaded"
-            : "Could not check streaming availability"}
-          description={savedFailedRefs.length > 0
-            ? `Details could not be loaded for ${savedFailedRefs.length} saved ${savedFailedRefs.length === 1 ? "title" : "titles"}. Verified picks remain available.${uncheckedCount > 0 ? ` Streaming availability also could not be checked for ${uncheckedCount} ${uncheckedCount === 1 ? "title" : "titles"} that otherwise fit your filters.` : ""} Try again to check the remaining titles.`
-            : `Availability could not be checked for ${uncheckedCount} saved ${uncheckedCount === 1 ? "title" : "titles"} that otherwise fit your filters. Try again to see what you can play now.`}
+            ? t("Some title details could not be loaded", "Podrobnosti o některých titulech se nepodařilo načíst")
+            : t("Could not check streaming availability", "Dostupnost na streamovacích službách se nepodařilo ověřit")}
+          description={locale === "cs"
+            ? czechFailureDescription(savedFailedRefs.length, uncheckedCount)
+            : savedFailedRefs.length > 0
+              ? `Details could not be loaded for ${savedFailedRefs.length} saved ${savedFailedRefs.length === 1 ? "title" : "titles"}. Verified picks remain available.${uncheckedCount > 0 ? ` Streaming availability also could not be checked for ${uncheckedCount} ${uncheckedCount === 1 ? "title" : "titles"} that otherwise fit your filters.` : ""} Try again to check the remaining titles.`
+              : `Availability could not be checked for ${uncheckedCount} saved ${uncheckedCount === 1 ? "title" : "titles"} that otherwise fit your filters. Try again to see what you can play now.`}
           onRetry={retryLoad}
           compact
         />
@@ -318,6 +339,36 @@ export function TonightPicker() {
       )}
     </div>
   );
+}
+
+/**
+ * The failure notice's text in Czech, where the relative clause agrees with the
+ * count ("1 titulu, který odpovídá" / "2 titulů, které odpovídají") – a sentence
+ * per form rather than English's one template.
+ */
+function czechFailureDescription(failed: number, unchecked: number): string {
+  const fitting = (count: number) =>
+    `${formatNumber(count, "cs")} ${pluralForm(count, "cs", {
+      en: ["", ""],
+      cs: [
+        "titulu, který jinak odpovídá vašim filtrům,",
+        "titulů, které jinak odpovídají vašim filtrům,",
+        "titulů, které jinak odpovídají vašim filtrům,",
+      ],
+    })}`;
+
+  if (failed > 0) {
+    const saved = formatCount(failed, "cs", {
+      en: ["title", "titles"],
+      cs: ["uloženého titulu", "uložených titulů", "uložených titulů"],
+    });
+    const alsoUnchecked = unchecked > 0
+      ? ` U ${fitting(unchecked)} se navíc nepodařilo ověřit dostupnost na streamovacích službách.`
+      : "";
+    return `Podrobnosti se nepodařilo načíst u ${saved}. Ověřené tipy zůstávají k dispozici.${alsoUnchecked} Zkuste to znovu a zbylé tituly se ověří.`;
+  }
+
+  return `U ${fitting(unchecked)} se nepodařilo ověřit dostupnost. Zkuste to znovu a uvidíte, co si můžete pustit hned teď.`;
 }
 
 function Filters({
@@ -337,10 +388,14 @@ function Filters({
   unchecked: number;
   unresolved: number;
 }) {
+  const locale = useLocale();
+  const t = useT();
   return (
     <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-5 space-y-4">
       <div className="space-y-2">
-        <p className="text-sm font-medium text-gray-300">How long have you got?</p>
+        <p className="text-sm font-medium text-gray-300">
+          {t("How long have you got?", "Kolik máte času?")}
+        </p>
         <div className="flex flex-wrap gap-2">
           {RUNTIME_BANDS.map((band) => (
             <Chip
@@ -348,7 +403,7 @@ function Filters({
               active={filters.runtime === band.id}
               onClick={() => onChange({ ...filters, runtime: band.id })}
             >
-              {band.label}
+              {band.label[locale]}
             </Chip>
           ))}
         </div>
@@ -356,7 +411,9 @@ function Filters({
 
       <div className="flex flex-wrap gap-6">
         <div className="space-y-2">
-          <p className="text-sm font-medium text-gray-300">What kind</p>
+          <p className="text-sm font-medium text-gray-300">
+            {t("What kind", "Film, nebo seriál")}
+          </p>
           <div className="flex flex-wrap gap-2">
             {(["all", "movie", "tv"] as const).map((type) => (
               <Chip
@@ -364,19 +421,25 @@ function Filters({
                 active={filters.type === type}
                 onClick={() => onChange({ ...filters, type })}
               >
-                {type === "all" ? "Either" : type === "movie" ? "Film" : "Series"}
+                {type === "all"
+                  ? t("Either", "Obojí")
+                  : type === "movie"
+                    ? t("Film", "Film")
+                    : t("Series", "Seriál")}
               </Chip>
             ))}
           </div>
         </div>
 
         <div className="space-y-2">
-          <p className="text-sm font-medium text-gray-300">Availability</p>
+          <p className="text-sm font-medium text-gray-300">
+            {t("Availability", "Dostupnost")}
+          </p>
           <Chip
             active={filters.readyOnly}
             onClick={() => onChange({ ...filters, readyOnly: !filters.readyOnly })}
           >
-            Only what I can play now
+            {t("Only what I can play now", "Jen to, co si můžu hned pustit")}
           </Chip>
         </div>
       </div>
@@ -387,7 +450,7 @@ function Filters({
             htmlFor="tonight-genre"
             className="block text-sm font-medium text-gray-300"
           >
-            In the mood for
+            {t("In the mood for", "Máte chuť na")}
           </label>
           <select
             id="tonight-genre"
@@ -397,7 +460,7 @@ function Filters({
             }
             className="px-3 py-2 rounded-lg bg-black/60 border border-gray-700 text-sm text-white focus:outline-none focus:border-blue-500"
           >
-            <option value="">Anything</option>
+            <option value="">{t("Anything", "Cokoli")}</option>
             {genres.map((genre) => (
               <option key={genre} value={genre}>
                 {genre}
@@ -407,11 +470,32 @@ function Filters({
         </div>
       )}
 
-      <p className="text-xs text-gray-500">
-        {matching} of {total} saved titles {unchecked > 0 || unresolved > 0 ? "are confirmed to fit" : "fit"}.
-        {unresolved > 0 && ` ${unresolved} still ${unresolved === 1 ? "needs" : "need"} title details.`}
-        {unchecked > 0 && ` ${unchecked} still ${unchecked === 1 ? "needs" : "need"} an availability check.`}
-      </p>
+      {locale === "cs" ? (
+        <p className="text-xs text-gray-500">
+          {/* The verb agrees with the first number: 1 vyhovuje, 3 vyhovují, 5 vyhovuje. */}
+          {formatNumber(matching, locale)} z{" "}
+          {formatCount(total, locale, {
+            en: ["saved title", "saved titles"],
+            cs: ["uloženého titulu", "uložených titulů", "uložených titulů"],
+          })}{" "}
+          {unchecked > 0 || unresolved > 0 ? "s jistotou " : ""}
+          {pluralForm(matching, locale, {
+            en: ["fits", "fit"],
+            cs: ["vyhovuje", "vyhovují", "vyhovuje"],
+          })}
+          .
+          {unresolved > 0 &&
+            ` U ${formatCount(unresolved, locale, TITLES_GENITIVE)} ještě chybí podrobnosti.`}
+          {unchecked > 0 &&
+            ` U ${formatCount(unchecked, locale, TITLES_GENITIVE)} je ještě potřeba ověřit dostupnost.`}
+        </p>
+      ) : (
+        <p className="text-xs text-gray-500">
+          {matching} of {total} saved titles {unchecked > 0 || unresolved > 0 ? "are confirmed to fit" : "fit"}.
+          {unresolved > 0 && ` ${unresolved} still ${unresolved === 1 ? "needs" : "need"} title details.`}
+          {unchecked > 0 && ` ${unchecked} still ${unchecked === 1 ? "needs" : "need"} an availability check.`}
+        </p>
+      )}
     </div>
   );
 }
@@ -456,8 +540,10 @@ function PickCard({
   /** Called as the card's own watched control is used, before it saves. */
   onMarkWatched: () => void;
 }) {
+  const locale = useLocale();
+  const t = useT();
   const artwork = pick.backdropPath ?? pick.posterPath;
-  const runtime = formatRuntime(pick.runtime);
+  const runtime = formatRuntime(pick.runtime, locale);
 
   // `WatchedButton` speaks the card language the rest of the app uses, so the
   // pick is converted rather than the button being reimplemented here.
@@ -489,7 +575,7 @@ function PickCard({
         <div className="absolute bottom-0 left-0 right-0 p-5">
           <p className="flex items-center gap-2 text-sm text-blue-300 mb-1">
             <Sparkles className="w-4 h-4" aria-hidden="true" />
-            {reasonFor(pick, filters)}
+            {reasonFor(pick, filters, locale)}
           </p>
           <h2 className="text-2xl sm:text-3xl font-bold text-white">
             <Link
@@ -511,14 +597,14 @@ function PickCard({
             ) : (
               <Tv className="w-4 h-4" aria-hidden="true" />
             )}
-            {pick.mediaType === "movie" ? "Film" : "Series"}
+            {pick.mediaType === "movie" ? t("Film", "Film") : t("Series", "Seriál")}
           </span>
           {pick.year && <span>{pick.year}</span>}
           {runtime && (
             <span className="flex items-center gap-1.5">
               <Clock className="w-4 h-4" aria-hidden="true" />
               {runtime}
-              {pick.mediaType === "tv" && " per episode"}
+              {pick.mediaType === "tv" && t(" per episode", " na epizodu")}
             </span>
           )}
           {pick.voteAverage > 0 && (
@@ -528,7 +614,12 @@ function PickCard({
                 fill="currentColor"
                 aria-hidden="true"
               />
-              {pick.voteAverage.toFixed(1)}
+              {locale === "cs"
+                ? formatNumber(pick.voteAverage, locale, {
+                    minimumFractionDigits: 1,
+                    maximumFractionDigits: 1,
+                  })
+                : formatRating(pick.voteAverage, locale)}
             </span>
           )}
         </div>
@@ -567,14 +658,14 @@ function PickCard({
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
           >
             <Dices className="w-4 h-4" aria-hidden="true" />
-            Something else
+            {t("Something else", "Něco jiného")}
           </button>
           <Link
             href={mediaHref(pick.mediaType, pick.slug)}
             prefetch={false}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-white/10 hover:bg-white/20 font-semibold text-white transition-colors"
           >
-            Details
+            {t("Details", "Podrobnosti")}
           </Link>
           {/* Capture rather than bubble: the button stops its click from
               propagating. `contents` keeps the wrapper out of the layout. */}
@@ -588,42 +679,58 @@ function PickCard({
 }
 
 function NothingMatches({ onReset }: { onReset: () => void }) {
+  const locale = useLocale();
+  const t = useT();
   return (
     <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-8 text-center space-y-4">
       <p className="text-gray-300 font-medium">
-        Nothing on your list fits that.
+        {t("Nothing on your list fits that.", "Nic z vašeho seznamu tomu neodpovídá.")}
       </p>
       <p className="text-sm text-gray-500 max-w-md mx-auto">
-        Loosen a filter – &ldquo;only what I can play now&rdquo; is usually the
-        one doing it, and it depends on the platforms named in your profile.
+        {locale === "cs" ? (
+          <>
+            Zkuste některý filtr uvolnit – obvykle za to může „jen to, co si můžu
+            hned pustit“, který se řídí službami uvedenými ve vašem profilu.
+          </>
+        ) : (
+          <>
+            Loosen a filter – &ldquo;only what I can play now&rdquo; is usually the
+            one doing it, and it depends on the platforms named in your profile.
+          </>
+        )}
       </p>
       <button
         onClick={onReset}
         className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-white/10 hover:bg-white/20 font-semibold text-white transition-colors"
       >
-        Clear the filters
+        {t("Clear the filters", "Zrušit filtry")}
       </button>
     </div>
   );
 }
 
 function NothingSaved() {
+  const t = useT();
   return (
     <div className="text-center py-16">
       <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gray-800 flex items-center justify-center">
         <Dices className="w-10 h-10 text-gray-600" aria-hidden="true" />
       </div>
-      <h2 className="text-2xl font-bold mb-3">Nothing to pick from yet</h2>
+      <h2 className="text-2xl font-bold mb-3">
+        {t("Nothing to pick from yet", "Zatím není z čeho vybírat")}
+      </h2>
       <p className="text-gray-400 max-w-md mx-auto">
-        Save a few films and series, and this page will pick one for whatever
-        evening you have – by length, by platform, by mood.
+        {t(
+          "Save a few films and series, and this page will pick one for whatever evening you have – by length, by platform, by mood.",
+          "Uložte si pár filmů a seriálů a tahle stránka vám vybere jeden na jakýkoli večer – podle délky, služby i nálady.",
+        )}
       </p>
       <Link
         href="/"
         prefetch={false}
         className="mt-6 inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition-colors"
       >
-        Discover Content
+        {t("Discover Content", "Procházet filmy a seriály")}
       </Link>
     </div>
   );

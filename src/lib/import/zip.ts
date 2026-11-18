@@ -14,6 +14,8 @@
  * no reason for this page to ever hold those in memory.
  */
 
+import { t, type Locale } from "@/i18n/locale";
+
 /** One file in an archive, not yet read. */
 export interface ZipEntry {
   /** Path inside the archive, as written: `lists/watchlist.csv`. */
@@ -36,6 +38,10 @@ const END_SEARCH_BYTES = 22 + 0xffff;
 const STORED = 0;
 const DEFLATED = 8;
 
+/**
+ * A refusal worth showing the visitor: its message is a sentence for them, in
+ * the language `readZip` was given.
+ */
 export class ZipError extends Error {}
 
 /**
@@ -47,11 +53,13 @@ export class ZipError extends Error {}
  * archive's claim, and a few kilobytes that inflate without end are how a
  * hostile one is built.
  */
-async function inflate(data: Uint8Array, name: string): Promise<Uint8Array> {
+async function inflate(data: Uint8Array, name: string, locale: Locale): Promise<Uint8Array> {
   if (typeof DecompressionStream === "undefined") {
-    throw new ZipError(
+    throw new ZipError(t(
+      locale,
       "This browser cannot open ZIP files. Unzip the export and choose the files inside it instead.",
-    );
+      "Tento prohlížeč neumí otevírat soubory ZIP. Export rozbalte a vyberte soubory, které obsahuje.",
+    ));
   }
   const stream = new DecompressionStream("deflate-raw");
   const writer = stream.writable.getWriter();
@@ -66,7 +74,7 @@ async function inflate(data: Uint8Array, name: string): Promise<Uint8Array> {
       total += value.length;
       if (total > MAX_ENTRY_BYTES) {
         await reader.cancel();
-        throw new ZipError(`${name} is too large to read here.`);
+        throw new ZipError(tooLargeMessage(name, locale));
       }
       chunks.push(value);
     }
@@ -88,15 +96,29 @@ async function inflate(data: Uint8Array, name: string): Promise<Uint8Array> {
     return out;
   } catch (error) {
     if (error instanceof ZipError) throw error;
-    throw new ZipError(`That archive is damaged: ${name} could not be unpacked.`);
+    throw new ZipError(t(
+      locale,
+      `That archive is damaged: ${name} could not be unpacked.`,
+      `Archiv je poškozený: soubor ${name} se nepodařilo rozbalit.`,
+    ));
   }
+}
+
+/** "… is too large to read here." – of a file, by its name. */
+export function tooLargeMessage(name: string, locale: Locale = "en"): string {
+  return t(
+    locale,
+    `${name} is too large to read here.`,
+    `Soubor ${name} je příliš velký – tady ho nelze načíst.`,
+  );
 }
 
 /**
  * The entries of a ZIP, read from its central directory. Directories are left
- * out; nothing is inflated until an entry's `text()` is called.
+ * out; nothing is inflated until an entry's `text()` is called. A `ZipError`
+ * says what is wrong in `locale`.
  */
-export function readZip(buffer: ArrayBuffer): ZipEntry[] {
+export function readZip(buffer: ArrayBuffer, locale: Locale = "en"): ZipEntry[] {
   const view = new DataView(buffer);
   const bytes = new Uint8Array(buffer);
 
@@ -113,12 +135,18 @@ export function readZip(buffer: ArrayBuffer): ZipEntry[] {
       break;
     }
   }
-  if (end === -1) throw new ZipError("That file is not a ZIP archive.");
+  if (end === -1) {
+    throw new ZipError(t(locale, "That file is not a ZIP archive.", "Tento soubor není archiv ZIP."));
+  }
 
   const count = view.getUint16(end + 10, true);
   const directoryOffset = view.getUint32(end + 16, true);
   if (count === 0xffff || directoryOffset === 0xffffffff) {
-    throw new ZipError("That archive is too large to read here (ZIP64).");
+    throw new ZipError(t(
+      locale,
+      "That archive is too large to read here (ZIP64).",
+      "Tento archiv je příliš velký – tady ho nelze načíst (ZIP64).",
+    ));
   }
 
   const decoder = new TextDecoder("utf-8");
@@ -127,7 +155,11 @@ export function readZip(buffer: ArrayBuffer): ZipEntry[] {
 
   for (let index = 0; index < count; index++) {
     if (offset + 46 > buffer.byteLength || view.getUint32(offset, true) !== DIRECTORY_ENTRY) {
-      throw new ZipError("That archive is damaged: its directory could not be read.");
+      throw new ZipError(t(
+        locale,
+        "That archive is damaged: its directory could not be read.",
+        "Archiv je poškozený: nepodařilo se přečíst jeho seznam souborů.",
+      ));
     }
 
     const flags = view.getUint16(offset + 8, true);
@@ -148,13 +180,23 @@ export function readZip(buffer: ArrayBuffer): ZipEntry[] {
       name,
       size,
       text: async () => {
-        if (flags & 0x1) throw new ZipError(`${name} is encrypted and cannot be read.`);
-        if (size > MAX_ENTRY_BYTES) throw new ZipError(`${name} is too large to read here.`);
+        if (flags & 0x1) {
+          throw new ZipError(t(
+            locale,
+            `${name} is encrypted and cannot be read.`,
+            `Soubor ${name} je zašifrovaný a nelze ho přečíst.`,
+          ));
+        }
+        if (size > MAX_ENTRY_BYTES) throw new ZipError(tooLargeMessage(name, locale));
         if (
           localOffset + 30 > buffer.byteLength ||
           view.getUint32(localOffset, true) !== LOCAL_HEADER
         ) {
-          throw new ZipError(`That archive is damaged: ${name} could not be found in it.`);
+          throw new ZipError(t(
+            locale,
+            `That archive is damaged: ${name} could not be found in it.`,
+            `Archiv je poškozený: soubor ${name} v něm nebyl nalezen.`,
+          ));
         }
         // The local header repeats the name and has an extra field of its own
         // length, so the data starts after *its* lengths, not the directory's.
@@ -166,8 +208,12 @@ export function readZip(buffer: ArrayBuffer): ZipEntry[] {
         const data = bytes.subarray(start, start + compressedSize);
 
         if (method === STORED) return decoder.decode(data);
-        if (method === DEFLATED) return decoder.decode(await inflate(data, name));
-        throw new ZipError(`${name} is compressed in a way this page cannot read.`);
+        if (method === DEFLATED) return decoder.decode(await inflate(data, name, locale));
+        throw new ZipError(t(
+          locale,
+          `${name} is compressed in a way this page cannot read.`,
+          `Soubor ${name} je zkomprimovaný způsobem, který tato stránka neumí přečíst.`,
+        ));
       },
     });
   }

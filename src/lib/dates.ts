@@ -23,6 +23,8 @@
  * display is pinned to UTC so it comes back out as the day that went in.
  */
 
+import { INTL_LOCALE, type Locale } from "@/i18n/locale";
+
 /** A bare TMDB date. Captures year, month and day so none of them need parsing. */
 const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -105,6 +107,7 @@ export function releaseYearSuffix(date: string | null | undefined): string {
 export function formatTmdbDate(
   date: string | null | undefined,
   options: Intl.DateTimeFormatOptions = LONG_DATE,
+  locale: Locale = "en",
 ): string | null {
   if (typeof date !== "string") return null;
 
@@ -113,7 +116,7 @@ export function formatTmdbDate(
   if (!isCalendarDate(trimmed)) return null;
 
   const parsed = new Date(`${trimmed}T00:00:00.000Z`);
-  return parsed.toLocaleDateString("en-US", { ...options, timeZone: "UTC" });
+  return parsed.toLocaleDateString(INTL_LOCALE[locale], { ...options, timeZone: "UTC" });
 }
 
 /** Today where the visitor is, as `YYYY-MM-DD` – the domain everything else uses. */

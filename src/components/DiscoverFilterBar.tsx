@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { LANGUAGES, releaseYears } from "@/types/filters";
+import { LANGUAGES, languageName, releaseYears } from "@/types/filters";
 import {
   buildDiscoverFilterQuery,
   DEFAULT_SORT,
@@ -18,10 +18,28 @@ import {
 import { useStreamingProviders } from "@/hooks/useStreamingProviders";
 import { ANY_PROVIDERS, MY_PROVIDERS } from "@/lib/watch-provider-settings";
 import type { Genre } from "@/types/tmdb";
+import { genreName } from "@/lib/genre-catalog";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import type { Locale } from "@/i18n/locale";
 
 const SELECT_CLASS =
   "w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent";
 const LABEL_CLASS = "block text-sm font-medium text-gray-300 mb-2";
+
+/**
+ * A filter language as the option list shows it. Czech writes language names
+ * in lower case ("angličtina"), which is right inside a sentence or a chip
+ * ("Jazyk: angličtina") but reads oddly as the first word of a list entry.
+ */
+function languageOptionLabel(
+  language: (typeof LANGUAGES)[number],
+  locale: Locale,
+): string {
+  const name = languageName(language, locale);
+  return locale === "cs"
+    ? name.charAt(0).toLocaleUpperCase("cs") + name.slice(1)
+    : name;
+}
 
 /**
  * The bar's footprint, for the prerendered HTML.
@@ -83,8 +101,8 @@ export function DiscoverFilterBar({
   type,
   genres,
   genreParamKey = "genre",
-  genreLabel = "Genre",
-  genreAllLabel = "All Genres",
+  genreLabel: genreLabelProp,
+  genreAllLabel: genreAllLabelProp,
   totalResults,
   resultsPending = false,
   emptyHint,
@@ -94,8 +112,14 @@ export function DiscoverFilterBar({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
+  const locale = useLocale();
+  const t = useT();
+  const genreLabel = genreLabelProp ?? t("Genre", "Žánr");
+  const genreAllLabel = genreAllLabelProp ?? t("All Genres", "Všechny žánry");
 
   const sortOptions = getSortOptions(type);
+  const sortLabel = (option: (typeof sortOptions)[number]) =>
+    locale === "cs" ? option.labelCs : option.label;
   const isMovie = type === "movie";
 
   const {
@@ -153,10 +177,13 @@ export function DiscoverFilterBar({
   const showMyProvidersOption =
     myProviders.length > 0 || filters.provider === MY_PROVIDERS;
   const myProvidersLabel = isLoadingProviders
-    ? "My Platforms"
+    ? t("My Platforms", "Moje služby")
     : myProviders.length > 0
-      ? `My Platforms (${myProviders.length})`
-      : "My Platforms (none picked yet)";
+      ? t(
+          `My Platforms (${myProviders.length})`,
+          `Moje služby (${myProviders.length})`,
+        )
+      : t("My Platforms (none picked yet)", "Moje služby (zatím žádné)");
 
   const activeChips: {
     key: string;
@@ -165,30 +192,32 @@ export function DiscoverFilterBar({
   }[] = [];
 
   if (filters.sortBy) {
+    const selected = sortOptions.find((o) => o.value === filters.sortBy);
     activeChips.push({
       key: "sortBy",
-      label: `Sort: ${sortOptions.find((o) => o.value === filters.sortBy)?.label}`,
+      label: `${t("Sort", "Řazení")}: ${selected && sortLabel(selected)}`,
       patch: { sortBy: "" },
     });
   }
   if (filters.year) {
     activeChips.push({
       key: "year",
-      label: `${isMovie ? "Year" : "First aired"}: ${filters.year}`,
+      label: `${isMovie ? t("Year", "Rok") : t("First aired", "Rok")}: ${filters.year}`,
       patch: { year: "" },
     });
   }
   if (filters.minRating) {
     activeChips.push({
       key: "minRating",
-      label: `Rating: ${filters.minRating}+`,
+      label: `${t("Rating", "Hodnocení")}: ${filters.minRating}+`,
       patch: { minRating: "" },
     });
   }
   if (filters.language) {
+    const selected = LANGUAGES.find((l) => l.code === filters.language);
     activeChips.push({
       key: "language",
-      label: `Language: ${LANGUAGES.find((l) => l.code === filters.language)?.name}`,
+      label: `${t("Language", "Jazyk")}: ${selected && languageName(selected, locale)}`,
       patch: { language: "" },
     });
   }
@@ -196,18 +225,18 @@ export function DiscoverFilterBar({
     const selected = genres.find((g) => String(g.id) === filters.genre);
     activeChips.push({
       key: "genre",
-      label: `${genreLabel}: ${selected?.name ?? filters.genre}`,
+      label: `${genreLabel}: ${selected ? genreName(selected, locale) : filters.genre}`,
       patch: { genre: "" },
     });
   }
   if (filters.provider) {
     activeChips.push({
       key: "provider",
-      label: `Platform: ${
+      label: `${t("Platform", "Služba")}: ${
         filters.provider === MY_PROVIDERS
-          ? "My platforms"
+          ? t("My platforms", "Moje služby")
           : filters.provider === ANY_PROVIDERS
-            ? "Any platform"
+            ? t("Any platform", "Jakákoli služba")
             : (selectedProviderName ?? `#${filters.provider}`)
       }`,
       patch: { provider: "" },
@@ -218,7 +247,11 @@ export function DiscoverFilterBar({
     <div className="bg-gray-900/50 rounded-lg p-6 mb-8">
       <fieldset>
         <legend className="sr-only">
-          Filter and sort options for {isMovie ? "movies" : "TV shows"}
+          {locale === "cs" ? (
+            <>Filtry a řazení {isMovie ? "filmů" : "seriálů"}</>
+          ) : (
+            <>Filter and sort options for {isMovie ? "movies" : "TV shows"}</>
+          )}
         </legend>
 
         {/* Every select is named by the <label> above it, and by nothing else.
@@ -230,7 +263,7 @@ export function DiscoverFilterBar({
           {/* Sort By */}
           <div>
             <label htmlFor="filter-sort-select" className={LABEL_CLASS}>
-              Sort By
+              {t("Sort By", "Řadit podle")}
             </label>
             <select
               id="filter-sort-select"
@@ -240,12 +273,12 @@ export function DiscoverFilterBar({
             >
               {/* The default sort is represented by an empty value so that it
                   never shows up in the URL. */}
-              <option value="">Most Popular</option>
+              <option value="">{t("Most Popular", "Nejpopulárnější")}</option>
               {sortOptions
                 .filter((option) => option.value !== DEFAULT_SORT)
                 .map((option) => (
                   <option key={option.value} value={option.value}>
-                    {option.label}
+                    {sortLabel(option)}
                   </option>
                 ))}
             </select>
@@ -254,7 +287,9 @@ export function DiscoverFilterBar({
           {/* Year */}
           <div>
             <label htmlFor="filter-year-select" className={LABEL_CLASS}>
-              {isMovie ? "Release Year" : "First Air Year"}
+              {isMovie
+                ? t("Release Year", "Rok premiéry")
+                : t("First Air Year", "Rok premiéry")}
             </label>
             <select
               id="filter-year-select"
@@ -262,7 +297,7 @@ export function DiscoverFilterBar({
               onChange={(e) => applyFilters({ year: e.target.value })}
               className={SELECT_CLASS}
             >
-              <option value="">All Years</option>
+              <option value="">{t("All Years", "Všechny roky")}</option>
               {releaseYears().map((year) => (
                 <option key={year} value={year}>
                   {year}
@@ -274,7 +309,7 @@ export function DiscoverFilterBar({
           {/* Minimum Rating */}
           <div>
             <label htmlFor="filter-rating-select" className={LABEL_CLASS}>
-              Min. Rating
+              {t("Min. Rating", "Min. hodnocení")}
             </label>
             <select
               id="filter-rating-select"
@@ -282,7 +317,7 @@ export function DiscoverFilterBar({
               onChange={(e) => applyFilters({ minRating: e.target.value })}
               className={SELECT_CLASS}
             >
-              <option value="">Any Rating</option>
+              <option value="">{t("Any Rating", "Jakékoli hodnocení")}</option>
               {MIN_RATING_OPTIONS.map((rating) => (
                 <option key={rating} value={rating}>
                   {rating}+ ⭐
@@ -294,7 +329,7 @@ export function DiscoverFilterBar({
           {/* Original language */}
           <div>
             <label htmlFor="filter-language-select" className={LABEL_CLASS}>
-              Original Language
+              {t("Original Language", "Původní jazyk")}
             </label>
             <select
               id="filter-language-select"
@@ -302,10 +337,10 @@ export function DiscoverFilterBar({
               onChange={(e) => applyFilters({ language: e.target.value })}
               className={SELECT_CLASS}
             >
-              <option value="">All Languages</option>
+              <option value="">{t("All Languages", "Všechny jazyky")}</option>
               {LANGUAGES.map((language) => (
                 <option key={language.code} value={language.code}>
-                  {language.name}
+                  {languageOptionLabel(language, locale)}
                 </option>
               ))}
             </select>
@@ -325,7 +360,7 @@ export function DiscoverFilterBar({
               <option value="">{genreAllLabel}</option>
               {genres.map((genre) => (
                 <option key={genre.id} value={genre.id}>
-                  {genre.name}
+                  {genreName(genre, locale)}
                 </option>
               ))}
             </select>
@@ -335,7 +370,7 @@ export function DiscoverFilterBar({
               single platform available in the region. */}
           <div>
             <label htmlFor="filter-provider-select" className={LABEL_CLASS}>
-              Streaming Platform
+              {t("Streaming Platform", "Streamovací služba")}
             </label>
             <select
               id="filter-provider-select"
@@ -343,20 +378,24 @@ export function DiscoverFilterBar({
               onChange={(e) => applyFilters({ provider: e.target.value })}
               className={SELECT_CLASS}
             >
-              <option value="">Use profile setting</option>
-              <option value={ANY_PROVIDERS}>Any Platform</option>
+              <option value="">
+                {t("Use profile setting", "Podle nastavení profilu")}
+              </option>
+              <option value={ANY_PROVIDERS}>
+                {t("Any Platform", "Jakákoli služba")}
+              </option>
               {showMyProvidersOption && (
                 <option value={MY_PROVIDERS}>{myProvidersLabel}</option>
               )}
               {isUnlistedProvider && (
                 <option value={filters.provider}>
                   {isLoadingProviders
-                    ? "Loading platforms…"
-                    : `Platform #${filters.provider}`}
+                    ? t("Loading platforms…", "Načítáme služby…")
+                    : `${t("Platform", "Služba")} #${filters.provider}`}
                 </option>
               )}
               {myProviders.length > 0 && (
-                <optgroup label="My platforms">
+                <optgroup label={t("My platforms", "Moje služby")}>
                   {myProviders.map((provider) => (
                     <option
                       key={provider.provider_id}
@@ -371,8 +410,8 @@ export function DiscoverFilterBar({
                 <optgroup
                   label={
                     myProviders.length > 0
-                      ? "All other platforms"
-                      : "All platforms"
+                      ? t("All other platforms", "Všechny ostatní služby")
+                      : t("All platforms", "Všechny služby")
                   }
                 >
                   {otherProviders.map((provider) => (
@@ -395,7 +434,7 @@ export function DiscoverFilterBar({
         {hasFilters ? (
           <>
             <span className="text-sm text-gray-400" id="active-filters-label">
-              Active filters:
+              {t("Active filters:", "Aktivní filtry:")}
             </span>
             <div
               className="flex flex-wrap gap-2"
@@ -407,7 +446,7 @@ export function DiscoverFilterBar({
                   key={chip.key}
                   onClick={() => applyFilters(chip.patch)}
                   className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900"
-                  aria-label={`Remove filter ${chip.label}`}
+                  aria-label={`${t("Remove filter", "Odebrat filtr")} ${chip.label}`}
                 >
                   {chip.label} ✕
                 </button>
@@ -416,9 +455,12 @@ export function DiscoverFilterBar({
             <button
               onClick={clearFilters}
               className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-gray-900"
-              aria-label="Clear all active filters"
+              aria-label={t(
+                "Clear all active filters",
+                "Zrušit všechny aktivní filtry",
+              )}
             >
-              Clear Filters
+              {t("Clear Filters", "Zrušit filtry")}
             </button>
           </>
         ) : (
@@ -431,8 +473,8 @@ export function DiscoverFilterBar({
         {(totalResults !== undefined || resultsPending) && (
           <span className="ml-auto text-sm text-gray-400" aria-live="polite">
             {isPending || resultsPending || totalResults === undefined
-              ? "Updating results…"
-              : formatResultCount(totalResults, type)}
+              ? t("Updating results…", "Aktualizujeme výsledky…")
+              : formatResultCount(totalResults, type, locale)}
           </span>
         )}
       </div>

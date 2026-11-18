@@ -16,7 +16,9 @@ import {
   Person,
   CollectionDetails,
   SeasonDetails,
+  ReviewsResponse,
 } from "@/types/tmdb";
+import { currentLocale } from "@/i18n/locale";
 import { getRegion } from "./settings";
 import { getRegionCode } from "./region";
 import { TMDB_CONFIG, TTL, pathId, tmdbFetchJson, type TMDBRequestOptions } from "./tmdb-cache";
@@ -101,6 +103,49 @@ function searchTitles(results: MultiSearchResult[]): MediaItem[] {
       title: "title" in item ? item.title : item.name,
       release_date: releaseDateOf(item),
     }));
+}
+
+/**
+ * A title's details as a Czech page should show them.
+ *
+ * TMDB translates what it has and leaves the rest empty: a film with no Czech
+ * overview comes back with `overview: ""`, and the reviews – filtered by the
+ * request's language, and written almost only in English – come back with
+ * none. A page with an empty synopsis and no reviews is worse than one with
+ * the English text, so those are filled in: the overview and tagline from the
+ * English translation the details already carry (`translations` is appended
+ * on every detail page), and the reviews by asking TMDB for the English ones.
+ * English pages pass through untouched.
+ */
+async function withEnglishFallbacks<T extends MovieDetails | TVShowDetails>(
+  kind: "movie" | "tv",
+  details: T,
+): Promise<T> {
+  if (currentLocale() === "en") return details;
+
+  const english = (
+    details.translations?.translations as
+      | { iso_639_1: string; data: { overview?: string; tagline?: string } }[]
+      | undefined
+  )?.find((translation) => translation.iso_639_1 === "en")?.data;
+
+  const filled: T = {
+    ...details,
+    overview: details.overview?.trim() ? details.overview : (english?.overview ?? details.overview),
+    tagline: details.tagline?.trim() ? details.tagline : (english?.tagline ?? details.tagline),
+  };
+
+  if (details.reviews && details.reviews.results.length === 0) {
+    try {
+      const url = buildDetailUrl(`/${kind}/${pathId(details.id, "id")}/reviews`, {
+        language: "en-US",
+      });
+      filled.reviews = (await tmdbFetchJson(url, TTL.LONG)) as ReviewsResponse;
+    } catch {
+      // The reviews are the least of the page; without them it still renders.
+    }
+  }
+  return filled;
 }
 
 /** One mixed results page, with its titles and people ready for their grids. */
@@ -258,7 +303,8 @@ export const tmdbApi = {
       params.append_to_response = appendToResponse;
     }
     const url = buildDetailUrl(`/movie/${pathId(movieId, "movieId")}`, params);
-    return tmdbFetchJson(url, TTL.LONG) as Promise<MovieDetails>;
+    const details = (await tmdbFetchJson(url, TTL.LONG)) as MovieDetails;
+    return withEnglishFallbacks("movie", details);
   },
 
   // Get TV show details with optional append_to_response
@@ -271,7 +317,8 @@ export const tmdbApi = {
       params.append_to_response = appendToResponse;
     }
     const url = buildDetailUrl(`/tv/${pathId(tvId, "tvId")}`, params);
-    return tmdbFetchJson(url, TTL.LONG) as Promise<TVShowDetails>;
+    const details = (await tmdbFetchJson(url, TTL.LONG)) as TVShowDetails;
+    return withEnglishFallbacks("tv", details);
   },
 
   // Get movie credits
@@ -373,10 +420,24 @@ export const tmdbApi = {
 
   // Get person details
   getPersonDetails: async (personId: number): Promise<PersonDetails> => {
+    // Outside English, the translations come along: TMDB has few biographies
+    // in Czech, and the English one is better than an empty section.
+    const translated = currentLocale() !== "en";
     const url = buildDetailUrl(`/person/${pathId(personId, "personId")}`, {
-      append_to_response: "external_ids",
+      append_to_response: translated ? "external_ids,translations" : "external_ids",
     });
-    return tmdbFetchJson(url, TTL.LONG) as Promise<PersonDetails>;
+    const details = (await tmdbFetchJson(url, TTL.LONG)) as PersonDetails & {
+      translations?: {
+        translations: { iso_639_1: string; data?: { biography?: string } }[];
+      };
+    };
+    if (!translated) return details;
+    const { translations, ...person } = details;
+    if (person.biography?.trim()) return person;
+    const english = translations?.translations.find(
+      (translation) => translation.iso_639_1 === "en",
+    );
+    return { ...person, biography: english?.data?.biography ?? person.biography };
   },
 
   // Get person movie credits

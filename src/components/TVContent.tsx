@@ -1,8 +1,9 @@
 "use client";
 
+import { catalogGenreSlug } from "@/lib/genre-catalog";
 import { Suspense } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { useSearchParams } from "next/navigation";
 import { tmdbApi } from "@/lib/tmdb";
 import { GenreTags } from "@/components/GenreTags";
@@ -40,9 +41,9 @@ import { findYouTubeTrailer } from "@/hooks/useVideoOverlay";
 import { getTVWikipediaContent } from "@/lib/wikipedia";
 import { extractIdFromSlug, createSlug } from "@/lib/utils";
 import {
-  SNAPSHOT_REGION,
   TV_APPENDED_SECTIONS,
   likeResults,
+  snapshotRegion,
   tvPageTitle,
 } from "@/lib/title-details";
 import type { TVShowDetails } from "@/types/tmdb";
@@ -51,23 +52,40 @@ import { resolveRegionProviders } from "@/lib/media-converters";
 import { resolveTVCertification } from "@/lib/media-certification";
 import { getRegionCode, getRegionName } from "@/lib/region";
 import {
+  absoluteLocalizedUrl,
   absoluteMediaUrl,
-  absoluteUrl,
   genreHref,
   likeHref,
   personHref,
-  SITE_URL,
 } from "@/lib/routes";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount, formatNumber, type PluralForms, formatRating } from "@/i18n/format";
+import type { Locale } from "@/i18n/locale";
 
 
-function formatRuntime(minutes: number[]): string {
-  if (!minutes || minutes.length === 0) return "Unknown runtime";
+function formatRuntime(minutes: number[], locale: Locale): string {
+  if (!minutes || minutes.length === 0) {
+    return locale === "cs" ? "Délka neznámá" : "Unknown runtime";
+  }
   const avgMinutes =
     minutes.reduce((sum, time) => sum + time, 0) / minutes.length;
   const hours = Math.floor(avgMinutes / 60);
   const mins = Math.round(avgMinutes % 60);
+  if (locale === "cs") {
+    return hours > 0 ? `~${hours} h ${mins} min` : `~${mins} min`;
+  }
   return hours > 0 ? `~${hours}h ${mins}m` : `~${mins}m`;
 }
+
+const SEASONS: PluralForms = {
+  en: ["season", "seasons"],
+  cs: ["řada", "řady", "řad"],
+};
+
+const EPISODES: PluralForms = {
+  en: ["episode", "episodes"],
+  cs: ["epizoda", "epizody", "epizod"],
+};
 
 /**
  * A series. The mirror of the film page, and addressed the same two ways: a
@@ -104,6 +122,8 @@ function TVDetail({
   snapshot: TVShowDetails | null;
 }) {
   const id = extractIdFromSlug(slug);
+  const locale = useLocale();
+  const t = useT();
   const { region } = useSettings();
   // The day the providers below were read: the snapshot's own date while the
   // page shows the build's copy, today once the browser has loaded its own.
@@ -123,10 +143,10 @@ function TVDetail({
   );
 
   useDocumentTitle(
-    data ? tvPageTitle(data) : null,
+    data ? tvPageTitle(data, locale) : null,
   );
   useCanonicalUrl(
-    data ? absoluteMediaUrl("tv", createSlug(data.name, data.id)) : null,
+    data ? absoluteMediaUrl("tv", createSlug(data.name, data.id), locale) : null,
   );
 
   if (isLoading) return <MediaDetailSkeleton />;
@@ -138,8 +158,11 @@ function TVDetail({
   if (error && !isNotFoundError(error)) {
     return (
       <LoadFailureNotice
-        title="Could not load this series"
-        description="TMDB did not answer. It may be a connection problem, or the service may be busy – the series is probably still there."
+        title={t("Could not load this series", "Seriál se nepodařilo načíst")}
+        description={t(
+          "TMDB did not answer. It may be a connection problem, or the service may be busy – the series is probably still there.",
+          "TMDB neodpovídá. Může jít o potíže s připojením, nebo je služba přetížená – seriál tam nejspíš pořád je.",
+        )}
         onRetry={reload}
       />
     );
@@ -151,10 +174,13 @@ function TVDetail({
   if (!data || isNotFoundError(refreshError)) {
     return (
       <NotFoundNotice
-        title="TV show not found"
-        description="We could not find that series. It may have been removed from TMDB, or the link may be incomplete."
+        title={t("TV show not found", "Seriál nenalezen")}
+        description={t(
+          "We could not find that series. It may have been removed from TMDB, or the link may be incomplete.",
+          "Tento seriál jsme nenašli. Možná byl z TMDB odstraněn, nebo je odkaz neúplný.",
+        )}
         backHref="/tv-shows"
-        backLabel="Browse TV shows"
+        backLabel={t("Browse TV shows", "Procházet seriály")}
       />
     );
   }
@@ -173,12 +199,13 @@ function TVDetail({
   // Watch" section costs no request of its own – and follows the region setting
   // without refetching, because every region is already in the payload.
   //
-  // A build's snapshot carries one region's providers (`SNAPSHOT_REGION`), so
-  // for a visitor anywhere else it says nothing yet – which is not the same as
-  // saying the title is unavailable there, and must not be shown as that.
+  // A build's snapshot carries one region's providers (`snapshotRegion` – the
+  // page's own language's default region, so a Czech page's snapshot knows CZ),
+  // so for a visitor anywhere else it says nothing yet – which is not the same
+  // as saying the title is unavailable there, and must not be shown as that.
   const providersKnown =
     details.snapshot_date === undefined ||
-    getRegionCode(region) === SNAPSHOT_REGION;
+    getRegionCode(region) === snapshotRegion(locale);
   const watchProviders = providersKnown
     ? resolveRegionProviders(details["watch/providers"], getRegionCode(region))
     : null;
@@ -193,19 +220,20 @@ function TVDetail({
   );
 
   const canonicalSlug = createSlug(details.name, details.id);
-  const pageUrl = absoluteMediaUrl("tv", canonicalSlug);
+  const pageUrl = absoluteMediaUrl("tv", canonicalSlug, locale);
 
   const breadcrumbItems = [
-    { name: "Home", url: SITE_URL },
-    { name: "TV Shows", url: absoluteUrl("/tv-shows") },
+    { name: t("Home", "Domů"), url: absoluteLocalizedUrl("/", locale) },
+    { name: t("TV Shows", "Seriály"), url: absoluteLocalizedUrl("/tv-shows", locale) },
   ];
 
   if (details.genres && details.genres.length > 0) {
     const primaryGenre = details.genres[0];
     breadcrumbItems.push({
       name: primaryGenre.name,
-      url: absoluteUrl(
-        genreHref("tv", createSlug(primaryGenre.name, primaryGenre.id)),
+      url: absoluteLocalizedUrl(
+        genreHref("tv", catalogGenreSlug("tv", primaryGenre)),
+        locale,
       ),
     });
   }
@@ -241,8 +269,13 @@ function TVDetail({
           inLanguage: details.spoken_languages?.[0]?.english_name || undefined,
           created_by: details.created_by,
         }}
+        locale={locale}
       />
-      <StructuredData type="BreadcrumbList" data={{ breadcrumbItems }} />
+      <StructuredData
+        type="BreadcrumbList"
+        data={{ breadcrumbItems }}
+        locale={locale}
+      />
 
       {/* Hero Section with Backdrop */}
       <div className="relative">
@@ -269,7 +302,10 @@ function TVDetail({
           {refreshError != null && (
             <SnapshotRefreshNotice
               className="mt-4 max-w-6xl xl:max-w-7xl"
-              message="Showing a saved copy of this series – the latest details could not be loaded."
+              message={t(
+                "Showing a saved copy of this series – the latest details could not be loaded.",
+                "Zobrazujeme uloženou kopii seriálu – aktuální údaje se nepodařilo načíst.",
+              )}
               onRetry={reload}
               isRetrying={isRetrying}
             />
@@ -301,31 +337,46 @@ function TVDetail({
 
               <div className="flex flex-wrap items-center gap-4 mb-6">
                 <span className="text-lg">
-                  {releaseYear(details.first_air_date) ?? "N/A"}
+                  {releaseYear(details.first_air_date) ?? t("N/A", "neuvedeno")}
                   {details.last_air_date &&
                     details.last_air_date !== details.first_air_date && (
+                      // A range of years: English has always spaced its
+                      // hyphen; Czech writes an unspaced en dash, 2008–2013.
                       <>
-                        {" "}
-                        -{" "}
-                        {releaseYear(details.last_air_date) ?? "N/A"}
+                        {locale === "cs" ? "–" : <>{" "}-{" "}</>}
+                        {releaseYear(details.last_air_date) ?? t("N/A", "neuvedeno")}
                       </>
                     )}
                 </span>
                 <span>•</span>
                 <span>
-                  {details.number_of_seasons}{" "}
-                  {details.number_of_seasons === 1 ? "season" : "seasons"}
+                  {locale === "cs" ? (
+                    formatCount(details.number_of_seasons, locale, SEASONS)
+                  ) : (
+                    <>
+                      {details.number_of_seasons}{" "}
+                      {details.number_of_seasons === 1 ? "season" : "seasons"}
+                    </>
+                  )}
                 </span>
                 <span>•</span>
-                <span>{details.number_of_episodes} episodes</span>
+                <span>
+                  {locale === "cs"
+                    ? formatCount(details.number_of_episodes, locale, EPISODES)
+                    : `${details.number_of_episodes} episodes`}
+                </span>
                 <span>•</span>
-                <span>{formatRuntime(details.episode_run_time)}</span>
+                <span>{formatRuntime(details.episode_run_time, locale)}</span>
                 <span>•</span>
                 <div className="flex items-center gap-2">
                   <span className="text-yellow-400">★</span>
-                  <span>{details.vote_average?.toFixed(1)}</span>
+                  <span>
+                    {details.vote_average != null &&
+                      formatRating(details.vote_average, locale)}
+                  </span>
                   <span className="text-gray-300">
-                    ({details.vote_count.toLocaleString("en-US")} ratings)
+                    ({formatNumber(details.vote_count, locale)}{" "}
+                    {t("ratings", "hodnocení")})
                   </span>
                 </div>
               </div>
@@ -334,7 +385,9 @@ function TVDetail({
 
               {details.overview && (
                 <div className="mt-6">
-                  <h2 className="text-xl font-semibold mb-3">Overview</h2>
+                  <h2 className="text-xl font-semibold mb-3">
+                    {t("Overview", "Obsah")}
+                  </h2>
                   <p className="text-gray-200 leading-relaxed">
                     {details.overview}
                   </p>
@@ -346,7 +399,7 @@ function TVDetail({
                   and the in-memory TMDB cache went with it. */}
               {creators.length > 0 && (
                 <div className="mt-6">
-                  <h3 className="font-semibold">Creators</h3>
+                  <h3 className="font-semibold">{t("Creators", "Tvůrci")}</h3>
                   <p className="text-gray-300">
                     {creators.map(
                       (c: { id: number; name: string }, i: number) => (
@@ -370,7 +423,7 @@ function TVDetail({
               {details.next_episode_to_air && (
                 <div className="mt-4 bg-white/10 rounded-lg px-4 py-3 inline-block">
                   <p className="text-gray-300 text-sm font-semibold uppercase tracking-wider mb-1">
-                    Next Episode
+                    {t("Next Episode", "Další epizoda")}
                   </p>
                   <p className="text-white font-medium">
                     S
@@ -386,7 +439,11 @@ function TVDetail({
                       : ""}
                   </p>
                   <p className="text-gray-300 text-sm">
-                    {formatTmdbDate(details.next_episode_to_air.air_date)}
+                    {formatTmdbDate(
+                      details.next_episode_to_air.air_date,
+                      undefined,
+                      locale,
+                    )}
                   </p>
                 </div>
               )}
@@ -435,7 +492,7 @@ function TVDetail({
             <WhereToWatch
               providers={watchProviders}
               title={details.name}
-              regionName={getRegionName(region)}
+              regionName={getRegionName(region, locale)}
               checkedOn={details.snapshot_date ?? today}
             />
             <TVCast credits={credits} />
@@ -460,7 +517,9 @@ function TVDetail({
             <SimilarTVShows
               similar={similar}
               title={details.name}
-              allHref={likeHref("tv", canonicalSlug)}
+              // Each language has its own list of "like" pages – Czech's is
+              // its own, smaller one – so the link is looked up in the page's.
+              allHref={likeHref("tv", canonicalSlug, locale)}
             />
           </div>
 

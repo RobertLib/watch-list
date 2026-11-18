@@ -9,7 +9,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import {
   Check,
   Clock,
@@ -44,13 +44,18 @@ import {
   type DailyGameState,
   type DailyGuess,
 } from "@/lib/daily-game";
-import { MAX_GUESSES, puzzleNumberForDay, todayUtc } from "@/lib/daily-puzzle";
+import {
+  MAX_GUESSES,
+  formatPuzzleDay,
+  puzzleNumberForDay,
+  todayUtc,
+} from "@/lib/daily-puzzle";
 import { NextPuzzleCountdown } from "@/components/NextPuzzleCountdown";
 import { getImageUrl } from "@/lib/tmdb-image";
 import { cn } from "@/lib/utils";
 import type { DailyPuzzleView } from "@/lib/daily-puzzle-data";
 import type { MediaItem } from "@/types/tmdb";
-import { absoluteUrl, movieHref } from "@/lib/routes";
+import { absoluteLocalizedUrl, localizeHref, movieHref } from "@/lib/routes";
 import { shareText } from "@/lib/share-text";
 import {
   DEFAULT_PROFILE_ID,
@@ -59,6 +64,14 @@ import {
 } from "@/lib/profiles";
 import { withProfileStorage } from "@/lib/profile-storage";
 import { withProfileRosterLock } from "@/lib/profile-roster-lock";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import {
+  formatCount,
+  formatNumber,
+  pluralForm,
+  type PluralForms,
+} from "@/i18n/format";
+import type { Locale } from "@/i18n/locale";
 
 // Enough to type a title; the picker does the rest.
 const SEARCH_DEBOUNCE_MS = 250;
@@ -82,10 +95,37 @@ type SaveOutcome =
   /** Landed after its day ended, and the archive board could not take it. */
   | "late-skipped";
 
+/** "1 pokus", "3 pokusy", "5 pokusů" – also right after "na" ("na 5 pokusů"). */
+const GUESS_FORMS: PluralForms = {
+  en: ["guess", "guesses"],
+  cs: ["pokus", "pokusy", "pokusů"],
+};
+
+/** "Zbývá 1 pokus", "Zbývají 3 pokusy", "Zbývá 5 pokusů": the verb agrees too. */
+function guessesLeftCs(left: number): string {
+  const verb = pluralForm(left, "cs", {
+    en: ["", ""],
+    cs: ["Zbývá", "Zbývají", "Zbývá"],
+  });
+  return `${verb} ${formatCount(left, "cs", GUESS_FORMS)}`;
+}
+
 /** What a screen reader hears once a guess is on the board. */
-function describeGuess(title: string, board: DailyBoard): string {
+function describeGuess(
+  title: string,
+  board: DailyBoard,
+  locale: Locale = "en",
+): string {
   const used = board.guesses.length;
   const left = MAX_GUESSES - used;
+
+  if (locale === "cs") {
+    if (board.status === "won") {
+      return `„${title}“ je správně. Uhodnuto na ${formatCount(used, locale, GUESS_FORMS)}.`;
+    }
+    if (board.status === "lost") return `„${title}“ to není. Došly vám pokusy.`;
+    return `„${title}“ to není. ${guessesLeftCs(left)}.`;
+  }
 
   if (board.status === "won") {
     return `${title} is right. Solved in ${used} ${used === 1 ? "guess" : "guesses"}.`;
@@ -99,7 +139,23 @@ function describeLateGuess(
   day: string,
   title: string,
   board: DailyBoard | null,
+  locale: Locale = "en",
 ): string {
+  if (locale === "cs") {
+    const closed = `Hádanka #${puzzleNumberForDay(day)} se o půlnoci UTC uzavřela dřív, než se stihl uložit váš tip.`;
+
+    if (!board) {
+      return `${closed} Hádanka už byla dohraná nebo tenhle tip už obsahovala, takže se tip „${title}“ nezapočítal.`;
+    }
+    if (board.status === "won") {
+      return `${closed} Tip „${title}“ byl správný – v archivu se uložil k té hádance jako dohnaný, do série se ale nepočítá.`;
+    }
+    if (board.status === "lost") {
+      return `${closed} Tip „${title}“ správný nebyl a byl to poslední pokus na té hádance v archivu.`;
+    }
+    return `${closed} Tip „${title}“ se uložil k té hádance v archivu – dohrajte ji tam, do série se ale už nepočítá.`;
+  }
+
   const closed = `Puzzle #${puzzleNumberForDay(day)} closed at midnight UTC before your guess was saved.`;
 
   if (!board) {
@@ -163,6 +219,8 @@ function PuzzleBoard({
   day: string;
   isArchive: boolean;
 }) {
+  const locale = useLocale();
+  const t = useT();
   const isMounted = useRef(true);
 
   useEffect(() => {
@@ -265,7 +323,10 @@ function PuzzleBoard({
       if (getActiveProfileId({ strict: true }) === profileId) return true;
     } catch {
       toast.showToast(
-        "Could not check your active profile. Reload the page and try again.",
+        t(
+          "Could not check your active profile. Reload the page and try again.",
+          "Nepodařilo se ověřit váš aktivní profil. Načtěte stránku znovu a zkuste to ještě jednou.",
+        ),
         "error",
       );
       return false;
@@ -273,12 +334,15 @@ function PuzzleBoard({
 
     if (announceChange) {
       toast.showToast(
-        "Your active profile changed. Review the current puzzle and try again.",
+        t(
+          "Your active profile changed. Review the current puzzle and try again.",
+          "Váš aktivní profil se změnil. Podívejte se na aktuální hádanku a zkuste to znovu.",
+        ),
         "info",
       );
     }
     return false;
-  }, [profileId]);
+  }, [profileId, t]);
 
   const submitGuess = useCallback(
     async (item: MediaItem) => {
@@ -336,13 +400,13 @@ function PuzzleBoard({
         }, "unavailable");
         if ((saved === "late" || saved === "late-skipped") && checkProfile(false)) {
           toast.showToast(
-            describeLateGuess(day, item.title, landed),
+            describeLateGuess(day, item.title, landed, locale),
             "info",
             LATE_GUESS_TOAST_MS,
           );
         }
         if (saved === "saved" && landed && isMounted.current) {
-          setAnnouncement(describeGuess(item.title, landed));
+          setAnnouncement(describeGuess(item.title, landed, locale));
           if (landed.status !== "playing") setFinishedHere(true);
         }
         // Said even after a midnight remount: that guess was kept on purpose,
@@ -350,21 +414,33 @@ function PuzzleBoard({
         if ((saved === "refused" || saved === "unavailable") && (isMounted.current || dayEnded()) && checkProfile(false)) {
           toast.showToast(
             saved === "refused"
-              ? "Could not save that guess. Check your browser's storage settings and try again."
-              : "Could not safely save that guess. Reload the page and try again.",
+              ? t(
+                  "Could not save that guess. Check your browser's storage settings and try again.",
+                  "Tip se nepodařilo uložit. Zkontrolujte nastavení úložiště v prohlížeči a zkuste to znovu.",
+                )
+              : t(
+                  "Could not safely save that guess. Reload the page and try again.",
+                  "Tip se nepodařilo bezpečně uložit. Načtěte stránku znovu a zkuste to ještě jednou.",
+                ),
             "error",
           );
         }
       } catch (error) {
         if (!isMounted.current || !checkProfile(false)) return;
         console.error("Error checking the guess:", error);
-        toast.showToast("Could not check that guess – try again", "error");
+        toast.showToast(
+          t(
+            "Could not check that guess – try again",
+            "Tip se nepodařilo ověřit – zkuste to znovu",
+          ),
+          "error",
+        );
       } finally {
         checking.current = false;
         if (isMounted.current) setIsChecking(false);
       }
     },
-    [isOver, day, isArchive, checkProfile, profileId],
+    [isOver, day, isArchive, checkProfile, profileId, locale, t],
   );
 
   // Only when there is nothing to show instead. A re-ask that fails *after* a
@@ -373,14 +449,20 @@ function PuzzleBoard({
     return (
       <div className="max-w-2xl mx-auto text-center py-16 space-y-4">
         <p className="text-gray-400">
-          Could not load {isArchive ? "that" : "today's"} puzzle just now.
+          {locale === "cs" ? (
+            isArchive
+              ? "Tuhle hádanku se teď nepodařilo načíst."
+              : "Dnešní hádanku se teď nepodařilo načíst."
+          ) : (
+            <>Could not load {isArchive ? "that" : "today's"} puzzle just now.</>
+          )}
         </p>
         <button
           onClick={retryLoad}
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold text-white transition-colors"
         >
           <RotateCcw className="w-4 h-4" aria-hidden="true" />
-          Try again
+          {t("Try again", "Zkusit znovu")}
         </button>
       </div>
     );
@@ -396,31 +478,36 @@ function PuzzleBoard({
 
   const streak = effectiveStreak(state, day);
   const remaining = MAX_GUESSES - guessCount;
+  const shownDay = formatPuzzleDay(day, locale);
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-gray-400">
-          Puzzle #{puzzle.number} · {day}
+          {t("Puzzle", "Hádanka")} #{puzzle.number} · {shownDay}
         </p>
         <div className="flex items-center gap-4 text-sm">
           {isArchive ? (
             <span className="flex items-center gap-1.5 text-gray-400">
               <History className="w-4 h-4" aria-hidden="true" />
-              From the archive
+              {t("From the archive", "Z archivu")}
             </span>
           ) : (
             <>
               {streak > 0 && (
                 <span className="flex items-center gap-1.5 text-orange-300">
                   <Flame className="w-4 h-4" aria-hidden="true" />
-                  {streak} day streak
+                  {locale === "cs" ? (
+                    `${formatCount(streak, locale, { en: ["day", "days"], cs: ["den", "dny", "dní"] })} v řadě`
+                  ) : (
+                    <>{streak} day streak</>
+                  )}
                 </span>
               )}
               {state.bestStreak > 0 && (
                 <span className="flex items-center gap-1.5 text-gray-400">
                   <Trophy className="w-4 h-4" aria-hidden="true" />
-                  best {state.bestStreak}
+                  {t("best", "rekord")} {formatNumber(state.bestStreak, locale)}
                 </span>
               )}
             </>
@@ -430,7 +517,21 @@ function PuzzleBoard({
 
       {isArchive && (
         <p className="text-sm text-gray-500 rounded-lg border border-gray-800 bg-gray-900/40 px-4 py-3">
-          {playedLive ? (
+          {locale === "cs" ? (
+            playedLive ? (
+              <>
+                Hádanku #{puzzleNumberForDay(day)} jste hráli přímo v den, kdy
+                vyšla ({shownDay}), takže zůstává tak, jak skončila. Archiv je
+                na dohánění dnů, které jste vynechali.
+              </>
+            ) : (
+              <>
+                Hádanka #{puzzleNumberForDay(day)} původně vyšla {shownDay}.
+                Počítá se do odznaku za archiv, do série ale ne – ta je za to,
+                že dorazíte v ten správný den.
+              </>
+            )
+          ) : playedLive ? (
             <>
               You played puzzle #{puzzleNumberForDay(day)} on {day}, the day it
               ran, so it stays as it finished. The archive is for catching up on
@@ -453,11 +554,17 @@ function PuzzleBoard({
       {loadFailed && (
         <LoadFailureNotice
           compact
-          title="Could not refresh this puzzle"
+          title={t("Could not refresh this puzzle", "Hádanku se nepodařilo obnovit")}
           description={
             isOver
-              ? "Your result is saved. Try again to reveal the film and share your result."
-              : "Your guesses are saved. Try again to load the latest clue and picture."
+              ? t(
+                  "Your result is saved. Try again to reveal the film and share your result.",
+                  "Váš výsledek je uložený. Zkuste to znovu – odhalí se film a výsledek budete moct sdílet.",
+                )
+              : t(
+                  "Your guesses are saved. Try again to load the latest clue and picture.",
+                  "Vaše tipy jsou uložené. Zkuste to znovu a načte se nejnovější nápověda i obrázek.",
+                )
           }
           onRetry={retryLoad}
         />
@@ -483,8 +590,14 @@ function PuzzleBoard({
             alreadyGuessed={new Set((board?.guesses ?? []).map((g) => g.id))}
           />
           <p className="text-sm text-gray-500 text-center">
-            {remaining} guess{remaining === 1 ? "" : "es"} left. Each wrong one
-            sharpens the image and unlocks a clue.
+            {locale === "cs" ? (
+              `${guessesLeftCs(remaining)}. Každý špatný tip zaostří obrázek a odemkne nápovědu.`
+            ) : (
+              <>
+                {remaining} guess{remaining === 1 ? "" : "es"} left. Each wrong one
+                sharpens the image and unlocks a clue.
+              </>
+            )}
           </p>
         </>
       )}
@@ -513,7 +626,7 @@ function PuzzleBoard({
               )}
               {/* The icons are the only other place this is said. */}
               <span className="sr-only">
-                {guess.correct ? "Right:" : "Wrong:"}
+                {guess.correct ? t("Right:", "Správně:") : t("Wrong:", "Špatně:")}
               </span>
               <span className="truncate">{guess.title}</span>
             </li>
@@ -546,6 +659,7 @@ function PuzzleImage({
   guessCount: number;
   isOver: boolean;
 }) {
+  const t = useT();
   // The URL already names a progressively larger TMDB size; the blur on top is
   // polish rather than protection, which is why it can be pure CSS.
   const blur = isOver ? 0 : Math.max(0, 12 - guessCount * 2);
@@ -564,8 +678,11 @@ function PuzzleImage({
         src={src}
         alt={
           isOver
-            ? "Today's film"
-            : "A blurred still from today's film, sharpening with each guess"
+            ? t("Today's film", "Hledaný film")
+            : t(
+                "A blurred still from today's film, sharpening with each guess",
+                "Rozmazaný záběr z hledaného filmu, který se s každým tipem zaostří",
+              )
         }
         className="w-full h-full object-cover transition-[filter] duration-500"
         style={{ filter: blur > 0 ? `blur(${blur}px)` : undefined }}
@@ -604,6 +721,7 @@ function GuessPicker({
   disabled: boolean;
   alreadyGuessed: Set<number>;
 }) {
+  const t = useT();
   const [query, setQuery] = useState("");
   const [found, setFound] = useState<MediaItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -678,7 +796,7 @@ function GuessPicker({
   return (
     <div className="space-y-2">
       <label htmlFor="daily-guess" className="sr-only">
-        Guess the film
+        {t("Guess the film", "Hádejte film")}
       </label>
       <div className="relative">
         <Search
@@ -699,13 +817,15 @@ function GuessPicker({
           onChange={(event) => {
             if (!disabled) updateQuery(event.target.value);
           }}
-          placeholder="Type a film title…"
+          placeholder={t("Type a film title…", "Napište název filmu…")}
           className="w-full pl-12 pr-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40 aria-disabled:opacity-60 aria-disabled:cursor-wait"
         />
       </div>
 
       {isSearching && results.length === 0 && (
-        <p className="text-xs text-gray-500 px-1">Searching…</p>
+        <p className="text-xs text-gray-500 px-1">
+          {t("Searching…", "Hledám…")}
+        </p>
       )}
 
       {results.length > 0 && (
@@ -733,7 +853,7 @@ function GuessPicker({
                   )}
                   {guessed && (
                     <span className="text-xs text-gray-500 ml-auto shrink-0">
-                      already guessed
+                      {t("already guessed", "už tipnuto")}
                     </span>
                   )}
                 </button>
@@ -746,32 +866,63 @@ function GuessPicker({
   );
 }
 
+/**
+ * The decade clue in Czech. The puzzle hands it over as "1990s"; Czech says
+ * "90. léta", which cannot tell the 1920s of "Metropolis" from the 2020s – so
+ * the years are spelled out instead.
+ */
+function czechDecade(decade: string): string {
+  const match = /^(\d{4})s$/.exec(decade);
+  if (!match) return decade;
+  const start = Number(match[1]);
+  return `${start}–${start + 9}`;
+}
+
 function Hints({ hints }: { hints: DailyPuzzleView["hints"] }) {
+  const locale = useLocale();
+  const t = useT();
   const rows: Array<{ label: string; value: string }> = [];
 
-  if (hints.decade) rows.push({ label: "Released", value: `The ${hints.decade}` });
+  if (hints.decade) {
+    rows.push({
+      label: t("Released", "Premiéra"),
+      value:
+        locale === "cs"
+          ? `v letech ${czechDecade(hints.decade)}`
+          : `The ${hints.decade}`,
+    });
+  }
   if (hints.genres?.length) {
-    rows.push({ label: "Genre", value: hints.genres.join(", ") });
+    rows.push({ label: t("Genre", "Žánr"), value: hints.genres.join(", ") });
   }
   if (hints.runtime) {
-    rows.push({ label: "Runtime", value: `${hints.runtime} minutes` });
+    rows.push({
+      label: t("Runtime", "Stopáž"),
+      value:
+        locale === "cs"
+          ? formatCount(hints.runtime, locale, {
+              en: ["minute", "minutes"],
+              cs: ["minuta", "minuty", "minut"],
+            })
+          : `${hints.runtime} minutes`,
+    });
   }
   // A film with no tagline on TMDB still spends its rung – saying so is honest,
   // and silently skipping to the cast would give away a stronger clue early.
   if ("tagline" in hints) {
     rows.push({
-      label: "Tagline",
-      value: hints.tagline || "No tagline on record",
+      label: t("Tagline", "Slogan"),
+      value: hints.tagline || t("No tagline on record", "Slogan neuveden"),
     });
   }
   if ("director" in hints) {
     rows.push({
-      label: "Directed by",
-      value: hints.director || "Not credited on TMDb",
+      label: t("Directed by", "Režie"),
+      value: hints.director || t("Not credited on TMDb", "Na TMDb neuvedeno"),
     });
   }
   if (hints.cast?.length) {
-    rows.push({ label: "Starring", value: hints.cast.join(", ") });
+    rows.push({ label: t("Starring", "Hrají"), value: hints.cast.join(", ") });
   }
 
   if (rows.length === 0) return null;
@@ -809,6 +960,8 @@ function Result({
   /** The guess that finished the board was made here, and its picker is gone. */
   takeFocus: boolean;
 }) {
+  const locale = useLocale();
+  const t = useT();
   const [copied, markCopied] = useTransientFlag(2500);
   const heading = useRef<HTMLParagraphElement>(null);
   // A result from the day kept without its board: the outcome is known, the
@@ -824,8 +977,8 @@ function Result({
     // would spoil it for whoever follows it.
     const url =
       typeof window === "undefined"
-        ? absoluteUrl("/daily")
-        : `${window.location.origin}/daily`;
+        ? absoluteLocalizedUrl("/daily", locale)
+        : `${window.location.origin}${localizeHref("/daily", locale)}`;
     // A day played on the day is no catch-up, wherever it is shared from.
     const text = buildShareText(
       puzzleNumber,
@@ -833,13 +986,17 @@ function Result({
       status,
       url,
       isArchive && !playedLive,
+      locale,
     );
 
     // A dismissed share sheet is an answer, not a failure – see `shareText`.
     const outcome = await shareText(text);
     if (outcome === "copied") markCopied();
     else if (outcome === "failed") {
-      toast.showToast("Could not copy your result", "error");
+      toast.showToast(
+        t("Could not copy your result", "Výsledek se nepodařilo zkopírovat"),
+        "error",
+      );
     }
   }
 
@@ -877,11 +1034,14 @@ function Result({
           >
             {status === "won"
               ? resultOnly
-                ? "Solved on the day"
-                : `Got it in ${guesses.length}!`
+                ? t("Solved on the day", "Vyřešeno ještě ten den")
+                : t(
+                    `Got it in ${guesses.length}!`,
+                    `Máte to na ${guesses.length}. pokus!`,
+                  )
               : resultOnly
-                ? "Not solved on the day"
-                : "Out of guesses"}
+                ? t("Not solved on the day", "Ten den nevyřešeno")
+                : t("Out of guesses", "Došly pokusy")}
           </p>
           <Link
             href={movieHref(answer.slug)}
@@ -903,9 +1063,23 @@ function Result({
 
       {!isArchive && (
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-400">
-          <span>Played {state.played}</span>
-          <span>Won {winRate}%</span>
-          {state.bestStreak > 0 && <span>Best streak {state.bestStreak}</span>}
+          {locale === "cs" ? (
+            <>
+              <span>Odehráno {formatNumber(state.played, locale)}</span>
+              <span>Vyhráno {formatNumber(winRate, locale)} %</span>
+              {state.bestStreak > 0 && (
+                <span>
+                  Nejdelší série {formatNumber(state.bestStreak, locale)}
+                </span>
+              )}
+            </>
+          ) : (
+            <>
+              <span>Played {state.played}</span>
+              <span>Won {winRate}%</span>
+              {state.bestStreak > 0 && <span>Best streak {state.bestStreak}</span>}
+            </>
+          )}
         </div>
       )}
 
@@ -922,7 +1096,9 @@ function Result({
             ) : (
               <Share2 className="w-4 h-4" aria-hidden="true" />
             )}
-            {copied ? "Copied" : "Share result"}
+            {copied
+              ? t("Copied", "Zkopírováno")
+              : t("Share result", "Sdílet výsledek")}
           </button>
         )}
         <Link
@@ -931,7 +1107,7 @@ function Result({
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-semibold text-white transition-colors"
         >
           <Film className="w-4 h-4" aria-hidden="true" />
-          About this film
+          {t("About this film", "O filmu")}
         </Link>
         <Link
           href="/daily/archive"
@@ -939,7 +1115,9 @@ function Result({
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-semibold text-white transition-colors"
         >
           <History className="w-4 h-4" aria-hidden="true" />
-          {isArchive ? "Back to the archive" : "Play an older one"}
+          {isArchive
+            ? t("Back to the archive", "Zpět do archivu")
+            : t("Play an older one", "Zahrát si starší")}
         </Link>
       </div>
 
@@ -948,7 +1126,7 @@ function Result({
       {!isArchive && (
         <p className="flex items-center gap-2 text-xs text-gray-500">
           <Clock className="w-3.5 h-3.5" aria-hidden="true" />
-          Next puzzle in <NextPuzzleCountdown />
+          {t("Next puzzle in", "Další hádanka za")} <NextPuzzleCountdown />
         </p>
       )}
     </div>

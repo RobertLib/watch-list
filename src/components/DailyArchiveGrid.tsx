@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useSyncExternalStore } from "react";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { Check, Circle, History, X } from "lucide-react";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useHydrated } from "@/hooks/useHydrated";
@@ -15,20 +15,39 @@ import {
   type DailyGameState,
   type DayOutcome,
 } from "@/lib/daily-game";
-import { puzzleNumberForDay, recentDays } from "@/lib/daily-puzzle";
+import {
+  formatPuzzleDay,
+  puzzleNumberForDay,
+  recentDays,
+} from "@/lib/daily-puzzle";
 import { cn } from "@/lib/utils";
 import { dailyHref } from "@/lib/routes";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { formatCount, formatNumber } from "@/i18n/format";
+import { INTL_LOCALE, type Locale } from "@/i18n/locale";
 
-/** "November 2026" for a `YYYY-MM-DD` day, read as the UTC calendar day it names. */
-const MONTH_FORMAT = new Intl.DateTimeFormat("en", {
-  month: "long",
-  year: "numeric",
-  timeZone: "UTC",
-});
+/**
+ * "November 2026" / "Listopad 2026" for a `YYYY-MM-DD` day, read as the UTC
+ * calendar day it names.
+ */
+const MONTH_FORMAT: Record<Locale, Intl.DateTimeFormat> = {
+  en: new Intl.DateTimeFormat("en", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }),
+  cs: new Intl.DateTimeFormat(INTL_LOCALE.cs, {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }),
+};
 
-function monthLabel(month: string): string {
+function monthLabel(month: string, locale: Locale): string {
   const [year, monthNumber] = month.split("-").map(Number);
-  return MONTH_FORMAT.format(Date.UTC(year, monthNumber - 1, 1));
+  const label = MONTH_FORMAT[locale].format(Date.UTC(year, monthNumber - 1, 1));
+  // Czech months are lower case ("listopad 2026"); this one is a heading.
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 /**
@@ -55,6 +74,7 @@ function archiveMonths(today: string): { month: string; days: string[] }[] {
  * click away, is what turns a lapse back into a habit.
  */
 export function DailyArchiveGrid() {
+  const locale = useLocale();
   const isHydrated = useHydrated();
   const state = useSyncExternalStore(
     subscribeToGameState,
@@ -77,15 +97,36 @@ export function DailyArchiveGrid() {
   return (
     <div className="space-y-6">
       <p className="text-gray-400">
-        {days.length} puzzle{days.length === 1 ? "" : "s"} so far
-        {unplayed > 0 && (
+        {locale === "cs" ? (
           <>
-            {" · "}
-            <span className="text-blue-300">{unplayed} you have not played</span>
+            Zatím{" "}
+            {formatCount(days.length, locale, {
+              en: ["puzzle", "puzzles"],
+              cs: ["hádanka", "hádanky", "hádanek"],
+            })}
+            {unplayed > 0 && (
+              <>
+                {" · "}
+                <span className="text-blue-300">
+                  {formatNumber(unplayed, locale)} z nich jste nehráli
+                </span>
+              </>
+            )}
+            . Dohnaná hádanka se počítá do odznaku za archiv, do série ale nikdy.
+          </>
+        ) : (
+          <>
+            {days.length} puzzle{days.length === 1 ? "" : "s"} so far
+            {unplayed > 0 && (
+              <>
+                {" · "}
+                <span className="text-blue-300">{unplayed} you have not played</span>
+              </>
+            )}
+            . Catching one up counts towards your archive badge, but never towards the
+            streak.
           </>
         )}
-        . Catching one up counts towards your archive badge, but never towards the
-        streak.
       </p>
 
       {months.map(({ month, days: monthDays }) => (
@@ -94,7 +135,7 @@ export function DailyArchiveGrid() {
             id={`archive-${month}`}
             className="text-lg font-semibold text-white mb-3"
           >
-            {monthLabel(month)}
+            {monthLabel(month, locale)}
           </h2>
           <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {monthDays.map((day) => (
@@ -109,13 +150,23 @@ export function DailyArchiveGrid() {
   );
 }
 
-const OUTCOME_TEXT: Record<DayOutcome, string> = {
-  won: "Solved",
-  lost: "Not solved",
-  "archive-won": "Caught up",
-  "archive-lost": "Caught up, not solved",
-  today: "Today",
-  missed: "Not played",
+const OUTCOME_TEXT: Record<Locale, Record<DayOutcome, string>> = {
+  en: {
+    won: "Solved",
+    lost: "Not solved",
+    "archive-won": "Caught up",
+    "archive-lost": "Caught up, not solved",
+    today: "Today",
+    missed: "Not played",
+  },
+  cs: {
+    won: "Vyřešeno",
+    lost: "Nevyřešeno",
+    "archive-won": "Dohnáno",
+    "archive-lost": "Dohnáno, nevyřešeno",
+    today: "Dnes",
+    missed: "Nehráno",
+  },
 };
 
 function ArchiveCard({
@@ -127,6 +178,8 @@ function ArchiveCard({
   today: string;
   state: DailyGameState;
 }) {
+  const locale = useLocale();
+  const t = useT();
   const outcome = outcomeForDay(state, day, today);
   const isToday = day === today;
   // A day in progress from the archive is neither finished nor untouched, and the
@@ -178,7 +231,8 @@ function ArchiveCard({
           #{puzzleNumberForDay(day)}
         </p>
         <p className="text-xs text-gray-500 truncate">
-          {day} · {inProgress ? "In progress" : OUTCOME_TEXT[outcome]}
+          {formatPuzzleDay(day, locale)} ·{" "}
+          {inProgress ? t("In progress", "Rozehráno") : OUTCOME_TEXT[locale][outcome]}
         </p>
       </div>
     </Link>

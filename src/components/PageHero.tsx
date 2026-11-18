@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useLocalDay } from "@/hooks/useLocalDay";
 import { getImageUrl } from "@/lib/tmdb-image";
+import { useT } from "@/i18n/LocaleProvider";
 
 type BackdropKind = "movie" | "tv";
 
@@ -55,6 +56,7 @@ function PageHeroContent({
   settled: boolean;
 }) {
   const { title: itemTitle, backdropPath } = BACKDROPS[backdrop];
+  const t = useT();
 
   // w1280, not `original`: TMDB's originals are often 1920–3840px wide, and
   // this is the page's largest paint, so its weight is what the first view
@@ -69,7 +71,7 @@ function PageHeroContent({
       <div className="absolute inset-0">
         <Image
           src={backdropUrl}
-          alt={`Background image for ${itemTitle}`}
+          alt={`${t("Background image for", "Obrázek na pozadí:")} ${itemTitle}`}
           fill
           className="object-cover object-top"
           // A preload is a promise to use the file. A mixed banner may replace

@@ -13,7 +13,8 @@
  */
 
 import type { Metadata } from "next";
-import { absoluteUrl } from "./routes";
+import { OG_LOCALE, t, type Locale } from "@/i18n/locale";
+import { absoluteUrl, localizeHref } from "./routes";
 
 /**
  * The one social card image the site has.
@@ -66,6 +67,43 @@ export const SITE_TWITTER = {
   creator: "@RobertLibsansky",
 } as const satisfies NonNullable<Metadata["twitter"]>;
 
+/** `SITE_OPEN_GRAPH` for a page in either language. */
+export function siteOpenGraph(locale: Locale) {
+  if (locale === "en") return SITE_OPEN_GRAPH;
+  return {
+    ...SITE_OPEN_GRAPH,
+    locale: OG_LOCALE[locale],
+    alternateLocale: [OG_LOCALE.en],
+    images: [
+      {
+        ...SITE_SHARE_IMAGE,
+        alt: t(locale, SITE_SHARE_IMAGE.alt, "WatchList – objevujte filmy a seriály"),
+      },
+    ],
+  } as const satisfies NonNullable<Metadata["openGraph"]>;
+}
+
+/**
+ * The `hreflang` set for a page that exists in both trees: each language's
+ * absolute address, and English as the `x-default` a visitor in any other
+ * language is sent to. `paths` overrides a language whose address is not just
+ * the English path with a prefix – a title, whose Czech page has a Czech slug
+ * – and `null` there leaves that language out, for a page only one tree has.
+ */
+export function languageAlternates(
+  path: string,
+  paths: Partial<Record<Locale, string | null>> = {},
+): Record<string, string> {
+  const en = paths.en === undefined ? path : paths.en;
+  const cs = paths.cs === undefined ? localizeHref(path, "cs") : paths.cs;
+  if (!en || !cs) return {};
+  return {
+    en: absoluteUrl(en),
+    cs: absoluteUrl(cs),
+    "x-default": absoluteUrl(en),
+  };
+}
+
 interface PageMetadataOptions {
   /** Slotted into the root layout's `%s | WatchList` template. */
   title: string;
@@ -91,6 +129,16 @@ interface PageMetadataOptions {
   image?: { url: string; width: number; height: number; alt: string };
   /** Open Graph's type, where the page is more than a `website`. */
   type?: "video.movie" | "video.tv_show" | "profile";
+  /**
+   * Which tree the page is in. `path` is always the English path: the
+   * canonical is that path moved into this language (`localizeHref`).
+   */
+  locale?: Locale;
+  /**
+   * The `hreflang` addresses where they are not simply `path` in each tree –
+   * see `languageAlternates`. `false` for a page with no counterpart at all.
+   */
+  languages?: Partial<Record<Locale, string | null>> | false;
 }
 
 export function pageMetadata({
@@ -100,11 +148,28 @@ export function pageMetadata({
   noindex,
   image,
   type,
+  locale = "en",
+  languages,
 }: PageMetadataOptions): Metadata {
+  const canonical = path ? absoluteUrl(localizeHref(path, locale)) : undefined;
+  // Only an indexable page names its translations: a `noindex` page is not a
+  // candidate for either language's results, and pointing at one from the
+  // other would only invite a crawler to it.
+  const alternates =
+    path && !noindex && languages !== false
+      ? languageAlternates(path, languages || {})
+      : {};
   return {
     title,
     description,
-    ...(path ? { alternates: { canonical: absoluteUrl(path) } } : {}),
+    ...(canonical
+      ? {
+          alternates: {
+            canonical,
+            ...(Object.keys(alternates).length > 0 ? { languages: alternates } : {}),
+          },
+        }
+      : {}),
     ...(noindex ? { robots: { index: false, follow: true } } : {}),
     // Repeated rather than inherited: the root layout's Open Graph block names
     // the site, and a page that overrides `title` without overriding this one
@@ -112,12 +177,12 @@ export function pageMetadata({
     // all replaces the root block wholesale, the site-wide half has to come
     // along too – see `SITE_OPEN_GRAPH`.
     openGraph: {
-      ...SITE_OPEN_GRAPH,
+      ...siteOpenGraph(locale),
       ...(type ? { type } : {}),
       ...(image ? { images: [image] } : {}),
       title,
       description,
-      ...(path ? { url: absoluteUrl(path) } : {}),
+      ...(canonical ? { url: canonical } : {}),
     },
     twitter: { ...SITE_TWITTER, title, description },
   };

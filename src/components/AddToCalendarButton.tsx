@@ -4,6 +4,7 @@ import { CalendarPlus, Check } from "lucide-react";
 import { buildCalendarIcs } from "@/lib/calendar-ics";
 import { useTransientFlag } from "@/hooks/useTransientFlag";
 import type { CalendarEvent } from "@/lib/release-calendar";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 
 /**
  * Hand the calendar to the visitor's own calendar app as an `.ics` download.
@@ -18,6 +19,8 @@ import type { CalendarEvent } from "@/lib/release-calendar";
  */
 export function AddToCalendarButton({ events }: { events: CalendarEvent[] }) {
   const [saved, markSaved] = useTransientFlag(3000);
+  const locale = useLocale();
+  const t = useT();
 
   if (events.length === 0) return null;
 
@@ -28,6 +31,9 @@ export function AddToCalendarButton({ events }: { events: CalendarEvent[] }) {
       // A date sitting silently in a calendar is a date nobody sees. The alarm is
       // what makes the export worth doing.
       alarms: true,
+      // The calendar's name, each event's title and its link back to the
+      // title's page, all in the page's language.
+      locale,
     });
 
     const url = URL.createObjectURL(
@@ -36,7 +42,7 @@ export function AddToCalendarButton({ events }: { events: CalendarEvent[] }) {
 
     const link = document.createElement("a");
     link.href = url;
-    link.download = "watchlist-releases.ics";
+    link.download = t("watchlist-releases.ics", "watchlist-premiery.ics");
     link.click();
     // Revoking immediately can cancel the download in some browsers, so the
     // object URL is released once the click has certainly been handled.
@@ -55,7 +61,9 @@ export function AddToCalendarButton({ events }: { events: CalendarEvent[] }) {
       ) : (
         <CalendarPlus className="w-4 h-4" aria-hidden="true" />
       )}
-      {saved ? "Downloaded" : "Add to my calendar"}
+      {saved
+        ? t("Downloaded", "Staženo")
+        : t("Add to my calendar", "Přidat do kalendáře")}
     </button>
   );
 }

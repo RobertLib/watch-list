@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { msUntilNextPuzzle } from "@/lib/daily-puzzle";
+import { useLocale } from "@/i18n/LocaleProvider";
+import { formatCount } from "@/i18n/format";
+import type { Locale } from "@/i18n/locale";
 
 /**
  * Time until the next puzzle.
@@ -12,6 +15,7 @@ import { msUntilNextPuzzle } from "@/lib/daily-puzzle";
  * a duration there would hydrate into a mismatch.
  */
 export function NextPuzzleCountdown() {
+  const locale = useLocale();
   const [remaining, setRemaining] = useState<number | null>(null);
 
   useEffect(() => {
@@ -40,18 +44,38 @@ export function NextPuzzleCountdown() {
           just "Next puzzle in", with no time at all. Not a live region, so
           nothing is announced as it changes, and to the minute rather than
           the second, so the text only moves when the answer does. */}
-      <span className="sr-only">{describeRemaining(remaining)}</span>
+      <span className="sr-only">{describeRemaining(remaining, locale)}</span>
     </>
   );
 }
 
-/** The wait in words, to the minute: "3 hours 12 minutes". */
-export function describeRemaining(ms: number): string {
+/**
+ * The wait in words, to the minute: "3 hours 12 minutes".
+ *
+ * The Czech words are in the accusative, because the sentence they finish is
+ * "Další hádanka za …" – "za 1 hodinu", "za méně než minutu".
+ */
+export function describeRemaining(ms: number, locale: Locale = "en"): string {
   const totalMinutes = Math.floor(ms / 60_000);
-  if (totalMinutes < 1) return "less than a minute";
-
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
+
+  if (locale === "cs") {
+    if (totalMinutes < 1) return "méně než minutu";
+    const h = formatCount(hours, locale, {
+      en: ["hour", "hours"],
+      cs: ["hodinu", "hodiny", "hodin"],
+    });
+    const m = formatCount(minutes, locale, {
+      en: ["minute", "minutes"],
+      cs: ["minutu", "minuty", "minut"],
+    });
+    if (hours === 0) return m;
+    if (minutes === 0) return h;
+    return `${h} ${m}`;
+  }
+
+  if (totalMinutes < 1) return "less than a minute";
   const unit = (value: number, word: string) =>
     `${value} ${word}${value === 1 ? "" : "s"}`;
 

@@ -1,6 +1,8 @@
 "use client";
 
 import { getProfileStorageOwner, readProfileStore, writeProfileStore } from "./profile-storage";
+import type { Locale } from "@/i18n/locale";
+import { formatNumber } from "@/i18n/format";
 
 /**
  * The player's side of "higher or lower": the best run they have managed.
@@ -92,7 +94,12 @@ export function buildHigherLowerShareText(
   streak: number,
   beatBest: boolean,
   url: string,
+  locale: Locale = "en",
 ): string {
+  if (locale === "cs") {
+    const run = `${formatNumber(streak, locale)}× za sebou${beatBest ? " – nový rekord" : ""}`;
+    return `🎬 WatchList – Vyšší, nebo nižší\n🔥 ${run}\n${url}`;
+  }
   const run = `${streak} in a row${beatBest ? " – a new best" : ""}`;
   return `🎬 WatchList Higher or Lower\n🔥 ${run}\n${url}`;
 }

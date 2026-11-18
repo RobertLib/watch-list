@@ -1,0 +1,256 @@
+import type { Metadata } from "next";
+import { absoluteUrl } from "@/lib/routes";
+import { languageAlternates } from "@/lib/page-metadata";
+import { HeroSection } from "@/components/HeroSection";
+import { WelcomePanelContent } from "@/components/WelcomePanelContent";
+import { HomeWatchlistPanel } from "@/components/HomeWatchlistPanel";
+import { ContinueWatching } from "@/components/ContinueWatching";
+import { DailyGameTeaser } from "@/components/DailyGameTeaser";
+import { WelcomeBack } from "@/components/WelcomeBack";
+import { KeepYourDataNudge } from "@/components/KeepYourDataNudge";
+import { RecommendedForYou } from "@/components/RecommendedForYou";
+import { GenreQuickNav } from "@/components/GenreQuickNav";
+import { StructuredData } from "@/components/StructuredData";
+import { getHomeSnapshot } from "@/lib/build-time-tmdb";
+import {
+  TrendingCarousel,
+  NowPlayingCarousel,
+  PopularMoviesCarousel,
+  PopularTVShowsCarousel,
+  TopRatedMoviesCarousel,
+  TopRatedTVShowsCarousel,
+  AiringTodayCarousel,
+  UpcomingMoviesCarousel,
+} from "@/components/carousels";
+
+export const metadata: Metadata = {
+  // Title and description are the root layout's own, which are written for this
+  // page – so only the canonical is added here. The layout deliberately does not
+  // set one, because a canonical there is inherited by every page that omits it.
+  // `languages` names the Czech home page, `/cs`, as this one's translation.
+  alternates: { canonical: absoluteUrl("/"), languages: languageAlternates("/") },
+};
+
+/**
+ * The home page.
+ *
+ * Nothing here is fetched when the page is served: it is a static file. The
+ * rows are fetched once when the site is built, and that snapshot is what the
+ * HTML carries – the titles and links a crawler reads, and what a visitor sees
+ * before the browser has loaded the rows for their own region and swapped them
+ * in. The personal rows (continue watching, the watchlist, recommendations)
+ * are the visitor's own and only ever fill in from the browser.
+ */
+export default async function Home() {
+  const rows = await getHomeSnapshot();
+
+  return (
+    <>
+      <StructuredData type="Website" data={{}} />
+      <StructuredData type="WebApplication" data={{}} />
+      <StructuredData type="Organization" data={{}} />
+      <StructuredData
+        type="FAQPage"
+        data={{
+          faqItems: [
+            {
+              question: "What is WatchList?",
+              answer:
+                "WatchList is a free online tool that lets you track movies and TV shows you want to watch. You can build a personal watchlist, discover trending titles, and find out which streaming service they're available on, no account required.",
+            },
+            {
+              question: "Is WatchList free to use?",
+              answer:
+                "Yes, WatchList is completely free. There are no subscriptions, no sign-ups, and no hidden fees. All features including watchlist management, streaming availability, and browsing are available at no cost.",
+            },
+            {
+              question: "How do I add a movie or TV show to my watchlist?",
+              answer:
+                "Simply find the movie or TV show you want using search or browse, then click the 'Add to Watchlist' button on the title's detail page or on any media card. Your watchlist is saved locally in your browser, no account needed.",
+            },
+            {
+              question: "Which streaming platforms does WatchList support?",
+              answer:
+                "WatchList shows real-time streaming availability for Netflix, Prime Video, Disney+, Apple TV+, Hulu, HBO Max, and many more platforms. Availability is shown per country so you always know where to watch in your region.",
+            },
+            {
+              question: "Can I browse movies and TV shows by genre?",
+              answer:
+                "Yes. WatchList lets you browse movies and TV shows by genre, including Action, Comedy, Drama, Thriller, Sci-Fi, Horror, and more. You can also filter by streaming platform and sort by rating or release date.",
+            },
+          ],
+        }}
+      />
+
+      {/* Semantic h1 for SEO – visually hidden, hero section shows featured title as h2 */}
+      <h1 className="sr-only">
+        WatchList – Your Free Movie &amp; TV Show Watchlist
+      </h1>
+
+      <HeroSection />
+
+      <div className="container mx-auto px-6 lg:px-8 py-8 space-y-12">
+        <WelcomePanelContent />
+
+        {/* First, because it is the only thing on the page that is different
+            from how a returning visitor left it. Renders nothing when there is
+            nothing to report, which is most visits. */}
+        <WelcomeBack />
+
+        <DailyGameTeaser />
+
+        {/* Above the watchlist on purpose: a half-finished series is the most
+            actionable thing on the page for a returning visitor. */}
+        <ContinueWatching />
+
+        <HomeWatchlistPanel />
+
+        <RecommendedForYou />
+
+        <TrendingCarousel snapshot={rows?.trending} />
+
+        {/* Movies section. The rows under a group heading are its
+            subsections, so their own titles are h3s. */}
+        <div className="border-t border-gray-800/60 pt-10 space-y-12">
+          <h2 className="text-3xl font-bold text-white">Movies</h2>
+          <NowPlayingCarousel headingLevel={3} snapshot={rows?.nowPlaying} />
+          <PopularMoviesCarousel headingLevel={3} snapshot={rows?.popularMovies} />
+          <UpcomingMoviesCarousel headingLevel={3} snapshot={rows?.upcomingMovies} />
+          <TopRatedMoviesCarousel headingLevel={3} snapshot={rows?.topRatedMovies} />
+        </div>
+
+        {/* TV Shows section */}
+        <div className="border-t border-gray-800/60 pt-10 space-y-12">
+          <h2 className="text-3xl font-bold text-white">TV Shows</h2>
+          <AiringTodayCarousel headingLevel={3} snapshot={rows?.airingToday} />
+          <PopularTVShowsCarousel headingLevel={3} snapshot={rows?.popularTVShows} />
+          <TopRatedTVShowsCarousel headingLevel={3} snapshot={rows?.topRatedTVShows} />
+        </div>
+
+        {/* Genre quick browse */}
+        <div className="border-t border-gray-800/60 pt-10">
+          <GenreQuickNav />
+        </div>
+
+        {/* Raised once, when the list has grown enough to be worth losing. */}
+        <KeepYourDataNudge />
+
+        {/* Static feature section – part of the prerendered shell */}
+        <section
+          aria-labelledby="features-heading"
+          className="border-t border-gray-800 pt-12"
+        >
+          <h2
+            id="features-heading"
+            className="text-2xl font-bold mb-4 text-white"
+          >
+            Your Free Movie &amp; TV Show Watchlist
+          </h2>
+          <p className="text-gray-400 leading-relaxed mb-8 max-w-3xl">
+            WatchList is the free, no-account-required way to track every movie
+            and TV show you want to watch. Whether you&apos;re hunting for a new
+            thriller on Netflix, catching up on a critically acclaimed drama on
+            HBO Max, or planning your weekend movie marathon, WatchList brings
+            everything together in one place.
+          </p>
+          <div className="grid sm:grid-cols-3 gap-6">
+            <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-6 space-y-3">
+              <h3 className="font-semibold text-white">Build your watchlist</h3>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                Add any movie or TV show to your personal watchlist with one
+                click. Keep track of what you want to watch next, from new
+                theatrical releases to classic films and beloved series you
+                haven&apos;t started yet. No sign-up required.
+              </p>
+            </div>
+            <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-6 space-y-3">
+              <h3 className="font-semibold text-white">
+                Discover what&apos;s trending
+              </h3>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                Browse trending movies, now-playing films, popular TV series,
+                and top-rated titles updated daily. From box-office hits to
+                binge-worthy shows, stay on top of what everyone is watching
+                across Netflix, Prime Video, Disney+, and more.
+              </p>
+            </div>
+            <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-6 space-y-3">
+              <h3 className="font-semibold text-white">Find where to watch</h3>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                Every movie and TV show page shows real-time streaming
+                availability in your region, so you always know whether a title
+                is on Netflix, Prime Video, Apple TV+, Disney+, or Hulu. No more
+                switching between apps to find out.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-6 mt-6">
+            <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-6 space-y-3">
+              <h3 className="font-semibold text-white">
+                Filter by genre &amp; platform
+              </h3>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                Narrow down your search using powerful filters: pick a genre
+                like Action, Comedy, Drama, or Sci-Fi; choose your streaming
+                services; and sort by rating or release date. Finding
+                tonight&apos;s watch has never been faster.
+              </p>
+            </div>
+            <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-6 space-y-3">
+              <h3 className="font-semibold text-white">
+                Cast, crew &amp; reviews in one place
+              </h3>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                Each title page includes full cast and crew details, audience
+                reviews, trailers, trivia, and related titles, everything you
+                need to decide what to watch next, without leaving the page.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* About section */}
+        <section
+          aria-labelledby="about-heading"
+          className="border-t border-gray-800 pt-12"
+        >
+          <h2 id="about-heading" className="text-2xl font-bold mb-4 text-white">
+            How WatchList Works
+          </h2>
+          <div className="grid md:grid-cols-2 gap-10 text-gray-400 leading-relaxed">
+            <div className="space-y-4">
+              <p>
+                WatchList pulls live data from The Movie Database (TMDb) to give
+                you accurate, up-to-date information on thousands of movies and
+                TV shows. Streaming availability is fetched per region, so what
+                you see reflects what&apos;s actually on your local version of
+                each platform.
+              </p>
+              <p>
+                Your personal watchlist is stored directly in your browser, no
+                account, no password, no email required. It stays private to the
+                browser you use, so you can start saving titles immediately.
+              </p>
+            </div>
+            <div className="space-y-4">
+              <p>
+                Every movie and TV show detail page combines official metadata,
+                cast and crew credits, viewer reviews, trivia, and Wikipedia
+                insights into a single, easy-to-read overview. Use it to
+                research a title before committing to a two-hour film or a
+                multi-season series.
+              </p>
+              <p>
+                Genre pages let you browse the best Action movies, top-rated
+                Drama series, must-see Documentaries, and more, all filterable
+                by streaming platform and region. Start with what&apos;s
+                trending or dig deep into a specific category.
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </>
+  );
+}

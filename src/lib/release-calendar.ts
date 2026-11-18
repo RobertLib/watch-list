@@ -5,6 +5,7 @@
 // is a set of pure functions over dates, and its tests need no network at all.
 import { isCalendarDate, shiftDate } from "./dates";
 import type { MediaType } from "@/types/tmdb";
+import { t, type Locale } from "@/i18n/locale";
 
 /** A title the visitor is following, reduced to what the calendar needs. */
 export interface CalendarSeed {
@@ -46,6 +47,29 @@ export interface AwaitedTitle {
   posterPath: string | null;
   /** TMDB's wording, e.g. "Returning Series" or "In Production". */
   status: string;
+}
+
+/**
+ * TMDB's status for a title, for a reader.
+ *
+ * TMDB answers with the same English phrase whatever language it was asked in,
+ * so the Czech wording lives here. A status it adds later is shown as TMDB
+ * wrote it rather than hidden.
+ */
+const TITLE_STATUS_CS: Record<string, string> = {
+  "Returning Series": "Bude pokračovat",
+  "In Production": "Ve výrobě",
+  "Post Production": "V postprodukci",
+  Planned: "Plánováno",
+  Rumored: "Zatím jen spekulace",
+  Pilot: "Pilotní díl",
+  Ended: "Ukončeno",
+  Canceled: "Zrušeno",
+  Released: "Vydáno",
+};
+
+export function formatTitleStatus(status: string, locale: Locale = "en"): string {
+  return locale === "cs" ? (TITLE_STATUS_CS[status] ?? status) : status;
 }
 
 /** The original TV-only name remains available to callers. */
@@ -206,6 +230,7 @@ export interface CalendarBucket {
 export function groupCalendarEvents(
   events: CalendarEvent[],
   today: string,
+  locale: Locale = "en",
 ): CalendarBucket[] {
   // Nothing to place, or no reference date to place it against. The second case
   // is the calendar page's first render, before its request has come back: this
@@ -218,10 +243,10 @@ export function groupCalendarEvents(
   const monthEnd = shiftDate(today, 30);
 
   const buckets: CalendarBucket[] = [
-    { id: "today", label: "Today", events: [] },
-    { id: "this-week", label: "Next 7 days", events: [] },
-    { id: "this-month", label: "Next 30 days", events: [] },
-    { id: "later", label: "Further ahead", events: [] },
+    { id: "today", label: t(locale, "Today", "Dnes"), events: [] },
+    { id: "this-week", label: t(locale, "Next 7 days", "Příštích 7 dní"), events: [] },
+    { id: "this-month", label: t(locale, "Next 30 days", "Příštích 30 dní"), events: [] },
+    { id: "later", label: t(locale, "Further ahead", "Později"), events: [] },
   ];
 
   const byId = (id: CalendarBucketId) =>

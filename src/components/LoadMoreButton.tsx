@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/LocaleProvider";
 
 interface LoadMoreButtonProps {
   onLoadMore: () => Promise<void>;
@@ -15,9 +16,10 @@ export function LoadMoreButton({
   onLoadMore,
   disabled = false,
   className,
-  children = "Load More",
+  children,
   onLoadComplete,
 }: LoadMoreButtonProps) {
+  const t = useT();
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const errorId = useId();
@@ -48,7 +50,10 @@ export function LoadMoreButton({
     <div className="flex flex-col items-center gap-3 mt-8 mb-12">
       {failed && (
         <p id={errorId} role="alert" className="text-sm text-red-300 text-center">
-          Could not load more titles. Try again.
+          {t(
+            "Could not load more titles. Try again.",
+            "Další tituly se nepodařilo načíst. Zkuste to znovu.",
+          )}
         </p>
       )}
       <button
@@ -72,12 +77,12 @@ export function LoadMoreButton({
               className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"
               aria-hidden="true"
             />
-            <span>Loading...</span>
+            <span>{t("Loading...", "Načítání…")}</span>
           </div>
         ) : failed ? (
-          "Try again"
+          t("Try again", "Zkusit znovu")
         ) : (
-          children
+          children ?? t("Load More", "Načíst další")
         )}
       </button>
     </div>

@@ -15,6 +15,7 @@
  */
 
 import { isValidRegion } from "./region";
+import { DEFAULT_REGION_FOR, currentLocale, type Locale } from "@/i18n/locale";
 import { applyStorageTransaction } from "./storage-transaction";
 import {
   isWatchProviderFilter,
@@ -51,6 +52,21 @@ export const DEFAULT_SETTINGS: Settings = {
   selectedProviderIds: [],
   hasCustomSettings: false,
 };
+
+/**
+ * The defaults by language. The only difference is the region: a visitor to
+ * the Czech site who never chose one sees the Czech streaming catalogue. The
+ * region they choose is shared by both trees and wins in either.
+ */
+const DEFAULT_SETTINGS_FOR: Record<Locale, Settings> = {
+  en: DEFAULT_SETTINGS,
+  cs: { ...DEFAULT_SETTINGS, region: DEFAULT_REGION_FOR.cs },
+};
+
+/** The region a visitor who never chose one gets, on this page. */
+export function defaultRegion(locale: Locale = currentLocale()): string {
+  return DEFAULT_REGION_FOR[locale];
+}
 
 function readItem(key: string, strict: boolean = false): string | null {
   // Storage throws rather than returning null in a browser configured to block
@@ -101,7 +117,7 @@ function inspectItem<T>(
 export function inspectStoredSettings(): StoredSettingsInspection {
   return {
     region: inspectItem(REGION_KEY, (stored) =>
-      stored === null ? DEFAULT_REGION : isValidRegion(stored) ? stored : undefined),
+      stored === null ? defaultRegion() : isValidRegion(stored) ? stored : undefined),
     watchProviderFilter: inspectItem(WATCH_PROVIDER_FILTER_KEY, (stored) =>
       stored === null ? "all" : isWatchProviderFilter(stored) ? stored : undefined),
     selectedProviderIds: inspectItem(SELECTED_PROVIDERS_KEY, (stored) => {
@@ -138,7 +154,7 @@ function computeSnapshot(strict: boolean = false): Settings {
   const configured = readItem(HAS_SETTINGS_KEY);
 
   return {
-    region: region && isValidRegion(region) ? region : DEFAULT_REGION,
+    region: region && isValidRegion(region) ? region : defaultRegion(),
     watchProviderFilter: isWatchProviderFilter(filter) ? filter : "all",
     selectedProviderIds: providers ? parseStoredProviderIds(providers) : [],
     hasCustomSettings: configured === "true",
@@ -217,9 +233,13 @@ export function readStoredSettings(options: { strict?: boolean } = {}): Settings
   return computeSnapshot(options.strict);
 }
 
-/** The snapshot for the prerender and for hydration – always the defaults. */
-export function getServerSettings(): Settings {
-  return DEFAULT_SETTINGS;
+/**
+ * The snapshot for the prerender and for hydration – always the defaults, of
+ * the page's language (`useSettings` passes the one from React context, which
+ * the prerender has and `document` does not).
+ */
+export function getServerSettings(locale: Locale = "en"): Settings {
+  return DEFAULT_SETTINGS_FOR[locale];
 }
 
 export function getRegion(): string {
@@ -246,10 +266,13 @@ export function getSelectedProviderIdsString(): string {
  * about the same snapshot it is rendering – asking the store directly during
  * hydration would answer about storage the prerendered HTML knew nothing about.
  */
-export function isCustomised(settings: Settings): boolean {
+export function isCustomised(
+  settings: Settings,
+  locale: Locale = currentLocale(),
+): boolean {
   return (
     settings.hasCustomSettings ||
-    settings.region !== DEFAULT_REGION ||
+    settings.region !== DEFAULT_REGION_FOR[locale] ||
     settings.watchProviderFilter === "streaming-only"
   );
 }

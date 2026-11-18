@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import { CalendarDays, CalendarClock, Clapperboard, Tv } from "lucide-react";
 import { getReleaseCalendar } from "@/lib/api";
 import { AddToCalendarButton } from "@/components/AddToCalendarButton";
@@ -12,6 +12,7 @@ import { useWatchlist } from "@/contexts/WatchlistContext";
 import { useEpisodeProgress } from "@/contexts/EpisodeProgressContext";
 import { episodeCode } from "@/lib/calendar-ics";
 import {
+  formatTitleStatus,
   groupCalendarEvents,
   type AwaitedTitle,
   type CalendarEvent,
@@ -23,6 +24,9 @@ import { mediaHref } from "@/lib/routes";
 import { useSettings } from "@/hooks/useSettings";
 import { useLocalDay } from "@/hooks/useLocalDay";
 import { todayLocal } from "@/lib/dates";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { INTL_LOCALE, type Locale } from "@/i18n/locale";
+import { formatCount, formatNumber, pluralForm } from "@/i18n/format";
 
 const EMPTY: ReleaseCalendar = {
   events: [],
@@ -40,6 +44,8 @@ const EMPTY: ReleaseCalendar = {
  * and the "Continue Watching" row.
  */
 export function CalendarContent() {
+  const locale = useLocale();
+  const t = useT();
   const { watchlist, isLoading: isWatchlistLoading } = useWatchlist();
   const { shows, isLoading: isProgressLoading } = useEpisodeProgress();
   const { region } = useSettings();
@@ -139,8 +145,8 @@ export function CalendarContent() {
   }, [seeds, isLoading, attempt, region, today]);
 
   const buckets = useMemo(
-    () => groupCalendarEvents(calendar.events, calendar.today),
-    [calendar],
+    () => groupCalendarEvents(calendar.events, calendar.today, locale),
+    [calendar, locale],
   );
   const failedCount = calendar.failedKeys?.length ?? 0;
   const isRefreshing = loadedAttempt !== attempt;
@@ -168,8 +174,11 @@ export function CalendarContent() {
   if (failed) {
     return (
       <LoadFailureNotice
-        title="Could not load your calendar"
-        description="TMDB did not answer, so there are no dates to show yet. Nothing you follow is affected – it is all still saved in this browser."
+        title={t("Could not load your calendar", "Kalendář se nepodařilo načíst")}
+        description={t(
+          "TMDB did not answer, so there are no dates to show yet. Nothing you follow is affected – it is all still saved in this browser.",
+          "TMDB neodpovídá, takže zatím není co ukázat. Na tom, co sledujete, se nic nemění – vše zůstává uložené v tomto prohlížeči.",
+        )}
         onRetry={retryCalendar}
         // The page around this already has its "Release Calendar" h1.
         headingLevel={2}
@@ -180,14 +189,21 @@ export function CalendarContent() {
   const loadNotice = failedCount > 0 ? (
     <LoadFailureNotice
       compact
-      title="Some release dates could not be checked"
-      description={`Dates for ${failedCount} followed ${failedCount === 1 ? "title" : "titles"} could not be loaded. Some releases may be missing. Try again to check the remaining titles.`}
+      title={t("Some release dates could not be checked", "Některé termíny premiér se nepodařilo ověřit")}
+      description={
+        locale === "cs"
+          ? `Termíny se nepodařilo načíst u ${formatCount(failedCount, locale, {
+              en: ["followed title", "followed titles"],
+              cs: ["sledovaného titulu", "sledovaných titulů", "sledovaných titulů"],
+            })}. Některé premiéry proto mohou chybět. Zkuste to znovu a zbylé tituly se ověří.`
+          : `Dates for ${failedCount} followed ${failedCount === 1 ? "title" : "titles"} could not be loaded. Some releases may be missing. Try again to check the remaining titles.`
+      }
       onRetry={isRefreshing ? undefined : retryCalendar}
     />
   ) : null;
   const refreshNotice = isRefreshing ? (
     <p className="text-sm text-gray-400 text-center" role="status">
-      Updating release dates…
+      {t("Updating release dates…", "Aktualizujeme termíny premiér…")}
     </p>
   ) : null;
 
@@ -212,9 +228,30 @@ export function CalendarContent() {
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <p className="text-gray-400">
-              {calendar.events.length} release
-              {calendar.events.length === 1 ? "" : "s"} coming up across{" "}
-              {seeds.length} title{seeds.length === 1 ? "" : "s"} you follow.
+              {locale === "cs" ? (
+                <>
+                  {pluralForm(calendar.events.length, locale, {
+                    en: ["", ""],
+                    cs: ["Chystá se", "Chystají se", "Chystá se"],
+                  })}{" "}
+                  {formatCount(calendar.events.length, locale, {
+                    en: ["release", "releases"],
+                    cs: ["premiéra", "premiéry", "premiér"],
+                  })}{" "}
+                  u{" "}
+                  {formatCount(seeds.length, locale, {
+                    en: ["title", "titles"],
+                    cs: ["sledovaného titulu", "sledovaných titulů", "sledovaných titulů"],
+                  })}
+                  .
+                </>
+              ) : (
+                <>
+                  {calendar.events.length} release
+                  {calendar.events.length === 1 ? "" : "s"} coming up across{" "}
+                  {seeds.length} title{seeds.length === 1 ? "" : "s"} you follow.
+                </>
+              )}
             </p>
             <AddToCalendarButton events={calendar.events} />
           </div>
@@ -259,11 +296,13 @@ export function CalendarContent() {
               className="w-5 h-5 text-gray-400"
               aria-hidden="true"
             />
-            No date announced
+            {t("No date announced", "Bez ohlášeného termínu")}
           </h2>
           <p className="text-gray-400 text-sm mb-4">
-            These films and series have no release or next-episode date
-            announced yet.
+            {t(
+              "These films and series have no release or next-episode date announced yet.",
+              "Tyto filmy a seriály zatím nemají ohlášenou premiéru ani datum další epizody.",
+            )}
           </p>
           <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {calendar.awaiting.map((title) => (
@@ -287,9 +326,34 @@ export function CalendarContent() {
  * which is most of them: the notice is for the gap, not for the mechanism.
  */
 function CoverageNotice({ calendar }: { calendar: ReleaseCalendar }) {
+  const locale = useLocale();
   const requested = calendar.checked + (calendar.failedKeys?.length ?? 0);
   const omitted = calendar.eligible - requested;
   if (omitted <= 0) return null;
+
+  if (locale === "cs") {
+    const eligible = formatCount(calendar.eligible, locale, {
+      en: ["followed title", "followed titles"],
+      cs: ["sledovaného titulu", "sledovaných titulů", "sledovaných titulů"],
+    });
+    const count = formatNumber(omitted, locale);
+    // The verb and the pronoun agree with the count, so each form is a
+    // sentence of its own.
+    const rest = pluralForm(omitted, locale, {
+      en: ["", ""],
+      cs: [
+        `Zbývající ${count} titul se do této kontroly nevešel a i u něj se může chystat premiéra.`,
+        `Zbývající ${count} tituly se do této kontroly nevešly a i u nich se mohou chystat premiéry.`,
+        `Zbývajících ${count} titulů se do této kontroly nevešlo a i u nich se mohou chystat premiéry.`,
+      ],
+    });
+
+    return (
+      <p className="text-sm text-gray-500 text-center" role="note">
+        Kalendář zahrnuje {formatNumber(requested, locale)} z {eligible}. {rest}
+      </p>
+    );
+  }
 
   return (
     <p className="text-sm text-gray-500 text-center" role="note">
@@ -301,7 +365,7 @@ function CoverageNotice({ calendar }: { calendar: ReleaseCalendar }) {
 }
 
 /** "in 3 days" reads better than a bare date for anything close. */
-function relativeLabel(date: string, today: string): string | null {
+function relativeLabel(date: string, today: string, locale: Locale): string | null {
   if (!today) return null;
 
   const days = Math.round(
@@ -310,17 +374,28 @@ function relativeLabel(date: string, today: string): string | null {
       86_400_000,
   );
 
+  if (locale === "cs") {
+    if (days <= 0) return "Dnes";
+    if (days === 1) return "Zítra";
+    if (days <= 30) {
+      return `za ${formatCount(days, locale, { en: ["day", "days"], cs: ["den", "dny", "dní"] })}`;
+    }
+    return null;
+  }
+
   if (days <= 0) return "Today";
   if (days === 1) return "Tomorrow";
   if (days <= 30) return `in ${days} days`;
   return null;
 }
 
-function formatDate(date: string): string {
-  return new Date(`${date}T00:00:00.000Z`).toLocaleDateString("en-US", {
+function formatDate(date: string, locale: Locale): string {
+  return new Date(`${date}T00:00:00.000Z`).toLocaleDateString(INTL_LOCALE[locale], {
     weekday: "short",
     day: "numeric",
-    month: "short",
+    // Czech abbreviates months to forms nobody writes ("srp"); the full,
+    // declined name ("3. srpna") is how a date is read there.
+    month: locale === "cs" ? "long" : "short",
     year: "numeric",
     timeZone: "UTC",
   });
@@ -333,8 +408,10 @@ function EventRow({
   event: CalendarEvent;
   today: string;
 }) {
+  const locale = useLocale();
+  const t = useT();
   const isEpisode = event.mediaType === "tv";
-  const relative = relativeLabel(event.date, today);
+  const relative = relativeLabel(event.date, today, locale);
   const artwork = event.stillPath ?? event.posterPath;
   const code =
     event.seasonNumber !== null && event.episodeNumber !== null
@@ -373,7 +450,7 @@ function EventRow({
       <div className="flex-1 min-w-0 self-center">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-medium text-blue-300">
-            {formatDate(event.date)}
+            {formatDate(event.date, locale)}
           </span>
           {relative && (
             <span className="text-xs rounded-full bg-blue-500/15 text-blue-300 px-2 py-0.5">
@@ -393,7 +470,9 @@ function EventRow({
               {event.episodeName && ` · ${event.episodeName}`}
             </>
           ) : (
-            event.movieReleaseSource === "regional-theatrical" ? "In cinemas" : "Release date"
+            event.movieReleaseSource === "regional-theatrical"
+              ? t("In cinemas", "V kinech")
+              : t("Release date", "Premiéra")
           )}
         </p>
       </div>
@@ -402,6 +481,8 @@ function EventRow({
 }
 
 function AwaitingRow({ title }: { title: AwaitedTitle }) {
+  const locale = useLocale();
+  const t = useT();
   return (
     <Link
       href={mediaHref(title.mediaType ?? "tv", title.slug)}
@@ -431,7 +512,9 @@ function AwaitingRow({ title }: { title: AwaitedTitle }) {
           {title.title}
         </p>
         <p className="text-xs text-gray-500">
-          {title.mediaType === "movie" ? "No release date announced" : title.status}
+          {title.mediaType === "movie"
+            ? t("No release date announced", "Premiéra zatím nebyla ohlášena")
+            : formatTitleStatus(title.status, locale)}
         </p>
       </div>
     </Link>
@@ -445,6 +528,7 @@ function EmptyState({
   title: string;
   children: React.ReactNode;
 }) {
+  const t = useT();
   return (
     <div className="text-center py-16">
       <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gray-800 flex items-center justify-center">
@@ -457,26 +541,32 @@ function EmptyState({
         prefetch={false}
         className="mt-6 inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition-colors"
       >
-        Discover Content
+        {t("Discover Content", "Procházet filmy a seriály")}
       </Link>
     </div>
   );
 }
 
 function NothingFollowed() {
+  const t = useT();
   return (
-    <EmptyState title="Nothing to schedule yet">
-      Save a film or start a series and this page fills up with air dates and
-      film releases – and hands them to your own calendar app.
+    <EmptyState title={t("Nothing to schedule yet", "Zatím není co plánovat")}>
+      {t(
+        "Save a film or start a series and this page fills up with air dates and film releases – and hands them to your own calendar app.",
+        "Uložte si film nebo začněte sledovat seriál a tahle stránka se zaplní termíny vysílání a filmovými premiérami – a předá je i do vašeho kalendáře.",
+      )}
     </EmptyState>
   );
 }
 
 function NothingScheduled() {
+  const t = useT();
   return (
-    <EmptyState title="Nothing on the horizon">
-      No upcoming film or episode dates are listed for the titles checked.
-      Check back for new announcements.
+    <EmptyState title={t("Nothing on the horizon", "Na obzoru nic není")}>
+      {t(
+        "No upcoming film or episode dates are listed for the titles checked. Check back for new announcements.",
+        "U ověřených titulů zatím nejsou ohlášené žádné termíny filmů ani epizod. Zkuste se podívat později.",
+      )}
     </EmptyState>
   );
 }

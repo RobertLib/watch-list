@@ -2,18 +2,20 @@
 
 import { useMemo, useSyncExternalStore } from "react";
 import { X, Settings, Globe, Filter, ArrowRight } from "lucide-react";
-import Link from "next/link";
+import Link from "@/i18n/Link";
 import {
   dismissWelcomePanel,
   isWelcomeDismissed,
   subscribeToWelcomeDismissal,
 } from "@/lib/welcome-panel";
+import { useT } from "@/i18n/LocaleProvider";
 
 interface WelcomePanelProps {
   hasUserSettings: boolean;
 }
 
 export function WelcomePanel({ hasUserSettings }: WelcomePanelProps) {
+  const t = useT();
   const isClient = useSyncExternalStore(
     () => () => {},
     () => true,
@@ -47,7 +49,7 @@ export function WelcomePanel({ hasUserSettings }: WelcomePanelProps) {
       <button
         onClick={dismissWelcomePanel}
         className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-white focus:ring-opacity-50 rounded-md p-1"
-        aria-label="Close welcome panel"
+        aria-label={t("Close welcome panel", "Zavřít uvítací panel")}
       >
         <X className="h-5 w-5" aria-hidden="true" />
       </button>
@@ -57,7 +59,7 @@ export function WelcomePanel({ hasUserSettings }: WelcomePanelProps) {
           <div
             className="h-12 w-12 bg-linear-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center"
             role="img"
-            aria-label="Movie icon"
+            aria-label={t("Movie icon", "Ikona filmu")}
           >
             <span className="text-xl font-bold" aria-hidden="true">
               🎬
@@ -65,25 +67,26 @@ export function WelcomePanel({ hasUserSettings }: WelcomePanelProps) {
           </div>
           <div>
             <h2 id="welcome-title" className="text-2xl font-bold text-white">
-              Welcome to WatchList!
+              {t("Welcome to WatchList!", "Vítejte na WatchListu!")}
             </h2>
             <p className="text-gray-300 text-sm">
-              Discover the best movies & TV shows
+              {t("Discover the best movies & TV shows", "Objevujte nejlepší filmy a seriály")}
             </p>
           </div>
         </div>
 
         <div className="space-y-4 mb-6">
           <p className="text-gray-300 leading-relaxed">
-            WatchList helps you discover amazing movies and TV shows from around
-            the world. Stay on top of trends, find your next favorite content,
-            and never miss what&apos;s important.
+            {t(
+              "WatchList helps you discover amazing movies and TV shows from around the world. Stay on top of trends, find your next favorite content, and never miss what's important.",
+              "WatchList vám pomůže objevit skvělé filmy a seriály z celého světa. Mějte přehled o trendech, najděte si další oblíbený titul a nepropásněte nic důležitého.",
+            )}
           </p>
 
           <div className="bg-gray-900/40 rounded-lg p-4 border border-gray-800/50">
             <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
               <Settings className="h-4 w-4 text-blue-400" aria-hidden="true" />
-              Customize your experience
+              {t("Customize your experience", "Přizpůsobte si WatchList")}
             </h3>
             <div className="space-y-3 text-sm">
               <div className="flex items-start gap-3">
@@ -92,9 +95,14 @@ export function WelcomePanel({ hasUserSettings }: WelcomePanelProps) {
                   aria-hidden="true"
                 />
                 <div>
-                  <p className="text-white font-medium">Set your region</p>
+                  <p className="text-white font-medium">
+                    {t("Set your region", "Nastavte si region")}
+                  </p>
                   <p className="text-gray-400">
-                    For more accurate availability and release date information
+                    {t(
+                      "For more accurate availability and release date information",
+                      "Pro přesnější údaje o dostupnosti a termínech premiér",
+                    )}
                   </p>
                 </div>
               </div>
@@ -104,10 +112,14 @@ export function WelcomePanel({ hasUserSettings }: WelcomePanelProps) {
                   aria-hidden="true"
                 />
                 <div>
-                  <p className="text-white font-medium">Filter content</p>
+                  <p className="text-white font-medium">
+                    {t("Filter content", "Filtrujte obsah")}
+                  </p>
                   <p className="text-gray-400">
-                    Show only movies and TV shows available on streaming
-                    platforms
+                    {t(
+                      "Show only movies and TV shows available on streaming platforms",
+                      "Zobrazujte jen filmy a seriály dostupné na streamovacích službách",
+                    )}
                   </p>
                 </div>
               </div>
@@ -120,18 +132,21 @@ export function WelcomePanel({ hasUserSettings }: WelcomePanelProps) {
             href="/profile"
             prefetch={false}
             className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-gray-900"
-            aria-label="Go to profile settings to customize your experience"
+            aria-label={t(
+              "Go to profile settings to customize your experience",
+              "Přejít do nastavení profilu a přizpůsobit si WatchList",
+            )}
           >
             <Settings className="h-4 w-4" aria-hidden="true" />
-            Set up profile
+            {t("Set up profile", "Nastavit profil")}
             <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Link>
           <button
             onClick={dismissWelcomePanel}
             className="inline-flex items-center justify-center px-4 py-2 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-800 hover:text-white transition-colors font-medium text-sm focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-900"
-            aria-label="Dismiss welcome panel"
+            aria-label={t("Dismiss welcome panel", "Skrýt uvítací panel")}
           >
-            Maybe later
+            {t("Maybe later", "Možná později")}
           </button>
         </div>
       </div>
