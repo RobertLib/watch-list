@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ImportOutcome } from "@/lib/import/apply";
 import type { Resolution } from "@/lib/import/resolve";
 import type { ImportEntry } from "@/lib/import/types";
@@ -65,9 +65,12 @@ async function choose(...files: File[]) {
   await act(async () => {
     fireEvent.change(input, { target: { files } });
   });
-  // Reading the files is a chain of awaits past the change handler.
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
+  // Reading the files is a chain of awaits past the change handler, and a ZIP
+  // entry is inflated by `DecompressionStream` – zlib on a worker thread, which
+  // answers whenever it answers. A fixed number of ticks is a race a busy CI
+  // runner loses, so wait for the reading to be over instead.
+  await waitFor(() => {
+    expect(screen.queryByRole("button", { name: "Reading…" })).toBeNull();
   });
 }
 
